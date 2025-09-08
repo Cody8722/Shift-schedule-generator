@@ -1,1 +1,10 @@
+{
+  "startDate": "2025-09-08",
+  "numWeeks": "1",
+  "tasks": "素描教室:2\n大鏡子:1\n校車:1",
+  "names": "葉郁雅:3\n莊紫媛:2\n何盈萱:3\n林宇培:3",
+  "defaultMaxShifts": "3",
+  "unavailability": "葉郁雅:二",
+  "preferences": "莊紫媛:素描教室"
+}
 
