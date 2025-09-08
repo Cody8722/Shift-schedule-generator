@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班表產生器 (伺服器版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: '標楷體', 'BiauKai', 'DFKai-SB', 'Noto Serif TC', serif; 
+            color: #000000;
+        }
+        @media print {
+            .no-print { display: none; }
+            #schedule-output, #schedule-output * { visibility: visible; }
+            #schedule-output { position: absolute; left: 0; top: 0; width: 100%; }
+        }
+        #schedule-output table td {
+            white-space: pre-wrap;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-black">
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8 no-print">
+            <h1 class="text-3xl md:text-4xl font-bold" style="color: #4c51bf;">班表產生器 (伺服器版)</h1>
+            <p class="text-gray-500 mt-2">所有設定將會儲存在伺服器端</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1 bg-white p-6 rounded-2xl shadow-lg no-print space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="start-date" class="text-sm font-medium text-gray-700">開始日期</label>
+                        <input type="date" id="start-date" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black">
+                    </div>
+                    <div>
+                        <label for="num-weeks" class="text-sm font-medium text-gray-700">產生週數</label>
+                        <select id="num-weeks" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black">
+                            <option value="1">1 週</option>
+                            <option value="2">2 週</option>
+                            <option value="3">3 週</option>
+                            <option value="4">4 週</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label for="tasks" class="text-sm font-medium text-gray-700">勤務地點／任務</label>
+                    <textarea id="tasks" rows="4" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="素描教室:2&#10;大鏡子:1"></textarea>
+                </div>
+                <div>
+                    <label for="names" class="text-sm font-medium text-gray-700">人員名單</label>
+                    <textarea id="names" rows="5" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="葉郁雅&#10;陳祈瑋:2"></textarea>
+                </div>
+                 <div>
+                    <label for="preferences" class="text-sm font-medium text-gray-700">偏好位置 (選填)</label>
+                    <textarea id="preferences" rows="3" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="葉郁雅:素描教室"></textarea>
+                </div>
+                <div>
+                    <label for="unavailability" class="text-sm font-medium text-gray-700">不能值勤時間 (選填)</label>
+                    <textarea id="unavailability" rows="3" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="陳祈瑋:一,三"></textarea>
+                </div>
+                 <div>
+                    <label for="max-shifts" class="text-sm font-medium text-gray-700">預設每週最多值勤次數</label>
+                    <input type="number" id="max-shifts" value="3" min="1" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black">
+                </div>
+                 <div class="space-y-3 pt-2">
+                    <button id="generate-btn" class="w-full bg-purple-600 text-white font-bold py-3 rounded-lg hover:bg-purple-700 shadow-md">產生並儲存設定</button>
+                    <button id="export-excel-btn" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 shadow-md disabled:bg-gray-300" disabled>匯出成 Excel (.xlsx)</button>
+                    <button id="print-btn" class="w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600">列印</button>
+                </div>
+            </div>
+
+            <div id="output-area" class="lg:col-span-2 space-y-6">
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg min-h-[400px]">
+                     <div id="placeholder" class="flex flex-col items-center justify-center h-full text-gray-400">
+                        <p class="text-lg">產生的班表將會顯示在這裡</p>
+                    </div>
+                    <div id="schedule-output"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- DOM Element Selection ---
+    const allInputs = {
+        startDate: document.getElementById('start-date'),
+        numWeeks: document.getElementById('num-weeks'),
+        tasks: document.getElementById('tasks'),
+        names: document.getElementById('names'),
+        maxShifts: document.getElementById('max-shifts'),
+        unavailability: document.getElementById('unavailability'),
+        preferences: document.getElementById('preferences'),
+    };
+    const generateBtn = document.getElementById('generate-btn');
+    const printBtn = document.getElementById('print-btn');
+    const exportExcelBtn = document.getElementById('export-excel-btn');
+    const outputArea = document.getElementById('output-area');
+    const scheduleOutput = document.getElementById('schedule-output');
+    const placeholder = document.getElementById('placeholder');
+    
+    // --- State Variables ---
+    let generatedData = null;
+
+    const colorSchemes = [
+        { header: 'cc4125', name: 'e6b8af' }, { header: 'e06666', name: 'f4cccc' },
+        { header: 'f6b26b', name: 'fce5cd' }, { header: 'ffd966', name: 'fff2cc' },
+        { header: '93c47d', name: 'd9ead3' }, { header: '76a5af', name: 'd0e0e3' },
+        { header: '6d9eeb', name: 'c9daf8' }, { header: '6fa8dc', name: 'cfe2f3' },
+        { header: '8e7cc3', name: 'd9d2e9' }, { header: 'c27ba0', name: 'ead1dc' }
+    ];
+
+    // --- Server Communication ---
+    async function loadSettingsFromServer() {
+        try {
+            const response = await fetch('/api/settings');
+            if (!response.ok) throw new Error('無法從伺服器讀取設定');
+            const settings = await response.json();
+            
+            allInputs.startDate.value = settings.startDate || '';
+            allInputs.numWeeks.value = settings.numWeeks || '1';
+            allInputs.tasks.value = settings.tasks || '';
+            allInputs.names.value = settings.names || '';
+            allInputs.maxShifts.value = settings.defaultMaxShifts || 3;
+            allInputs.unavailability.value = settings.unavailability || '';
+            allInputs.preferences.value = settings.preferences || '';
+
+            if (!settings.startDate) setDefaultDate();
+        } catch (error) {
+            console.error('讀取設定失敗:', error);
+            setDefaultDate();
+        }
+    }
+    
+    async function saveSettingsToServer() {
+        const settings = {
+            startDate: allInputs.startDate.value,
+            numWeeks: allInputs.numWeeks.value,
+            tasks: allInputs.tasks.value,
+            names: allInputs.names.value,
+            defaultMaxShifts: allInputs.maxShifts.value,
+            unavailability: allInputs.unavailability.value,
+            preferences: allInputs.preferences.value
+        };
+        try {
+            const response = await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            if (!response.ok) throw new Error('無法儲存設定到伺服器');
+            console.log('設定已成功儲存');
+        } catch (error) {
+            console.error('儲存設定失敗:', error);
+            alert('儲存設定到伺服器失敗！');
+        }
+    }
+
+    function setDefaultDate() {
+        const today = new Date();
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(today.setDate(diff));
+        allInputs.startDate.value = monday.toISOString().split('T')[0];
+    }
+    
+    loadSettingsFromServer(); // Load settings on page start
+
+    // --- Event Listeners ---
+    generateBtn.addEventListener('click', generateAllSchedules);
+    printBtn.addEventListener('click', () => window.print());
+    exportExcelBtn.addEventListener('click', exportToExcel);
+    
+    // --- Core Logic ---
+    function generateAllSchedules() {
+        saveSettingsToServer(); // Save settings to server
+        
+        const numWeeks = parseInt(allInputs.numWeeks.value) || 1;
+        const tasks = allInputs.tasks.value.split('\n').filter(line => line.trim() !== '').map(line => {
+            const parts = line.split(':');
+            return { name: parts[0].trim(), count: parts.length > 1 && !isNaN(parseInt(parts[1])) ? parseInt(parts[1].trim()) : 1 };
+        });
+        const defaultMaxShifts = parseInt(allInputs.maxShifts.value) || 99;
+        const people = allInputs.names.value.split('\n').filter(n => n.trim() !== '').map(line => {
+            const parts = line.split(':');
+            return { name: parts[0].trim(), maxShifts: parts.length > 1 && !isNaN(parseInt(parts[1])) ? parseInt(parts[1].trim()) : defaultMaxShifts };
+        });
+        const dayMap = {'一':0, '二':1, '三':2, '四':3, '五':4};
+        const unavailabilities = {};
+        allInputs.unavailability.value.split('\n').filter(line => line.trim() !== '').forEach(line => {
+            const parts = line.split(':');
+            if (parts.length === 2) unavailabilities[parts[0].trim()] = parts[1].split(',').map(day => dayMap[day.trim()]).filter(d => d !== undefined);
+        });
+        const preferences = {};
+        allInputs.preferences.value.split('\n').filter(line => line.trim() !== '').forEach(line => {
+            const parts = line.split(':');
+            if (parts.length === 2) preferences[parts[0].trim()] = parts[1].split(',').map(task => task.trim());
+        });
+
+        if (tasks.length === 0 || people.length === 0) {
+            alert('請至少輸入一項任務和一個人員名稱。');
+            return;
+        }
+
+        let currentStartDate = new Date(allInputs.startDate.value);
+        currentStartDate.setMinutes(currentStartDate.getMinutes() + currentStartDate.getTimezoneOffset());
+        
+        generatedData = [];
+
+        for (let i = 0; i < numWeeks; i++) {
+            const weeklyData = generateSingleWeek(tasks, people, unavailabilities, preferences);
+            const endDate = new Date(currentStartDate);
+            endDate.setDate(currentStartDate.getDate() + 4);
+            const dateRange = `${currentStartDate.getMonth() + 1}/${currentStartDate.getDate()}~${endDate.getMonth() + 1}/${endDate.getDate()}`;
+            
+            generatedData.push({ ...weeklyData, dateRange, tasks, people });
+            currentStartDate.setDate(currentStartDate.getDate() + 7);
+        }
+
+        renderAllOutputs(generatedData);
+    }
+    
+    function generateSingleWeek(tasks, people, unavailabilities, preferences) {
+        const shiftCounts = Object.fromEntries(people.map(p => [p.name, 0]));
+        const schedule = Array(5).fill(null).map(() => Array(tasks.length).fill(null).map(() => []));
+        const dailyAssignments = Array(5).fill(null).map(() => []);
+
+        for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+            const task = tasks[taskIndex];
+            for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
+                let eligibleCandidates = people.filter(p => 
+                    !unavailabilities[p.name]?.includes(dayIndex) &&
+                    shiftCounts[p.name] < p.maxShifts &&
+                    !dailyAssignments[dayIndex].includes(p.name)
+                );
+                
+                eligibleCandidates.sort((a, b) => {
+                    const aPrefers = preferences[a.name]?.includes(task.name);
+                    const bPrefers = preferences[b.name]?.includes(task.name);
+                    if (aPrefers && !bPrefers) return -1;
+                    if (!aPrefers && bPrefers) return 1;
+                    if (shiftCounts[a.name] !== shiftCounts[b.name]) return shiftCounts[a.name] - shiftCounts[b.name];
+                    return Math.random() - 0.5;
+                });
+                
+                const assigned = eligibleCandidates.slice(0, task.count);
+                assigned.forEach(person => {
+                    schedule[dayIndex][taskIndex].push(person.name);
+                    shiftCounts[person.name]++;
+                    dailyAssignments[dayIndex].push(person.name);
+                });
+            }
+        }
+        return { schedule, shiftCounts };
+    }
+
+    function renderAllOutputs(allData) {
+        if (placeholder) placeholder.style.display = 'none';
+        scheduleOutput.innerHTML = '';
+        
+        outputArea.querySelectorAll('.stats-container').forEach(el => el.remove());
+
+        allData.forEach((data, index) => {
+            const colorScheme = colorSchemes[Math.floor(Math.random() * colorSchemes.length)];
+            data.colorScheme = colorScheme;
+
+            const scheduleContainer = document.createElement('div');
+            scheduleContainer.className = 'mb-8';
+            const weekTitle = document.createElement('h2');
+            weekTitle.className = 'text-xl font-bold mb-4 text-center';
+            weekTitle.textContent = `第 ${index + 1} 週班表 (${data.dateRange})`;
+            scheduleContainer.appendChild(weekTitle);
+            scheduleContainer.appendChild(renderScheduleTable(data, colorScheme));
+            scheduleOutput.appendChild(scheduleContainer);
+
+            const statsContainer = document.createElement('div');
+            statsContainer.id = `stats-output-${index}`;
+            statsContainer.className = 'stats-container bg-white p-4 sm:p-6 rounded-2xl shadow-lg no-print';
+            statsContainer.innerHTML = renderStatistics(data, index);
+            outputArea.appendChild(statsContainer);
+        });
+        
+        exportExcelBtn.disabled = false;
+    }
+
+    function renderScheduleTable({ schedule, tasks }, colorScheme) {
+        const weekDays = ['一', '二', '三', '四', '五'];
+        const table = document.createElement('table');
+        table.className = 'w-full border-collapse text-center';
+        
+        let tableHead = `<thead><tr><th class="p-2 border border-gray-300 text-left w-32" style="background-color: #${colorScheme.header};">勤務地點</th>`;
+        weekDays.forEach(day => tableHead += `<th class="p-2 border border-gray-300" style="background-color: #${colorScheme.header};">星期${day}</th>`);
+        tableHead += `</tr></thead>`;
+        
+        let tableBody = '<tbody>';
+        tasks.forEach((task, taskIndex) => {
+            for (let i = 0; i < task.count; i++) {
+                tableBody += `<tr>`;
+                if (i === 0) {
+                    tableBody += `<td class="p-2 border border-gray-300 text-left font-semibold align-middle" style="background-color: #${colorScheme.header};" rowspan="${task.count}">${task.name}</td>`;
+                }
+                for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
+                    const name = schedule[dayIndex][taskIndex][i];
+                    const cellContent = name || '<span class="text-gray-500">(空)</span>';
+                    const bgColor = name ? `style="background-color: #${colorScheme.name};"` : '';
+                    tableBody += `<td class="p-2 border border-gray-300" ${bgColor}>${cellContent}</td>`;
+                }
+                tableBody += `</tr>`;
+            }
+        });
+        tableBody += '</tbody>';
+        
+        table.innerHTML = tableHead + tableBody;
+        return table;
+    }
+
+    function renderStatistics({ people, shiftCounts }, index) {
+        let statsHTML = `<h3 class="text-lg font-bold mb-3 text-center">第 ${index + 1} 週個人班次統計</h3><div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-2">`;
+        people.forEach(person => {
+            const count = shiftCounts[person.name];
+            const max = person.maxShifts;
+            const isOver = count > max;
+            const colorClass = isOver ? 'text-red-600 font-bold' : '';
+            statsHTML += `<div class="flex justify-between ${colorClass}"><span>${person.name}:</span><span>${count} 次</span></div>`;
+        });
+        statsHTML += '</div>';
+        return statsHTML;
+    }
+
+    function exportToExcel() {
+        if (!generatedData) return;
+        const wb = XLSX.utils.book_new();
+
+        generatedData.forEach((data, index) => {
+            const { schedule, tasks, dateRange, colorScheme } = data;
+            const sheetName = `第 ${index + 1} 週 (${dateRange})`.replace(/[/~]/g, '-');
+            const weekDays = ["星期一", "星期二", "星期三", "星期四", "星期五"];
+            const header = ["勤務地點", ...weekDays];
+            const sheetData = [header];
+
+            tasks.forEach((task, taskIndex) => {
+                for (let i = 0; i < task.count; i++) {
+                    const row = [ i === 0 ? task.name : null ];
+                    for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
+                        const names = schedule[dayIndex][taskIndex];
+                        row.push(i < names.length ? names[i] : null);
+                    }
+                    sheetData.push(row);
+                }
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(sheetData);
+            
+            const font = { name: '標楷體', color: { rgb: "000000" } };
+            const thinBorder = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+            const headerStyle = { font: { ...font, bold: true }, fill: { fgColor: { rgb: colorScheme.header } }, border: thinBorder, alignment: { horizontal: "center", vertical: "center", wrapText: true } };
+            const nameCellStyle = { font: font, fill: { fgColor: { rgb: colorScheme.name } }, border: thinBorder, alignment: { horizontal: "center", vertical: "center", wrapText: true } };
+            const emptyCellStyle = { font: font, border: thinBorder, alignment: { horizontal: "center", vertical: "center", wrapText: true } };
+
+            let rowIndex = 1;
+            ws['!merges'] = [];
+            tasks.forEach(task => {
+                if (task.count > 1) {
+                    ws['!merges'].push({ s: { r: rowIndex, c: 0 }, e: { r: rowIndex + task.count - 1, c: 0 } });
+                }
+                rowIndex += task.count;
+            });
+            
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let R = range.s.r; R <= range.e.r; ++R) {
+                for (let C = range.s.c; C <= range.e.c; ++C) {
+                    const cell_ref = XLSX.utils.encode_cell({ c: C, r: R });
+                    if (!ws[cell_ref]) ws[cell_ref] = { t: 's', v: null };
+                    if (R === 0) ws[cell_ref].s = headerStyle;
+                    else if (C === 0) { if (ws[cell_ref].v) ws[cell_ref].s = headerStyle; }
+                    else {
+                        if (ws[cell_ref].v) ws[cell_ref].s = nameCellStyle;
+                        else {
+                            ws[cell_ref].s = emptyCellStyle;
+                            ws[cell_ref].v = '(空)';
+                        }
+                    }
+                }
+            }
+            
+            ws['!cols'] = [{ wch: 20 }].concat(weekDays.map(() => ({ wch: 15 })));
+            
+            XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31));
+        });
+
+        XLSX.writeFile(wb, "班表.xlsx");
+    }
+});
+</script>
+</body>
+</html>
+
