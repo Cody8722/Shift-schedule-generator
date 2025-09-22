@@ -34,18 +34,22 @@
                 background: #fff !important;
             }
             .container {
-                padding: 0.5cm !important; width: 100% !important; max-width: 100% !important;
-                box-shadow: none !important; border: none !important;
+                max-width: 19cm !important; 
+                margin: 1cm auto !important;
+                padding: 0 !important; 
+                width: auto !important;
+                box-shadow: none !important; 
+                border: none !important;
             }
             main { display: block !important; }
             #main-results-column { width: 100% !important; padding: 0 !important; margin: 0 !important; }
-            #stats-output-wrapper, #saved-schedules-area { display: none !important; }
+            #output-area-extra, #saved-schedules-area { display: none !important; }
             
             #schedule-output {
                 display: flex;
                 flex-direction: column;
-                justify-content: space-around;
-                height: 100%;
+                justify-content: flex-start;
+                height: auto;
             }
             #schedule-output .weekly-schedule {
                 border: 1px solid #ccc;
@@ -55,18 +59,19 @@
                 overflow: hidden;
             }
             #schedule-output h2 {
-                font-size: 10pt !important;
-                margin-bottom: 4px !important;
+                font-size: 12pt !important;
+                margin-bottom: 8px !important;
                 font-weight: bold;
             }
             #schedule-output table {
                 width: 100%;
+                table-layout: fixed;
                 border-collapse: collapse;
             }
             #schedule-output table th, 
             #schedule-output table td {
-                padding: 1px 2px !important;
-                font-size: 7pt !important;
+                padding: 2px 4px !important;
+                font-size: 9pt !important;
                 border: 1px solid #333 !important; 
                 white-space: normal !important; 
                 text-align: center;
@@ -89,7 +94,7 @@
         </header>
 
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div class="lg-col-span-1 bg-white p-6 rounded-2xl shadow-lg no-print space-y-4">
+            <div class="lg:col-span-1 bg-white p-6 rounded-2xl shadow-lg no-print space-y-4">
                 <!-- Profile Management -->
                 <div class="p-3 border rounded-lg bg-gray-50 space-y-3">
                     <label for="profile-selector" class="text-sm font-bold text-gray-700">設定檔管理</label>
