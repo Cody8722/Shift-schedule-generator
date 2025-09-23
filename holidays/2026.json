@@ -1,0 +1,86 @@
+[
+    {
+        "date": "20260101",
+        "week": "四",
+        "isHoliday": true,
+        "description": "開國紀念日"
+    },
+    {
+        "date": "20260216",
+        "week": "一",
+        "isHoliday": true,
+        "description": "農曆除夕"
+    },
+    {
+        "date": "20260217",
+        "week": "二",
+        "isHoliday": true,
+        "description": "春節"
+    },
+    {
+        "date": "20260218",
+        "week": "三",
+        "isHoliday": true,
+        "description": "春節"
+    },
+    {
+        "date": "20260219",
+        "week": "四",
+        "isHoliday": true,
+        "description": "春節"
+    },
+    {
+        "date": "20260220",
+        "week": "五",
+        "isHoliday": true,
+        "description": "春節"
+    },
+    {
+        "date": "20260227",
+        "week": "五",
+        "isHoliday": true,
+        "description": "和平紀念日"
+    },
+    {
+        "date": "20260403",
+        "week": "五",
+        "isHoliday": true,
+        "description": "兒童節、民族掃墓節"
+    },
+    {
+        "date": "20260619",
+        "week": "五",
+        "isHoliday": true,
+        "description": "端午節"
+    },
+    {
+        "date": "20260925",
+        "week": "五",
+        "isHoliday": true,
+        "description": "中秋節"
+    },
+    {
+        "date": "20261009",
+        "week": "五",
+        "isHoliday": true,
+        "description": "國慶日"
+    },
+    {
+        "date": "20260116",
+        "week": "五",
+        "isHoliday": true,
+        "description": "第三次定期評量"
+    },
+    {
+        "date": "202601119",
+        "week": "一",
+        "isHoliday": true,
+        "description": "第三次定期評量"
+    },
+    {
+        "date": "20260120",
+        "week": "二",
+        "isHoliday": true,
+        "description": "第三次定期評量"
+    }
+]
