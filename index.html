@@ -1246,6 +1246,254 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     });
+    // 智慧微調函式 - 優化現有班表的人員分配
+function fineTuneSchedule() {
+    if (!generatedData || generatedData.length === 0) {
+        alert("請先產生班表才能進行智慧微調。");
+        return;
+    }
+
+    let totalChanges = 0;
+    let changeLog = [];
+
+    generatedData.forEach((weekData, weekIndex) => {
+        const { schedule, tasks, people, shiftCounts, scheduleDays } = weekData;
+        const originalShiftCounts = { ...shiftCounts };
+        
+        // 找出工作量不平均的人員
+        const maxShifts = Math.max(...Object.values(shiftCounts));
+        const minShifts = Math.min(...Object.values(shiftCounts));
+        const overloadedPeople = Object.keys(shiftCounts).filter(name => shiftCounts[name] >= maxShifts);
+        const underloadedPeople = Object.keys(shiftCounts).filter(name => shiftCounts[name] <= minShifts);
+
+        // 如果差距超過1，嘗試調整
+        if (maxShifts - minShifts > 1) {
+            for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+                if (!scheduleDays[dayIndex]?.shouldSchedule) continue;
+
+                for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+                    const assignedPeople = schedule[dayIndex][taskIndex];
+                    
+                    for (let slotIndex = 0; slotIndex < assignedPeople.length; slotIndex++) {
+                        const currentPerson = assignedPeople[slotIndex];
+                        
+                        // 如果當前人員工作量過多
+                        if (overloadedPeople.includes(currentPerson)) {
+                            // 尋找可替換的人員
+                            for (const underloadedPerson of underloadedPeople) {
+                                if (canAssignPerson(underloadedPerson, dayIndex, taskIndex, weekData)) {
+                                    // 執行替換
+                                    schedule[dayIndex][taskIndex][slotIndex] = underloadedPerson;
+                                    shiftCounts[currentPerson]--;
+                                    shiftCounts[underloadedPerson]++;
+                                    
+                                    totalChanges++;
+                                    changeLog.push(`第${weekIndex + 1}週: ${currentPerson} → ${underloadedPerson} (${tasks[taskIndex].name}, ${getDayName(dayIndex)})`);
+                                    
+                                    // 更新列表
+                                    if (shiftCounts[currentPerson] < maxShifts) {
+                                        overloadedPeople.splice(overloadedPeople.indexOf(currentPerson), 1);
+                                    }
+                                    if (shiftCounts[underloadedPerson] > minShifts) {
+                                        underloadedPeople.splice(underloadedPeople.indexOf(underloadedPerson), 1);
+                                    }
+                                    
+                                    break; // 找到替換後跳出
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 檢查偏好設定優化
+        const { preferences } = parseInputs();
+        for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+            if (!scheduleDays[dayIndex]?.shouldSchedule) continue;
+
+            for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+                const assignedPeople = schedule[dayIndex][taskIndex];
+                const taskName = tasks[taskIndex].name;
+                
+                // 尋找有偏好但沒被安排的人員
+                for (const person of people) {
+                    if (preferences[person.name]?.includes(taskName) && 
+                        !assignedPeople.includes(person.name) &&
+                        canAssignPerson(person.name, dayIndex, taskIndex, weekData)) {
+                        
+                        // 尋找沒有偏好的人員來替換
+                        for (let slotIndex = 0; slotIndex < assignedPeople.length; slotIndex++) {
+                            const currentPerson = assignedPeople[slotIndex];
+                            if (!preferences[currentPerson]?.includes(taskName)) {
+                                // 執行替換
+                                schedule[dayIndex][taskIndex][slotIndex] = person.name;
+                                
+                                totalChanges++;
+                                changeLog.push(`第${weekIndex + 1}週: ${currentPerson} → ${person.name} (偏好優化: ${taskName}, ${getDayName(dayIndex)})`);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // 顯示調整結果
+    if (totalChanges > 0) {
+        showChangesModal(changeLog, totalChanges);
+        renderAllOutputs(generatedData, []);
+    } else {
+        alert("目前的班表已經相當optimal，沒有需要調整的地方。");
+    }
+}
+
+// 檢查是否可以安排某人員到特定位置
+function canAssignPerson(personName, dayIndex, taskIndex, weekData) {
+    const { scheduleDays } = weekData;
+    const { unavailabilities } = parseInputs();
+    
+    // 檢查該日是否應該排班
+    if (!scheduleDays[dayIndex]?.shouldSchedule) return false;
+    
+    // 檢查不能值勤時間
+    const dayOfWeek = scheduleDays[dayIndex].date.getDay();
+    const mappedDay = (dayOfWeek + 6) % 7; // 轉換為週一=0的格式
+    
+    if (unavailabilities[personName]?.includes(mappedDay)) {
+        return false;
+    }
+    
+    // 檢查該人員當天是否已有其他任務
+    for (let tIndex = 0; tIndex < weekData.schedule[dayIndex].length; tIndex++) {
+        if (weekData.schedule[dayIndex][tIndex].includes(personName)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// 取得星期名稱
+function getDayName(dayIndex) {
+    const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+    return days[dayIndex];
+}
+
+// 顯示變更報告modal
+function showChangesModal(changeLog, totalChanges) {
+    if (changeLog.length === 0) {
+        changesModalBody.innerHTML = '<p class="text-gray-600">沒有進行任何調整。</p>';
+    } else {
+        let content = `<div class="mb-4"><p class="font-semibold text-green-600">成功進行了 ${totalChanges} 項調整：</p></div>`;
+        content += '<ul class="space-y-2">';
+        changeLog.forEach(change => {
+            content += `<li class="text-sm bg-gray-50 p-2 rounded border-l-4 border-blue-400">${change}</li>`;
+        });
+        content += '</ul>';
+        changesModalBody.innerHTML = content;
+    }
+    changesModal.style.display = 'flex';
+}
+
+// 處理儲存格編輯功能
+function handleCellEdit(event) {
+    if (!isEditMode) return;
+    
+    const cell = event.target;
+    const weekIndex = parseInt(cell.dataset.week);
+    const dayIndex = parseInt(cell.dataset.day);
+    const taskIndex = parseInt(cell.dataset.task);
+    const slotIndex = parseInt(cell.dataset.slot);
+    
+    const currentName = generatedData[weekIndex].schedule[dayIndex][taskIndex][slotIndex] || '';
+    const people = generatedData[weekIndex].people;
+    const peopleNames = people.map(p => p.name);
+    
+    // 建立選擇清單
+    let options = '<option value="">(空)</option>';
+    peopleNames.forEach(name => {
+        const selected = name === currentName ? 'selected' : '';
+        options += `<option value="${name}" ${selected}>${name}</option>`;
+    });
+    
+    // 建立暫時的選擇框
+    const originalContent = cell.innerHTML;
+    cell.innerHTML = `<select class="w-full p-1 border rounded text-sm">${options}</select>`;
+    
+    const select = cell.querySelector('select');
+    select.focus();
+    
+    // 處理選擇變更
+    const handleChange = () => {
+        const newName = select.value;
+        
+        // 檢查衝突 - 同一天是否已安排該人員
+        let hasConflict = false;
+        if (newName) {
+            for (let tIndex = 0; tIndex < generatedData[weekIndex].tasks.length; tIndex++) {
+                const dayTasks = generatedData[weekIndex].schedule[dayIndex][tIndex];
+                for (let sIndex = 0; sIndex < dayTasks.length; sIndex++) {
+                    if (dayTasks[sIndex] === newName && 
+                        !(tIndex === taskIndex && sIndex === slotIndex)) {
+                        hasConflict = true;
+                        break;
+                    }
+                }
+                if (hasConflict) break;
+            }
+        }
+        
+        if (hasConflict) {
+            alert(`${newName} 在該日已有其他任務安排，無法重複安排。`);
+            cell.innerHTML = originalContent;
+            return;
+        }
+        
+        // 更新資料
+        const oldName = generatedData[weekIndex].schedule[dayIndex][taskIndex][slotIndex];
+        generatedData[weekIndex].schedule[dayIndex][taskIndex][slotIndex] = newName;
+        
+        // 更新班次計數
+        if (oldName && generatedData[weekIndex].shiftCounts[oldName]) {
+            generatedData[weekIndex].shiftCounts[oldName]--;
+        }
+        if (newName && generatedData[weekIndex].shiftCounts[newName] !== undefined) {
+            generatedData[weekIndex].shiftCounts[newName]++;
+        }
+        
+        // 更新顯示
+        const displayName = newName || '<span class="text-gray-500">(空)</span>';
+        cell.innerHTML = displayName;
+        
+        // 標記為已修改
+        cell.style.backgroundColor = '#e0f2fe'; // 淺藍色標示已編輯
+        
+        // 更新統計顯示
+        const statsContainer = document.getElementById(`stats-output-${weekIndex}`);
+        if (statsContainer) {
+            statsContainer.innerHTML = renderStatistics(generatedData[weekIndex], weekIndex);
+        }
+        
+        console.log(`編輯完成: ${oldName || '(空)'} → ${newName || '(空)'}`);
+    };
+    
+    // 處理失去焦點或按Enter
+    select.addEventListener('change', handleChange);
+    select.addEventListener('blur', () => {
+        if (cell.querySelector('select')) {
+            handleChange();
+        }
+    });
+    select.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            handleChange();
+        } else if (e.key === 'Escape') {
+            cell.innerHTML = originalContent;
+        }
+    });
+}
     </script>
     </body>
     </html>
