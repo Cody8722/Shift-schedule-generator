@@ -273,6 +273,19 @@
         </div>
     </div>
 
+    <!-- Fine Tune Changes Modal -->
+    <div id="changes-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 no-print z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 id="changes-modal-title" class="text-lg font-bold">智慧微調變更報告</h3>
+                <button id="changes-modal-close-btn" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+            </div>
+            <div id="changes-modal-body" class="p-6 max-h-80 overflow-y-auto">
+                <!-- Changes list will be injected here -->
+            </div>
+        </div>
+    </div>
+
 
 <script>
 // --- Global Scope Functions for Inline Event Handlers ---
@@ -354,6 +367,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportModalCloseBtn = document.getElementById('export-modal-close-btn');
     const exportModalCancelBtn = document.getElementById('export-modal-cancel-btn');
     const exportModalConfirmBtn = document.getElementById('export-modal-confirm-btn');
+    const changesModal = document.getElementById('changes-modal');
+    const changesModalBody = document.getElementById('changes-modal-body');
+    const changesModalCloseBtn = document.getElementById('changes-modal-close-btn');
     
     // --- State Variables ---
     let generatedData = null;
@@ -651,8 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function generateAllSchedules() {
-        const saved = await saveCurrentSettingsToServer();
-        if (!saved) return;
+        await saveCurrentSettingsToServer();
         
         let holidayStatusMap = new Map();
         if (allInputs.skipHolidays.checked) {
@@ -660,44 +675,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const numWeeks = parseInt(allInputs.numWeeks.value) || 1;
-            const tasks = allInputs.tasks.value.split('\n').filter(line => line.trim() !== '').map(line => {
-                const parts = line.split(':');
-                return { name: parts[0].trim(), count: parts.length > 1 && !isNaN(parseInt(parts[1])) ? parseInt(parts[1].trim()) : 1 };
-            });
-            const defaultMaxShifts = parseInt(allInputs.maxShifts.value) || 99;
-            const people = allInputs.names.value.split('\n').filter(n => n.trim() !== '').map(line => {
-                const parts = line.split(':');
-                return { name: parts[0].trim(), maxShifts: parts.length > 1 && !isNaN(parseInt(parts[1])) ? parseInt(parts[1].trim()) : defaultMaxShifts };
-            });
-            const dayMap = {'一':0, '二':1, '三':2, '四':3, '五':4, '六': 5, '日': 6}; // Include weekends for unavailabilities
+            const { tasks, people } = parseInputs();
             
-            const unavailabilities = {};
-            allInputs.unavailability.value.split('\n').filter(line => line.trim() !== '').forEach(line => {
-                 const parts = line.split(':', 1);
-                 if (parts.length === 1 && line.includes(':')) {
-                    const name = line.substring(0, line.indexOf(':')).trim();
-                    const days = line.substring(line.indexOf(':') + 1);
-                     unavailabilities[name] = days.split(',').map(day => dayMap[day.trim()]).filter(d => d !== undefined);
-                }
-            });
-
-            const preferences = {};
-            allInputs.preferences.value.split('\n').filter(line => line.trim() !== '').forEach(line => {
-                 const parts = line.split(':', 1);
-                 if (parts.length === 1 && line.includes(':')) {
-                     const name = line.substring(0, line.indexOf(':')).trim();
-                    const tasks = line.substring(line.indexOf(':') + 1);
-                    preferences[name] = tasks.split(',').map(task => task.trim());
-                }
-            });
-
             if (tasks.length === 0 || people.length === 0) {
                 alert('請至少輸入一項任務和一個人員名稱。');
                 return;
             }
             
-            // --- Data Validation from suggestion ---
             const totalNeededPerDay = tasks.reduce((sum, task) => sum + task.count, 0);
             if (people.length < totalNeededPerDay) {
                 scheduleOutput.innerHTML = '';
@@ -711,7 +695,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-
             let userSelectedDate = new Date(allInputs.startDate.value);
             const dayOfWeek = userSelectedDate.getDay();
             const diffToMonday = userSelectedDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
@@ -722,47 +705,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const scheduleData = [];
             const allWarnings = [];
 
-            for (let i = 0; i < numWeeks; i++) {
-                const weekDayDates = [];
-                const scheduleDays = []; // Internal 7-day structure
+            for (let i = 0; i < parseInt(allInputs.numWeeks.value); i++) {
+                const weekInfo = getWeekInfo(currentStartDate, holidayStatusMap);
+                const weeklyData = generateSingleWeek(tasks, people, parseInputs().unavailabilities, parseInputs().preferences, weekInfo.scheduleDays);
                 
-                const tempDate = new Date(currentStartDate);
-                for (let j = 0; j < 7; j++) { 
-                    const dateStr = `${tempDate.getFullYear()}/${tempDate.getMonth() + 1}/${tempDate.getDate()}`;
-                    const day = tempDate.getDay();
-                    
-                    const specialDayInfo = holidayStatusMap.get(dateStr);
-                    const isSpecialDay = !!specialDayInfo;
-                    const isHoliday = isSpecialDay && specialDayInfo.isHoliday;
-                    const isWeekend = day === 0 || day === 6;
-
-                    const shouldSchedule = !isWeekend && !isHoliday;
-                    
-                    scheduleDays.push({
-                        date: new Date(tempDate),
-                        shouldSchedule: shouldSchedule,
-                        isHoliday: isHoliday,
-                        description: isSpecialDay ? specialDayInfo.description : ""
-                    });
-                    
-                    weekDayDates.push(`${tempDate.getMonth() + 1}/${tempDate.getDate()}`);
-                    tempDate.setDate(tempDate.getDate() + 1);
-                }
-
-                const weeklyData = generateSingleWeek(tasks, people, unavailabilities, preferences, scheduleDays);
                 if (weeklyData.warnings.length > 0) {
                     allWarnings.push(...weeklyData.warnings.map(w => `第 ${i + 1} 週：${w}`));
                 }
-                const endDate = new Date(currentStartDate);
-                endDate.setDate(currentStartDate.getDate() + 4); // Display range is still Mon-Fri
-                const dateRange = `${currentStartDate.getMonth() + 1}/${currentStartDate.getDate()}~${endDate.getMonth() + 1}/${endDate.getDate()}`;
                 
-                scheduleData.push({ ...weeklyData, dateRange, tasks, people, weekDayDates, scheduleDays });
+                scheduleData.push({ ...weeklyData, ...weekInfo, tasks, people });
                 currentStartDate.setDate(currentStartDate.getDate() + 7);
             }
             
             generatedData = scheduleData;
-            setTimeout(() => renderAllOutputs(scheduleData, allWarnings), 0);
+            document.dispatchEvent(new CustomEvent('renderSchedule', { detail: { scheduleData, warnings: allWarnings, isEditMode: false, loadedScheduleName: null } }));
         } catch (error) {
             console.error("!!! 產生班表時發生前端錯誤:", error);
             alert("產生班表時發生錯誤，請檢查 F12 Console 的紅色訊息。");
@@ -789,7 +745,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     !dailyAssignments[dayIndex].includes(p.name)
                 );
                 
-                // --- Error Handling from suggestion ---
                 if (eligibleCandidates.length < task.count) {
                     const dayName = ['一', '二', '三', '四', '五', '六', '日'][mappedDay];
                     warnings.push(`星期${dayName}的 "${task.name}" 勤務，需求 ${task.count} 人，但只有 ${eligibleCandidates.length} 位符合資格的人員，可能有人手不足的情況。`);
@@ -834,7 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
             weekTitle.className = 'text-xl font-bold mb-4 text-center';
             weekTitle.textContent = `第 ${index + 1} 週班表 (${data.dateRange})`;
             scheduleContainer.appendChild(weekTitle);
-            scheduleContainer.appendChild(renderScheduleTable(data, data.colorScheme, index)); // Pass weekIndex
+            scheduleContainer.appendChild(renderScheduleTable(data, data.colorScheme, index));
             scheduleOutput.appendChild(scheduleContainer);
 
             const statsContainer = document.createElement('div');
@@ -905,7 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const name = schedule[dayIndex][taskIndex][i];
                         const cellContent = name || '<span class="text-gray-500">(空)</span>';
                         const bgColor = name ? `style="background-color: #${colorScheme.name};"` : '';
-                        const editableClass = isEditMode && name ? 'editable-cell' : '';
+                        const editableClass = isEditMode ? 'editable-cell' : '';
                         tableBody += `<td class="p-2 border border-gray-300 ${editableClass}" ${bgColor} data-week="${weekIndex}" data-day="${dayIndex}" data-task="${taskIndex}" data-slot="${i}">${cellContent}</td>`;
                     }
                 }
@@ -1087,9 +1042,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeModal() {
         templateModal.style.display = 'none';
         exportModal.style.display = 'none';
+        changesModal.style.display = 'none';
     }
     
     modalCloseBtn.addEventListener('click', closeModal);
+    changesModalCloseBtn.addEventListener('click', closeModal);
     
     document.querySelectorAll('.save-template-btn').forEach(btn => {
         btn.addEventListener('click', () => saveTemplate(btn.dataset.type));
