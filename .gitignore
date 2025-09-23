@@ -1,0 +1,8 @@
+# 忽略 Node.js 的依賴模組資料夾
+node_modules/
+
+# 忽略 npm 的偵錯日誌
+npm-debug.log*
+
+# 忽略資料庫的備份檔案
+database_backup_*.json
