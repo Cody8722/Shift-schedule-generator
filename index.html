@@ -84,6 +84,13 @@
             white-space: pre-wrap;
             vertical-align: middle;
         }
+        .editable-cell {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .editable-cell:hover {
+            background-color: #f0e6ff !important;
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-black">
@@ -173,7 +180,10 @@
                 </div>
                  <div class="space-y-3 pt-2">
                     <button id="generate-btn" class="w-full bg-purple-600 text-white font-bold py-3 rounded-lg hover:bg-purple-700 shadow-md">產生並儲存設定</button>
-                    <button id="save-schedule-btn" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 shadow-md disabled:bg-gray-300" disabled>儲存產生結果</button>
+                    <div id="adjustment-buttons" class="hidden grid-cols-2 gap-3">
+                         <button id="fine-tune-btn" class="w-full bg-cyan-600 text-white font-bold py-3 rounded-lg hover:bg-cyan-700 shadow-md">智慧微調</button>
+                         <button id="save-schedule-btn" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 shadow-md">儲存產生結果</button>
+                    </div>
                     <button id="export-excel-btn" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 shadow-md disabled:bg-gray-300" disabled>匯出成 Excel (.xlsx)</button>
                     <div class="grid grid-cols-3 gap-3">
                          <button id="print-btn" class="w-full bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600">列印</button>
@@ -266,14 +276,24 @@
 
 <script>
 // --- Global Scope Functions for Inline Event Handlers ---
-window.loadSchedule = async (name) => {
+window.loadSchedule = async (name, editMode = false) => {
     const API_BASE_URL = window.location.origin;
     try {
         const res = await fetch(`${API_BASE_URL}/api/schedules/${encodeURIComponent(name)}`);
         if (!res.ok) throw new Error('無法載入班表');
         const loadedData = await res.json();
-        document.dispatchEvent(new CustomEvent('renderSchedule', { detail: loadedData }));
-        alert(`已成功載入班表 "${name}"！`);
+        
+        document.dispatchEvent(new CustomEvent('renderSchedule', { 
+            detail: {
+                scheduleData: loadedData, 
+                warnings: [], 
+                isEditMode: editMode,
+                loadedScheduleName: name
+            } 
+        }));
+        
+        const message = editMode ? `已載入班表 "${name}" 進入編輯模式！` : `已成功載入班表 "${name}"！`;
+        alert(message);
     } catch(error) {
         console.error("載入班表失敗:", error);
         alert(`載入班表 "${name}" 失敗。`);
@@ -311,6 +331,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const renameProfileBtn = document.getElementById('rename-profile-btn');
     const deleteProfileBtn = document.getElementById('delete-profile-btn');
     const generateBtn = document.getElementById('generate-btn');
+    const adjustmentButtons = document.getElementById('adjustment-buttons');
+    const fineTuneBtn = document.getElementById('fine-tune-btn');
     const saveScheduleBtn = document.getElementById('save-schedule-btn');
     const printBtn = document.getElementById('print-btn');
     const downloadPdfBtn = document.getElementById('download-pdf-btn');
@@ -335,6 +357,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- State Variables ---
     let generatedData = null;
+    let isEditMode = false;
+    let currentScheduleName = null;
     let loadingMessageIndex = 0;
     const API_BASE_URL = window.location.origin;
     const TEMPLATE_STORAGE_KEY = 'scheduleListTemplates';
@@ -485,7 +509,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <li class="flex justify-between items-center p-2 border-b">
                     <span class="truncate pr-4">${name}</span>
                     <div class="flex-shrink-0">
-                        <button onclick="loadSchedule('${name.replace(/'/g, "\\'")}')" class="text-sm bg-green-500 text-white py-1 px-3 rounded hover:bg-green-600">載入</button>
+                        <button onclick="loadSchedule('${name.replace(/'/g, "\\'")}', false)" class="text-sm bg-green-500 text-white py-1 px-3 rounded hover:bg-green-600">載入</button>
+                        <button onclick="loadSchedule('${name.replace(/'/g, "\\'")}', true)" class="text-sm bg-blue-500 text-white py-1 px-3 rounded hover:bg-blue-600 ml-2">編輯</button>
                         <button onclick="deleteSchedule('${name.replace(/'/g, "\\'")}')" class="text-sm bg-red-500 text-white py-1 px-3 rounded hover:bg-red-600 ml-2">刪除</button>
                     </div>
                 </li>
@@ -501,20 +526,32 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("請先產生班表，才能儲存。");
             return;
         }
-        const defaultName = `班表_${generatedData[0].dateRange.replace(/[/~]/g, '-')}`;
-        const name = prompt("請為此班表命名：", defaultName);
-        if (!name || !name.trim()) return;
+        
+        let nameToSave = currentScheduleName;
+        if (!nameToSave || saveScheduleBtn.textContent === '儲存產生結果') {
+            const defaultName = `班表_${generatedData[0].dateRange.replace(/[/~]/g, '-')}`;
+            nameToSave = prompt("請為此班表命名：", defaultName);
+        } else {
+            if (!confirm(`您確定要覆蓋儲存 "${nameToSave}" 這份班表嗎？`)) {
+                return;
+            }
+        }
+        
+        if (!nameToSave || !nameToSave.trim()) return;
         
         try {
             const res = await fetch(`${API_BASE_URL}/api/schedules`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name.trim(), data: generatedData })
+                body: JSON.stringify({ name: nameToSave.trim(), data: generatedData })
             });
             if (!res.ok) throw new Error('無法儲存班表');
             
-            alert(`班表 "${name.trim()}" 已成功儲存！`);
+            alert(`班表 "${nameToSave.trim()}" 已成功儲存！`);
             await initApp();
+            isEditMode = false;
+            currentScheduleName = null;
+            renderAllOutputs(generatedData, []);
         } catch (error) {
             console.error("儲存班表失敗:", error);
             alert("儲存班表失敗。");
@@ -526,8 +563,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Event Listeners ---
     document.addEventListener('refreshData', initApp);
     document.addEventListener('renderSchedule', (e) => {
-        generatedData = e.detail;
-        renderAllOutputs(e.detail, []); // Pass empty warnings for loaded schedules
+        generatedData = e.detail.scheduleData;
+        isEditMode = e.detail.isEditMode;
+        currentScheduleName = e.detail.loadedScheduleName || null;
+        renderAllOutputs(generatedData, e.detail.warnings);
     });
 
     profileSelector.addEventListener('change', handleProfileChange);
@@ -570,7 +609,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    generateBtn.addEventListener('click', generateAllSchedules);
+    generateBtn.addEventListener('click', () => {
+        currentScheduleName = null;
+        isEditMode = false;
+        generateAllSchedules();
+    });
+    fineTuneBtn.addEventListener('click', fineTuneSchedule);
     saveScheduleBtn.addEventListener('click', saveCurrentSchedule);
     printBtn.addEventListener('click', () => window.print());
     downloadPdfBtn.addEventListener('click', downloadPDF);
@@ -790,7 +834,7 @@ document.addEventListener('DOMContentLoaded', () => {
             weekTitle.className = 'text-xl font-bold mb-4 text-center';
             weekTitle.textContent = `第 ${index + 1} 週班表 (${data.dateRange})`;
             scheduleContainer.appendChild(weekTitle);
-            scheduleContainer.appendChild(renderScheduleTable(data, data.colorScheme));
+            scheduleContainer.appendChild(renderScheduleTable(data, data.colorScheme, index)); // Pass weekIndex
             scheduleOutput.appendChild(scheduleContainer);
 
             const statsContainer = document.createElement('div');
@@ -812,13 +856,16 @@ document.addEventListener('DOMContentLoaded', () => {
             warningsOutputWrapper.appendChild(warningsContainer);
         }
         
+        adjustmentButtons.classList.remove('hidden');
+        adjustmentButtons.classList.add('grid');
+        saveScheduleBtn.textContent = currentScheduleName ? "儲存修改" : "儲存產生結果";
+
         copyBtn.disabled = false;
         exportExcelBtn.disabled = false;
-        saveScheduleBtn.disabled = false;
         downloadPdfBtn.disabled = false;
     }
 
-    function renderScheduleTable({ schedule, tasks, weekDayDates, scheduleDays }, colorScheme) {
+    function renderScheduleTable({ schedule, tasks, weekDayDates, scheduleDays }, colorScheme, weekIndex) {
         const weekDayNames = ['一', '二', '三', '四', '五'];
         const table = document.createElement('table');
         table.className = 'w-full border-collapse text-center table-fixed';
@@ -858,7 +905,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const name = schedule[dayIndex][taskIndex][i];
                         const cellContent = name || '<span class="text-gray-500">(空)</span>';
                         const bgColor = name ? `style="background-color: #${colorScheme.name};"` : '';
-                        tableBody += `<td class="p-2 border border-gray-300" ${bgColor}>${cellContent}</td>`;
+                        const editableClass = isEditMode && name ? 'editable-cell' : '';
+                        tableBody += `<td class="p-2 border border-gray-300 ${editableClass}" ${bgColor} data-week="${weekIndex}" data-day="${dayIndex}" data-task="${taskIndex}" data-slot="${i}">${cellContent}</td>`;
                     }
                 }
                 tableBody += `</tr>`;
@@ -866,7 +914,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         tableBody += '</tbody>';
         
-        table.innerHTML = tableHead + tableBody;
+        table.innerHTML = tableBody;
+        table.insertBefore(document.createRange().createContextualFragment(tableHead).firstChild, table.firstChild);
+
+        if (isEditMode) {
+            table.querySelectorAll('.editable-cell').forEach(cell => {
+                cell.addEventListener('click', handleCellEdit);
+            });
+        }
         return table;
     }
 
@@ -896,7 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
             printContainer.style.position = 'absolute';
             printContainer.style.left = '-9999px';
             printContainer.style.top = '0';
-            printContainer.style.width = '1000px'; 
+            printContainer.style.width = '800px'; 
             printContainer.style.padding = '20px';
             printContainer.style.fontFamily = "'標楷體', 'BiauKai', 'DFKai-SB', 'Noto Sans TC', sans-serif";
             printContainer.style.backgroundColor = '#ffffff';
@@ -913,7 +968,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 weekTitle.style.marginBottom = '15px';
                 scheduleContainer.appendChild(weekTitle);
 
-                const tableElement = renderScheduleTable(data, data.colorScheme);
+                const tableElement = renderScheduleTable(data, data.colorScheme, index);
                 tableElement.style.fontSize = '12px';
                  tableElement.querySelectorAll('th, td').forEach(cell => {
                     cell.style.padding = '5px';
