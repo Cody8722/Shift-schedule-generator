@@ -21,6 +21,7 @@
             --border-light: #e5e7eb;
             --input-bg-light: #ffffff;
             --header-light: #4c51bf;
+            --inset-bg-light: #f9fafb;
             
             --bg-dark: #111827;
             --text-dark: #f3f4f6;
@@ -29,6 +30,7 @@
             --border-dark: #4b5563;
             --input-bg-dark: #374151;
             --header-dark: #818cf8;
+            --inset-bg-dark: #374151;
         }
 
         body { 
@@ -47,6 +49,12 @@
         }
         .dark .card {
             background-color: var(--card-bg-dark);
+        }
+        .inset-box {
+             background-color: var(--inset-bg-light);
+        }
+        .dark .inset-box {
+            background-color: var(--inset-bg-dark);
         }
         .text-muted {
             color: var(--muted-text-light);
@@ -175,7 +183,7 @@
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div class="lg:col-span-1 card p-6 rounded-2xl shadow-lg no-print space-y-4">
                 <!-- Profile Management -->
-                <div class="p-3 border border-default rounded-lg bg-gray-50 dark:bg-gray-800 space-y-3">
+                <div class="inset-box p-3 border border-default rounded-lg space-y-3">
                     <label for="profile-selector" class="text-sm font-bold">設定檔管理</label>
                     <select id="profile-selector" class="w-full p-2 border border-default rounded-md shadow-sm input-bg"></select>
                     <div class="grid grid-cols-3 gap-2">
