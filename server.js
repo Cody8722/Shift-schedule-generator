@@ -257,45 +257,58 @@ const getWeekInfo = (weekString, weekIndex) => {
 
 const generateWeeklySchedule = (settings, scheduleDays) => {
     const { personnel, tasks } = settings;
+    // 初始化資料結構
     let schedule = Array.from({ length: 5 }, () => Array.from({ length: tasks.length }, () => []));
     let weeklyCounts = personnel.map(() => 0);
     let personnelPool = personnel.map((p, i) => ({ ...p, originalIndex: i }));
 
+    // 1. 建立一整週所有需要被填滿的「任務格」列表
+    const allShifts = [];
     for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
-        
         for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
-            const task = tasks[taskIndex];
-            
-            // --- FIX START: Smarter personnel selection logic ---
-            // 1. 找出當天所有可以排這個班的人
-            let availableForTask = personnelPool.filter(p => {
-                const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(p.name);
-                const hasReachedWeeklyMax = weeklyCounts[p.originalIndex] >= p.maxShifts;
-                const isOffDay = p.offDays.includes(dayIndex);
-                return !isAlreadyAssignedToday && !hasReachedWeeklyMax && !isOffDay;
-            });
-
-            // 2. 排序：優先排班次少的人，班次相同則隨機
-            availableForTask.sort((a, b) => {
-                const countA = weeklyCounts[a.originalIndex];
-                const countB = weeklyCounts[b.originalIndex];
-                if (countA !== countB) {
-                    return countA - countB; // 班次少者優先
-                }
-                return Math.random() - 0.5; // 班次相同時隨機
-            });
-            // --- FIX END ---
-            
-            // 3. 從排序後的列表中挑選需要的人數
-            const numToAssign = Math.min(task.count, availableForTask.length);
-            for (let i = 0; i < numToAssign; i++) {
-                const person = availableForTask[i];
-                schedule[dayIndex][taskIndex].push(person.name);
-                weeklyCounts[person.originalIndex]++;
+            for (let slotIndex = 0; slotIndex < tasks[taskIndex].count; slotIndex++) {
+                allShifts.push({ dayIndex, taskIndex });
             }
         }
     }
+
+    // 2. 將任務格列表隨機打亂，確保公平性，避免總是先排星期一
+    allShifts.sort(() => Math.random() - 0.5);
+
+    // 3. 遍歷每一個被打亂的任務格，為它找到最合適的人
+    for (const shift of allShifts) {
+        const { dayIndex, taskIndex } = shift;
+
+        // 找出此刻最適合排這個班的人
+        let availablePersonnel = personnelPool.filter(p => {
+            const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(p.name);
+            const hasReachedWeeklyMax = weeklyCounts[p.originalIndex] >= p.maxShifts;
+            const isOffDay = p.offDays.includes(dayIndex);
+            return !isAlreadyAssignedToday && !hasReachedWeeklyMax && !isOffDay;
+        });
+        
+        // 如果找不到任何人，就跳過這個任務格
+        if (availablePersonnel.length === 0) {
+            continue;
+        }
+
+        // 排序規則：優先選擇本週班最少的人；如果班一樣少，就隨機選
+        availablePersonnel.sort((a, b) => {
+            const countA = weeklyCounts[a.originalIndex];
+            const countB = weeklyCounts[b.originalIndex];
+            if (countA !== countB) {
+                return countA - countB;
+            }
+            return Math.random() - 0.5;
+        });
+
+        // 指派最合適的人（排序後的第一位）
+        const personToAssign = availablePersonnel[0];
+        schedule[dayIndex][taskIndex].push(personToAssign.name);
+        weeklyCounts[personToAssign.originalIndex]++;
+    }
+
     return schedule;
 };
 
