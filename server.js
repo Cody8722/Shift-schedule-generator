@@ -244,11 +244,15 @@ const getWeekInfo = (weekString, weekIndex) => {
 
 const generateWeeklySchedule = (settings, scheduleDays) => {
     const { personnel, tasks } = settings;
-    let schedule = Array.from({ length: 5 }, () => Array.from({ length: tasks.length }, () => []));
-    let weeklyCounts = personnel.map(() => 0);
-    let personnelPool = personnel.map((p, i) => ({ ...p, originalIndex: i }));
+    const sanitizedPersonnel = personnel.map(p => ({
+        ...p,
+        maxShifts: parseInt(p.maxShifts, 10) || 5,
+    }));
 
-    // 1. 建立一整週所有需要被填滿的「任務格」列表 (Task Pool)
+    let schedule = Array.from({ length: 5 }, () => Array.from({ length: tasks.length }, () => []));
+    let weeklyCounts = sanitizedPersonnel.map(() => 0);
+    let personnelPool = sanitizedPersonnel.map((p, i) => ({ ...p, originalIndex: i }));
+
     const allShifts = [];
     for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
@@ -259,15 +263,13 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         }
     }
 
-    // 2. 將任務格列表隨機打亂，確保公平性，避免總是先排星期一
     allShifts.sort(() => Math.random() - 0.5);
 
-    // 3. 遍歷每一個被打亂的任務格，為它找到最合適的人
     for (const shift of allShifts) {
         const { dayIndex, taskIndex } = shift;
 
-        // 找出此刻最適合排這個班的人
         let availablePersonnel = personnelPool.filter(p => {
+            // --- FIX: This is the rule "Each person at most one shift per day" ---
             const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(p.name);
             const hasReachedWeeklyMax = weeklyCounts[p.originalIndex] >= p.maxShifts;
             const isOffDay = p.offDays.includes(dayIndex);
@@ -275,20 +277,23 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         });
         
         if (availablePersonnel.length === 0) {
-            continue; // 如果找不到任何人，就跳過這個任務格
+            continue;
         }
 
-        // 排序規則：優先選擇本週班最少的人；如果班一樣少，就隨機選
         availablePersonnel.sort((a, b) => {
             const countA = weeklyCounts[a.originalIndex];
             const countB = weeklyCounts[b.originalIndex];
             if (countA !== countB) {
                 return countA - countB;
             }
+            const aIsPreferred = a.preferredTask === tasks[taskIndex].name;
+            const bIsPreferred = b.preferredTask === tasks[taskIndex].name;
+            if (aIsPreferred && !bIsPreferred) return -1;
+            if (!aIsPreferred && bIsPreferred) return 1;
+
             return Math.random() - 0.5;
         });
 
-        // 指派最合適的人（排序後的第一位）
         const personToAssign = availablePersonnel[0];
         schedule[dayIndex][taskIndex].push(personToAssign.name);
         weeklyCounts[personToAssign.originalIndex]++;
