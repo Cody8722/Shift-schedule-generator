@@ -118,7 +118,6 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
     const { newName } = req.body;
     if (!newName) return res.status(400).json({ message: '缺少新名稱' });
     try {
-        // 使用 $rename 操作符來重新命名欄位
         await db.collection(PROFILES_COLLECTION).updateOne(
             { _id: CONFIG_ID },
             { $rename: { [`profiles.${oldName}`]: `profiles.${newName}` } }
@@ -133,7 +132,6 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
 app.delete('/api/profiles/:name', async (req, res) => {
     const { name } = req.params;
     try {
-        // 使用 $unset 操作符來移除欄位
         await db.collection(PROFILES_COLLECTION).updateOne(
             { _id: CONFIG_ID },
             { $unset: { [`profiles.${name}`]: "" } }
@@ -145,8 +143,6 @@ app.delete('/api/profiles/:name', async (req, res) => {
 });
 
 // --- Schedule API Routes ---
-
-// GET /api/schedules/:name - 獲取儲存的班表
 app.get('/api/schedules/:name', async (req, res) => {
     const { name } = req.params;
     try {
@@ -162,7 +158,6 @@ app.get('/api/schedules/:name', async (req, res) => {
     }
 });
 
-// POST /api/schedules - 儲存新班表
 app.post('/api/schedules', async (req, res) => {
     const { name, data } = req.body;
     if (!name || !data) return res.status(400).json({ message: '缺少名稱或內容' });
@@ -179,7 +174,6 @@ app.post('/api/schedules', async (req, res) => {
     }
 });
 
-// DELETE /api/schedules/:name - 刪除班表
 app.delete('/api/schedules/:name', async (req, res) => {
     const { name } = req.params;
     try {
@@ -212,7 +206,7 @@ const getHolidaysForYear = async (year) => {
         return holidaySet;
     } catch (error) {
         console.warn(`找不到 ${year} 年的假日檔案:`, error.message);
-        holidaysCache[year] = new Set(); // Cache empty set to avoid re-reading file
+        holidaysCache[year] = new Set();
         return holidaysCache[year];
     }
 };
@@ -224,7 +218,6 @@ app.get('/api/holidays/:year', async (req, res) => {
         const data = await require('fs').promises.readFile(filePath, 'utf-8');
         res.json(JSON.parse(data));
     } catch (error) {
-        console.warn(`找不到 ${year} 年的假日檔案:`, error.message);
         res.status(404).json({ message: `${year} 年的假日檔案不存在` });
     }
 });
@@ -236,21 +229,15 @@ const getWeekInfo = (weekString, weekIndex) => {
     const [year, week] = weekString.split('-W').map(Number);
     const date = new Date(year, 0, 1 + (week - 1 + weekIndex) * 7);
     date.setDate(date.getDate() - (date.getDay() === 0 ? 6 : date.getDay() - 1));
-    
-    const weekDates = [];
-    const weekDayDates = [];
-    
+    const weekDates = [], weekDayDates = [];
     for (let i = 0; i < 7; i++) {
         const currentDate = new Date(date);
         currentDate.setDate(date.getDate() + i);
         const yyyy = currentDate.getFullYear();
         const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
         const dd = String(currentDate.getDate()).padStart(2, '0');
-        const dateStr = `${yyyy}${mm}${dd}`;
-        weekDates.push(dateStr);
-        if (i < 5) {
-            weekDayDates.push(`${mm}/${dd}`);
-        }
+        weekDates.push(`${yyyy}${mm}${dd}`);
+        if (i < 5) weekDayDates.push(`${mm}/${dd}`);
     }
     return { year, weekDates, weekDayDates };
 };
@@ -261,6 +248,7 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
     let weeklyCounts = personnel.map(() => 0);
     let personnelPool = personnel.map((p, i) => ({ ...p, originalIndex: i }));
 
+    // 1. 建立一整週所有需要被填滿的「任務格」列表 (Task Pool)
     const allShifts = [];
     for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
@@ -271,11 +259,14 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         }
     }
 
+    // 2. 將任務格列表隨機打亂，確保公平性，避免總是先排星期一
     allShifts.sort(() => Math.random() - 0.5);
 
+    // 3. 遍歷每一個被打亂的任務格，為它找到最合適的人
     for (const shift of allShifts) {
         const { dayIndex, taskIndex } = shift;
 
+        // 找出此刻最適合排這個班的人
         let availablePersonnel = personnelPool.filter(p => {
             const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(p.name);
             const hasReachedWeeklyMax = weeklyCounts[p.originalIndex] >= p.maxShifts;
@@ -283,19 +274,26 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
             return !isAlreadyAssignedToday && !hasReachedWeeklyMax && !isOffDay;
         });
         
-        if (availablePersonnel.length === 0) continue;
+        if (availablePersonnel.length === 0) {
+            continue; // 如果找不到任何人，就跳過這個任務格
+        }
 
+        // 排序規則：優先選擇本週班最少的人；如果班一樣少，就隨機選
         availablePersonnel.sort((a, b) => {
             const countA = weeklyCounts[a.originalIndex];
             const countB = weeklyCounts[b.originalIndex];
-            if (countA !== countB) return countA - countB;
+            if (countA !== countB) {
+                return countA - countB;
+            }
             return Math.random() - 0.5;
         });
 
+        // 指派最合適的人（排序後的第一位）
         const personToAssign = availablePersonnel[0];
         schedule[dayIndex][taskIndex].push(personToAssign.name);
         weeklyCounts[personToAssign.originalIndex]++;
     }
+
     return schedule;
 };
 
@@ -350,24 +348,18 @@ app.post('/api/generate-schedule', async (req, res) => {
 // --- 啟動伺服器 ---
 const startServer = async () => {
     try {
-        // 連線到 MongoDB
         await client.connect();
         console.log("已成功連線到 MongoDB Atlas!");
-        
-        // 選擇資料庫
         db = client.db(DB_NAME);
-
-        // 確保基礎設定文件存在
         await ensureConfigDocument();
-        
-        // 啟動 Express 伺服器
         app.listen(PORT, () => {
             console.log(`伺服器正在 http://localhost:${PORT} 上運行`);
         });
-
     } catch (err) {
         console.error("無法連線到 MongoDB 或啟動伺服器:", err);
         process.exit(1);
     }
 };
+
+startServer();
 
