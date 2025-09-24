@@ -254,8 +254,7 @@
                 schedules: {}
             }
         },
-        holidays: {},
-        personnelColors: {} // 用來儲存每位人員對應的顏色
+        holidays: {}
     };
 
     // --- DOM Elements ---
@@ -294,15 +293,6 @@
             modalCloseBtn: document.getElementById('modal-close-btn'),
             modalSaveBtn: document.getElementById('modal-save-btn'),
         };
-        
-        // 新增：顏色配置
-        const colorSchemes = [
-            { header: 'cc4125', name: 'e6b8af' }, { header: 'e06666', name: 'f4cccc' },
-            { header: 'f6b26b', name: 'fce5cd' }, { header: 'ffd966', name: 'fff2cc' },
-            { header: '93c47d', name: 'd9ead3' }, { header: '76a5af', name: 'd0e0e3' },
-            { header: '6d9eeb', name: 'c9daf8' }, { header: '6fa8dc', name: 'cfe2f3' },
-            { header: '8e7cc3', name: 'd9d2e9' }, { header: 'c27ba0', name: 'ead1dc' }
-        ];
 
         let generatedData = null; // Store generated schedule data for export
 
@@ -781,14 +771,6 @@
                 return;
             }
             
-            // 為每位人員指派隨機顏色
-            appState.personnelColors = {};
-            const personnel = getActiveProfile().settings.personnel;
-            personnel.forEach(person => {
-                const randomScheme = colorSchemes[Math.floor(Math.random() * colorSchemes.length)];
-                appState.personnelColors[person.name] = randomScheme;
-            });
-
             generatedData = [];
             for (let i = 0; i < numWeeks; i++) {
                 const { year, weekDates, weekDayDates } = getWeekInfo(startWeek, i);
@@ -872,29 +854,29 @@
                             </thead>
                             <tbody id="schedule-table-body-${index}">
                                 ${tasks.map((task, taskIndex) => {
-                                    let taskRows = '';
-                                    for (let i = 0; i < task.count; i++) {
-                                        taskRows += `<tr>`;
-                                        if (i === 0) {
-                                            taskRows += `<td class="font-medium" rowspan="${task.count}">${task.name}</td>`;
+                                    let taskRow = `<tr>`;
+                                    // Task name cell
+                                    taskRow += `<td class="font-medium align-middle">${task.name}</td>`;
+                                    
+                                    // Day cells
+                                    taskRow += weekDayDates.map((_, dayIndex) => {
+                                        if (!scheduleDays[dayIndex].shouldSchedule) {
+                                            // For holidays/events, only render the cell in the first row
+                                            // and make it span all task rows.
+                                            if (taskIndex === 0) {
+                                                return `<td class="holiday-cell align-middle" rowspan="${tasks.length}">${scheduleDays[dayIndex].description}</td>`;
+                                            }
+                                            return ''; // For subsequent rows, return nothing for this day.
+                                        } else {
+                                            // For normal days, join names with a line break.
+                                            const names = schedule[dayIndex][taskIndex];
+                                            const cellContent = names.join('<br>');
+                                            return `<td class="align-middle">${cellContent}</td>`;
                                         }
-                                        taskRows += schedule[0].map((_, dayIndex) => {
-                                             if (!scheduleDays[dayIndex].shouldSchedule) {
-                                                return i === 0 
-                                                    ? `<td class="holiday-cell" rowspan="${task.count}">${scheduleDays[dayIndex].description}</td>` 
-                                                    : '';
-                                             }
-                                             const names = schedule[dayIndex][taskIndex];
-                                             const personName = i < names.length ? names[i] : '';
-                                             if (personName && personName !== '人力不足' && appState.personnelColors[personName]) {
-                                                 const color = appState.personnelColors[personName];
-                                                 return `<td style="background-color:#${color.name}; color:#${color.header}; font-weight: bold;">${personName}</td>`;
-                                             }
-                                             return `<td>${personName}</td>`;
-                                        }).join('');
-                                        taskRows += `</tr>`;
-                                    }
-                                    return taskRows;
+                                    }).join('');
+                                    
+                                    taskRow += `</tr>`;
+                                    return taskRow;
                                 }).join('')}
                             </tbody>
                         </table>
