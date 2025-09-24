@@ -790,7 +790,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const { tasks, people } = parseInputs();
+            const { tasks, people, unavailabilities, preferences } = parseInputs();
             
             if (tasks.length === 0 || people.length === 0) {
                 alert('請至少輸入一項任務和一個人員名稱。');
@@ -802,7 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 scheduleOutput.innerHTML = '';
                 statsOutputWrapper.innerHTML = '';
                 warningsOutputWrapper.innerHTML = '';
-                placeholder.innerHTML = `<div class="text-red-600 p-4 border border-red-400 rounded-lg bg-red-50">
+                placeholder.innerHTML = `<div class="text-red-600 p-4 border border-red-400 rounded-lg bg-red-50 dark:bg-red-900/50 dark:text-red-300 dark:border-red-700">
                     <h3 class="font-bold">人員不足警告</h3>
                     <p>總人力 (${people.length}人) 少於每日所需的最少人力 (${totalNeededPerDay}人)，無法產生班表。請增加人員或減少勤務需求。</p>
                 </div>`;
@@ -820,9 +820,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const scheduleData = [];
             const allWarnings = [];
 
-            for (let i = 0; i < parseInt(allInputs.numWeeks.value); i++) {
+            for (let i = 0; i < parseInt(numWeeksInput.value); i++) {
                 const weekInfo = getWeekInfo(currentStartDate, holidayStatusMap);
-                const weeklyData = generateSingleWeek(tasks, people, parseInputs().unavailabilities, parseInputs().preferences, weekInfo.scheduleDays);
+                const weeklyData = generateSingleWeek(tasks, people, unavailabilities, preferences, weekInfo.scheduleDays);
                 
                 if (weeklyData.warnings.length > 0) {
                     allWarnings.push(...weeklyData.warnings.map(w => `第 ${i + 1} 週：${w}`));
