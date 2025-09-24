@@ -261,8 +261,8 @@
 
 <script>
     // --- Global State & Configuration ---
-    // FIX: Using a path-relative URL is more robust in some environments.
-    const API_BASE_URL = 'api'; 
+    // FIX: Reverted to a root-relative path which is standard.
+    const API_BASE_URL = '/api'; 
     let appState = {
         activeProfile: 'default',
         profiles: {
@@ -319,6 +319,7 @@
 
         // --- API Functions ---
         const api = {
+            // FIX: Removed the extra slash from the start of the endpoint string.
             get: async (endpoint) => {
                 try {
                     const response = await fetch(`${API_BASE_URL}/${endpoint}`);
