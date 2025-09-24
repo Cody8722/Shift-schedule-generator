@@ -337,8 +337,8 @@
                         body: JSON.stringify(body),
                     });
                     if (!response.ok) {
-                         const err = await response.json();
-                         throw new Error(err.message || `HTTP error! status: ${response.status}`);
+                         const errData = await response.json();
+                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
                     return await response.json();
                 } catch (error) {
@@ -355,8 +355,8 @@
                         body: JSON.stringify(body),
                     });
                      if (!response.ok) {
-                         const err = await response.json();
-                         throw new Error(err.message || `HTTP error! status: ${response.status}`);
+                         const errData = await response.json();
+                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
                     return await response.json();
                 } catch (error) {
@@ -369,8 +369,8 @@
                  try {
                     const response = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'DELETE' });
                      if (!response.ok) {
-                         const err = await response.json();
-                         throw new Error(err.message || `HTTP error! status: ${response.status}`);
+                         const errData = await response.json();
+                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
                     return await response.json();
                 } catch (error) {
@@ -665,7 +665,7 @@
             }
         });
         
-        // ... Other event handlers ...
+        // --- Schedule Generation & Display ---
         elements.generateBtn.addEventListener('click', generateFullSchedule);
         elements.copyBtn.addEventListener('click', copyScheduleToClipboard);
         elements.exportExcelBtn.addEventListener('click', exportToExcel);
@@ -738,8 +738,6 @@
             applyTheme(newTheme);
         });
         
-        // --- Core Scheduling Logic ---
-        
         async function generateFullSchedule() {
             const settings = getActiveProfile().settings;
             if (!settings.personnel || settings.personnel.length === 0 || !settings.tasks || settings.tasks.length === 0) {
@@ -806,14 +804,11 @@
                                     // Day cells
                                     taskRow += weekDayDates.map((_, dayIndex) => {
                                         if (!scheduleDays[dayIndex].shouldSchedule) {
-                                            // For holidays/events, only render the cell in the first row
-                                            // and make it span all task rows.
                                             if (taskIndex === 0) {
                                                 return `<td class="holiday-cell align-middle" rowspan="${tasks.length}">${scheduleDays[dayIndex].description}</td>`;
                                             }
-                                            return ''; // For subsequent rows, return nothing for this day.
+                                            return '';
                                         } else {
-                                            // For normal days, join names with a line break.
                                             const names = schedule[dayIndex][taskIndex];
                                             const cellContent = names.join('<br>');
                                             return `<td class="align-middle">${cellContent}</td>`;
@@ -842,17 +837,25 @@
                 tsvContent += ['勤務地點', ...weekDayDates.slice(0, 5).map((date, i) => `星期${weekDayNames[i]}(${date})`)].join('\t') + '\n';
 
                 tasks.forEach((task, taskIndex) => {
-                    for (let i = 0; i < task.count; i++) {
-                        const rowData = [ i === 0 ? task.name : '' ];
-                        for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
+                    const maxSlots = task.count; // We need to handle multiple people per task
+                    const namesByDay = schedule.map(daySchedule => daySchedule[taskIndex]);
+                    
+                    for(let i = 0; i < maxSlots; i++) {
+                        let rowData = [i === 0 ? task.name : ''];
+                        let hasData = false;
+                        for(let dayIndex = 0; dayIndex < 5; dayIndex++) {
                              if (!scheduleDays[dayIndex].shouldSchedule) {
-                                rowData.push(i === 0 ? (scheduleDays[dayIndex].description || "休息") : '');
+                                rowData.push(i === 0 ? scheduleDays[dayIndex].description : '');
                              } else {
-                                const names = schedule[dayIndex][taskIndex];
-                                rowData.push(i < names.length ? names[i] : '');
+                                 const name = namesByDay[dayIndex][i] || '';
+                                 rowData.push(name);
+                                 if(name) hasData = true;
                              }
                         }
-                        tsvContent += rowData.join('\t') + '\n';
+                        // Only add row if it has data
+                        if(hasData || i === 0) {
+                            tsvContent += rowData.join('\t') + '\n';
+                        }
                     }
                 });
                 tsvContent += '\n';
@@ -877,17 +880,24 @@
                 const ws_data = [header];
                 
                 tasks.forEach((task, taskIndex) => {
-                    for (let i = 0; i < task.count; i++) {
-                        const row = [i === 0 ? task.name : '' ];
-                        for(let dayIndex=0; dayIndex<5; dayIndex++) {
-                            if (!scheduleDays[dayIndex].shouldSchedule) {
-                                row.push(scheduleDays[dayIndex].description);
-                            } else {
-                                const names = schedule[dayIndex][taskIndex];
-                                row.push(i < names.length ? names[i] : '');
-                            }
+                     const maxSlots = task.count;
+                     const namesByDay = schedule.map(daySchedule => daySchedule[taskIndex]);
+
+                     for(let i = 0; i < maxSlots; i++) {
+                        let rowData = [i === 0 ? task.name : ''];
+                        let hasData = false;
+                         for(let dayIndex = 0; dayIndex < 5; dayIndex++) {
+                             if (!scheduleDays[dayIndex].shouldSchedule) {
+                                rowData.push(i === 0 ? scheduleDays[dayIndex].description : '');
+                             } else {
+                                 const name = namesByDay[dayIndex][i] || '';
+                                 rowData.push(name);
+                                 if(name) hasData = true;
+                             }
                         }
-                        ws_data.push(row);
+                        if(hasData || i === 0){
+                           ws_data.push(rowData);
+                        }
                     }
                 });
                 
