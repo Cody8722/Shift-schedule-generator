@@ -263,27 +263,36 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
 
     for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
-
-        let dailyAvailablePersonnel = personnelPool.filter(p => !p.offDays.includes(dayIndex));
-        dailyAvailablePersonnel.sort(() => Math.random() - 0.5);
-
+        
         for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
             const task = tasks[taskIndex];
-            let assignedCount = 0;
+            
+            // --- FIX START: Smarter personnel selection logic ---
+            // 1. 找出當天所有可以排這個班的人
+            let availableForTask = personnelPool.filter(p => {
+                const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(p.name);
+                const hasReachedWeeklyMax = weeklyCounts[p.originalIndex] >= p.maxShifts;
+                const isOffDay = p.offDays.includes(dayIndex);
+                return !isAlreadyAssignedToday && !hasReachedWeeklyMax && !isOffDay;
+            });
 
-            for (const person of dailyAvailablePersonnel) {
-                const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(person.name);
-                const hasReachedWeeklyMax = weeklyCounts[person.originalIndex] >= person.maxShifts;
-
-                if (!isAlreadyAssignedToday && !hasReachedWeeklyMax && assignedCount < task.count) {
-                    schedule[dayIndex][taskIndex].push(person.name);
-                    weeklyCounts[person.originalIndex]++;
-                    assignedCount++;
+            // 2. 排序：優先排班次少的人，班次相同則隨機
+            availableForTask.sort((a, b) => {
+                const countA = weeklyCounts[a.originalIndex];
+                const countB = weeklyCounts[b.originalIndex];
+                if (countA !== countB) {
+                    return countA - countB; // 班次少者優先
                 }
-                
-                if (assignedCount >= task.count) {
-                    break;
-                }
+                return Math.random() - 0.5; // 班次相同時隨機
+            });
+            // --- FIX END ---
+            
+            // 3. 從排序後的列表中挑選需要的人數
+            const numToAssign = Math.min(task.count, availableForTask.length);
+            for (let i = 0; i < numToAssign; i++) {
+                const person = availableForTask[i];
+                schedule[dayIndex][taskIndex].push(person.name);
+                weeklyCounts[person.originalIndex]++;
             }
         }
     }
