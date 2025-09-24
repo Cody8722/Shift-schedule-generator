@@ -398,7 +398,13 @@
             try {
                 const data = await api.get('/profiles');
                 if (data && data.profiles) {
-                    appState = data;
+                    // --- FIX START: Do not overwrite the entire appState ---
+                    // OLD CODE: appState = data;
+                    // NEW CODE:
+                    appState.activeProfile = data.activeProfile;
+                    appState.profiles = data.profiles;
+                    // By doing this, we keep the original appState.holidays object.
+                    // --- FIX END ---
                     renderAll();
                 } else {
                    throw new Error('無法從伺服器獲取有效的設定檔資料。');
@@ -953,3 +959,4 @@
 </script>
 </body>
 </html>
+
