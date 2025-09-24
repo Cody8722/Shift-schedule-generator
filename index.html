@@ -87,6 +87,7 @@
             text-align: center;
             font-weight: 600;
             border-bottom: 1px solid var(--border-light);
+            transition: background-color 0.3s;
         }
         .dark .schedule-table th {
             background-color: #374151; /* 深色模式表頭 */
@@ -293,6 +294,14 @@
             modalCloseBtn: document.getElementById('modal-close-btn'),
             modalSaveBtn: document.getElementById('modal-save-btn'),
         };
+
+        const colorSchemes = [
+            { header: '#cc4125' }, { header: '#e06666' },
+            { header: '#f6b26b' }, { header: '#ffd966' },
+            { header: '#93c47d' }, { header: '#76a5af' },
+            { header: '#6d9eeb' }, { header: '#6fa8dc' },
+            { header: '#8e7cc3' }, { header: '#c27ba0' }
+        ];
 
         let generatedData = null; // Store generated schedule data for export
 
@@ -793,6 +802,7 @@
                     dateRange: `${startDate} - ${endDate}`,
                     weekDayDates,
                     scheduleDays,
+                    color: colorSchemes[i % colorSchemes.length] // 為每週指派一個顏色主題
                 });
             }
             displaySchedule(generatedData);
@@ -807,31 +817,32 @@
             for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
                 if (!scheduleDays[dayIndex].shouldSchedule) continue;
 
-                let availablePersonnel = personnelPool.filter(p => !p.offDays.includes(dayIndex));
+                // 取得當天所有可排班的人員
+                let dailyAvailablePersonnel = personnelPool.filter(p => !p.offDays.includes(dayIndex));
                 
+                // --- FIX 2: 隨機打亂當天可排班人員的順序 ---
+                dailyAvailablePersonnel.sort(() => Math.random() - 0.5);
+
                 for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
                     const task = tasks[taskIndex];
+                    let assignedCount = 0;
 
-                    availablePersonnel.sort((a, b) => {
-                        const aPref = a.preferredTask === task.name;
-                        const bPref = b.preferredTask === task.name;
-                        if (aPref && !bPref) return -1;
-                        if (!aPref && bPref) return 1;
-                        return weeklyCounts[a.originalIndex] - weeklyCounts[b.originalIndex];
-                    });
-                    
-                    for (let i = 0; i < task.count; i++) {
-                        let assigned = false;
-                        for (let p of availablePersonnel) {
-                            if (weeklyCounts[p.originalIndex] < p.maxShifts && !schedule[dayIndex].flat().includes(p.name)) {
-                                schedule[dayIndex][taskIndex].push(p.name);
-                                weeklyCounts[p.originalIndex]++;
-                                assigned = true;
-                                break;
-                            }
+                    // 遍歷隨機排序後的人員列表
+                    for (const person of dailyAvailablePersonnel) {
+                        const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(person.name);
+                        const hasReachedWeeklyMax = weeklyCounts[person.originalIndex] >= person.maxShifts;
+
+                        if (!isAlreadyAssignedToday && !hasReachedWeeklyMax && assignedCount < task.count) {
+                            schedule[dayIndex][taskIndex].push(person.name);
+                            weeklyCounts[person.originalIndex]++;
+                            assignedCount++;
                         }
-                        if (!assigned) schedule[dayIndex][taskIndex].push('人力不足');
+                        
+                        if (assignedCount >= task.count) {
+                            break; // 這個勤務地點的人力已滿
+                        }
                     }
+                    // --- FIX 1: 移除 "人力不足" 的訊息 ---
                 }
             }
             return schedule;
@@ -840,16 +851,17 @@
         function displaySchedule(dataToDisplay) {
             let html = '';
             dataToDisplay.forEach((data, index) => {
-                const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
+                const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
                 const weekDayNames = ['一', '二', '三', '四', '五'];
+                const headerStyle = `style="background-color: ${color.header}; color: white;"`;
                 html += `
                     <div class="mb-8" id="schedule-week-${index}">
                         <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
                         <table class="schedule-table">
                             <thead>
                                 <tr>
-                                    <th>勤務地點</th>
-                                    ${weekDayDates.map((date, i) => `<th>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
+                                    <th ${headerStyle}>勤務地點</th>
+                                    ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
                                 </tr>
                             </thead>
                             <tbody id="schedule-table-body-${index}">
@@ -933,7 +945,7 @@
                 
                 tasks.forEach((task, taskIndex) => {
                     for (let i = 0; i < task.count; i++) {
-                        const row = [i === 0 ? task.name : ''];
+                        const row = [i === 0 ? task.name : '' ];
                         for(let dayIndex=0; dayIndex<5; dayIndex++) {
                             if (!scheduleDays[dayIndex].shouldSchedule) {
                                 row.push(scheduleDays[dayIndex].description);
