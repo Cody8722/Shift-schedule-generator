@@ -261,7 +261,8 @@
 
 <script>
     // --- Global State & Configuration ---
-    const API_BASE_URL = '/api'; // Use relative path for production
+    // FIX: Using a path-relative URL is more robust in some environments.
+    const API_BASE_URL = 'api'; 
     let appState = {
         activeProfile: 'default',
         profiles: {
@@ -320,7 +321,7 @@
         const api = {
             get: async (endpoint) => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`);
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`);
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     return await response.json();
                 } catch (error) {
@@ -331,7 +332,7 @@
             },
             post: async (endpoint, body) => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(body),
@@ -341,7 +342,8 @@
                          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
                     return await response.json();
-                } catch (error) {
+                } catch (error)
+                 {
                     console.error(`Failed to post to ${endpoint}:`, error);
                     alert(`操作失敗: ${error.message}`);
                     return null;
@@ -349,7 +351,7 @@
             },
              put: async (endpoint, body) => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(body),
@@ -367,7 +369,7 @@
             },
             delete: async (endpoint) => {
                  try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'DELETE' });
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, { method: 'DELETE' });
                      if (!response.ok) {
                          const errData = await response.json();
                          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
@@ -387,7 +389,7 @@
         const saveSettings = async () => {
             const activeProfile = getActiveProfile();
             if (!activeProfile) return;
-            await api.put(`/profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
+            await api.put(`profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
         };
         
         const renderTasks = () => {
@@ -464,7 +466,7 @@
 
         const initApp = async () => {
             try {
-                const data = await api.get('/profiles');
+                const data = await api.get('profiles');
                 if (data && data.profiles) {
                     appState.activeProfile = data.activeProfile;
                     appState.profiles = data.profiles;
@@ -530,7 +532,7 @@
 
         elements.profileSelect.addEventListener('change', async (e) => {
             const newProfileName = e.target.value;
-            const result = await api.put('/profiles/active', { name: newProfileName });
+            const result = await api.put('profiles/active', { name: newProfileName });
             if (result) {
                 appState.activeProfile = newProfileName;
                 renderAll();
@@ -540,7 +542,7 @@
         elements.newProfileBtn.addEventListener('click', async () => {
             const name = prompt('請輸入新的設定檔名稱:');
             if (name && !appState.profiles[name]) {
-                const result = await api.post('/profiles', { name });
+                const result = await api.post('profiles', { name });
                 if (result) {
                     appState.profiles[name] = { settings: { tasks: [], personnel: [] }, schedules: {} };
                     appState.activeProfile = name;
@@ -555,7 +557,7 @@
             const oldName = appState.activeProfile;
             const newName = prompt(`請為「${oldName}」輸入新名稱:`, oldName);
             if (newName && newName !== oldName && !appState.profiles[newName]) {
-                const result = await api.put(`/profiles/${oldName}/rename`, { newName });
+                const result = await api.put(`profiles/${oldName}/rename`, { newName });
                  if (result) {
                     appState.profiles[newName] = appState.profiles[oldName];
                     delete appState.profiles[oldName];
@@ -574,11 +576,11 @@
                 return;
             }
             if (confirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`)) {
-                const result = await api.delete(`/profiles/${nameToDelete}`);
+                const result = await api.delete(`profiles/${nameToDelete}`);
                 if (result) {
                     delete appState.profiles[nameToDelete];
                     appState.activeProfile = Object.keys(appState.profiles)[0]; // Switch to first available
-                    await api.put('/profiles/active', { name: appState.activeProfile });
+                    await api.put('profiles/active', { name: appState.activeProfile });
                     renderAll();
                 }
             }
@@ -679,7 +681,7 @@
             }
             const name = prompt('請為此班表命名 (例如: 2024-W35):');
             if (name) {
-                const result = await api.post('/schedules', { name, data: generatedData });
+                const result = await api.post('schedules', { name, data: generatedData });
                 if (result) {
                     getActiveProfile().schedules[name] = generatedData;
                     renderSavedSchedules();
@@ -692,7 +694,7 @@
             e.preventDefault();
             if (e.target.matches('.load-schedule-link')) {
                 const name = e.target.dataset.name;
-                const scheduleData = await api.get(`/schedules/${name}`);
+                const scheduleData = await api.get(`schedules/${name}`);
                 if (scheduleData) {
                     generatedData = scheduleData;
                     displaySchedule(scheduleData);
@@ -700,7 +702,7 @@
             } else if (e.target.matches('.delete-schedule-btn')) {
                  const name = e.target.dataset.name;
                  if (confirm(`確定要刪除班表「${name}」嗎？`)) {
-                     const result = await api.delete(`/schedules/${name}`);
+                     const result = await api.delete(`schedules/${name}`);
                      if (result) {
                          delete getActiveProfile().schedules[name];
                          renderSavedSchedules();
@@ -757,7 +759,7 @@
             elements.generateSpinner.classList.remove('hidden');
             
             try {
-                const scheduleData = await api.post('/generate-schedule', {
+                const scheduleData = await api.post('generate-schedule', {
                     settings,
                     startWeek,
                     numWeeks,
