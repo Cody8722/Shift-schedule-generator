@@ -1,957 +1,365 @@
-<!DOCTYPE html>
-<html lang="zh-Hant" class="">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>班表產生器 (雲端資料庫版)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <!-- 新增 PDF 產生工具 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-light: #f9fafb;
-            --text-light: #000000;
-            --card-bg-light: #ffffff;
-            --muted-text-light: #6b7280;
-            --border-light: #e5e7eb;
-            --input-bg-light: #f3f4f6;
-            --primary-color: #3b82f6;
-            --primary-hover: #2563eb;
-            --danger-color: #ef4444;
-            --danger-hover: #dc2626;
+// --- 模組引入 ---
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const { MongoClient, ServerApiVersion } = require('mongodb');
+require('dotenv').config(); // 引入 dotenv 來讀取 .env 檔案
 
-            --bg-dark: #111827;
-            --text-dark: #ffffff;
-            --card-bg-dark: #1f2937;
-            --muted-text-dark: #9ca3af;
-            --border-dark: #374151;
-            --input-bg-dark: #374151;
-        }
-        body {
-            font-family: 'Noto Sans TC', sans-serif;
-            transition: background-color 0.3s, color 0.3s;
-        }
-        .theme-light {
-            background-color: var(--bg-light);
-            color: var(--text-light);
-        }
-        .theme-dark {
-            background-color: var(--bg-dark);
-            color: var(--text-dark);
-        }
-        .card {
-            background-color: var(--card-bg-light);
-            border: 1px solid var(--border-light);
-        }
-        .dark .card {
-            background-color: var(--card-bg-dark);
-            border-color: var(--border-dark);
-        }
-        .form-input {
-            background-color: var(--input-bg-light);
-            border: 1px solid var(--border-light);
-        }
-        .dark .form-input {
-            background-color: var(--input-bg-dark);
-            border-color: var(--border-dark);
-            color: var(--text-dark);
-        }
-        .text-muted { color: var(--muted-text-light); }
-        .dark .text-muted { color: var(--muted-text-dark); }
-        .btn-primary { background-color: var(--primary-color); }
-        .btn-primary:hover { background-color: var(--primary-hover); }
-        .btn-danger { background-color: var(--danger-color); }
-        .btn-danger:hover { background-color: var(--danger-hover); }
+// --- 常數設定 ---
+const app = express();
+const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI;
+const DB_NAME = process.env.DB_NAME || 'scheduleApp'; // 您可以指定資料庫名稱
+const PROFILES_COLLECTION = 'profiles';
+const CONFIG_ID = 'main_config'; // 使用一個固定的文件 ID 來儲存所有設定檔
 
-        /* 動畫效果 */
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+// --- 檢查環境變數 ---
+if (!MONGODB_URI) {
+    console.error('錯誤：請在 .env 檔案中設定 MONGODB_URI');
+    process.exit(1); // 缺少關鍵設定，直接結束程式
+}
+
+// --- MongoDB 客戶端設定 ---
+const client = new MongoClient(MONGODB_URI, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+});
+
+let db; // 用來儲存資料庫連線
+
+// --- 中介軟體 (Middleware) ---
+app.use(cors());
+app.use(express.json({ limit: '10mb' })); // 增加 JSON body 的大小限制
+app.use(express.static(path.join(__dirname))); // 伺服靜態檔案 (例如 index.html)
+
+// --- API 路由 (Routes) ---
+
+// 輔助函式：確保設定檔文件存在
+const ensureConfigDocument = async () => {
+    const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+    if (!config) {
+        console.log("找不到設定檔文件，正在建立新的...");
+        await db.collection(PROFILES_COLLECTION).insertOne({
+            _id: CONFIG_ID,
+            activeProfile: 'default',
+            profiles: {
+                'default': {
+                    settings: { tasks: [], personnel: [] },
+                    schedules: {}
+                }
+            }
+        });
+    }
+};
+
+// GET /api/profiles - 獲取所有設定檔
+app.get('/api/profiles', async (req, res) => {
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        res.json(config);
+    } catch (e) {
+        res.status(500).json({ message: '讀取設定檔時發生錯誤', error: e.message });
+    }
+});
+
+// PUT /api/profiles/active - 設定當前活動的設定檔
+app.put('/api/profiles/active', async (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ message: '缺少設定檔名稱' });
+    try {
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $set: { activeProfile: name } }
+        );
+        res.json({ message: `已切換至設定檔 ${name}` });
+    } catch (e) {
+        res.status(500).json({ message: '切換設定檔失敗', error: e.message });
+    }
+});
+
+// POST /api/profiles - 新增一個設定檔
+app.post('/api/profiles', async (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ message: '缺少設定檔名稱' });
+    try {
+        const newProfile = { settings: { tasks: [], personnel: [] }, schedules: {} };
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $set: { [`profiles.${name}`]: newProfile } }
+        );
+        res.status(201).json({ message: `已新增設定檔 ${name}` });
+    } catch (e) {
+        res.status(500).json({ message: '新增設定檔失敗', error: e.message });
+    }
+});
+
+// PUT /api/profiles/:name - 更新一個設定檔的設定
+app.put('/api/profiles/:name', async (req, res) => {
+    const { name } = req.params;
+    const { settings } = req.body;
+    if (!settings) return res.status(400).json({ message: '缺少設定內容' });
+    try {
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $set: { [`profiles.${name}.settings`]: settings } }
+        );
+        res.json({ message: `設定檔 ${name} 已更新` });
+    } catch (e) {
+        res.status(500).json({ message: '更新設定檔失敗', error: e.message });
+    }
+});
+
+// PUT /api/profiles/:name/rename - 重新命名設定檔
+app.put('/api/profiles/:name/rename', async (req, res) => {
+    const oldName = req.params.name;
+    const { newName } = req.body;
+    if (!newName) return res.status(400).json({ message: '缺少新名稱' });
+    try {
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $rename: { [`profiles.${oldName}`]: `profiles.${newName}` } }
+        );
+        res.json({ message: `設定檔已從 ${oldName} 改為 ${newName}` });
+    } catch (e) {
+        res.status(500).json({ message: '重新命名失敗', error: e.message });
+    }
+});
+
+// DELETE /api/profiles/:name - 刪除一個設定檔
+app.delete('/api/profiles/:name', async (req, res) => {
+    const { name } = req.params;
+    try {
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $unset: { [`profiles.${name}`]: "" } }
+        );
+        res.json({ message: `設定檔 ${name} 已刪除` });
+    } catch (e) {
+        res.status(500).json({ message: '刪除設定檔失敗', error: e.message });
+    }
+});
+
+// --- Schedule API Routes ---
+app.get('/api/schedules/:name', async (req, res) => {
+    const { name } = req.params;
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const scheduleData = config.profiles[config.activeProfile]?.schedules?.[name];
+        if (scheduleData) {
+            res.json(scheduleData);
+        } else {
+            res.status(404).json({ message: '找不到班表' });
+        }
+    } catch (e) {
+        res.status(500).json({ message: '讀取班表失敗', error: e.message });
+    }
+});
+
+app.post('/api/schedules', async (req, res) => {
+    const { name, data } = req.body;
+    if (!name || !data) return res.status(400).json({ message: '缺少名稱或內容' });
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $set: { [`profiles.${activeProfile}.schedules.${name}`]: data } }
+        );
+        res.status(201).json({ message: '班表已儲存' });
+    } catch (e) {
+        res.status(500).json({ message: '儲存班表失敗', error: e.message });
+    }
+});
+
+app.delete('/api/schedules/:name', async (req, res) => {
+    const { name } = req.params;
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+        if (config.profiles[activeProfile]?.schedules?.[name]) {
+             await db.collection(PROFILES_COLLECTION).updateOne(
+                { _id: CONFIG_ID },
+                { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } }
+            );
+            res.status(200).json({ message: '班表已刪除' });
+        } else {
+            res.status(404).json({ message: '找不到要刪除的班表' });
+        }
+    } catch (e) {
+        res.status(500).json({ message: '刪除班表失敗', error: e.message });
+    }
+});
+
+// --- Holiday API Route ---
+const holidaysCache = {};
+const getHolidaysForYear = async (year) => {
+    if (holidaysCache[year]) return holidaysCache[year];
+    const filePath = path.join(__dirname, 'holidays', `${year}.json`);
+    try {
+        const data = await require('fs').promises.readFile(filePath, 'utf-8');
+        const holidayData = JSON.parse(data);
+        const holidaySet = new Set(holidayData.filter(h => h.isHoliday).map(h => h.date));
+        holidaysCache[year] = holidaySet;
+        return holidaySet;
+    } catch (error) {
+        console.warn(`找不到 ${year} 年的假日檔案:`, error.message);
+        holidaysCache[year] = new Set();
+        return holidaysCache[year];
+    }
+};
+
+app.get('/api/holidays/:year', async (req, res) => {
+    const { year } = req.params;
+    const filePath = path.join(__dirname, 'holidays', `${year}.json`);
+    try {
+        const data = await require('fs').promises.readFile(filePath, 'utf-8');
+        res.json(JSON.parse(data));
+    } catch (error) {
+        res.status(404).json({ message: `${year} 年的假日檔案不存在` });
+    }
+});
+
+
+// --- Schedule Generation API Route ---
+
+const getWeekInfo = (weekString, weekIndex) => {
+    const [year, week] = weekString.split('-W').map(Number);
+    const date = new Date(year, 0, 1 + (week - 1 + weekIndex) * 7);
+    date.setDate(date.getDate() - (date.getDay() === 0 ? 6 : date.getDay() - 1));
+    const weekDates = [], weekDayDates = [];
+    for (let i = 0; i < 7; i++) {
+        const currentDate = new Date(date);
+        currentDate.setDate(date.getDate() + i);
+        const yyyy = currentDate.getFullYear();
+        const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(currentDate.getDate()).padStart(2, '0');
+        weekDates.push(`${yyyy}${mm}${dd}`);
+        if (i < 5) weekDayDates.push(`${mm}/${dd}`);
+    }
+    return { year, weekDates, weekDayDates };
+};
+
+const generateWeeklySchedule = (settings, scheduleDays) => {
+    const { personnel, tasks } = settings;
+    let schedule = Array.from({ length: 5 }, () => Array.from({ length: tasks.length }, () => []));
+    let weeklyCounts = personnel.map(() => 0);
+    let personnelPool = personnel.map((p, i) => ({ ...p, originalIndex: i }));
+
+    // 1. 建立一整週所有需要被填滿的「任務格」列表 (Task Pool)
+    const allShifts = [];
+    for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
+        if (!scheduleDays[dayIndex].shouldSchedule) continue;
+        for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+            for (let slotIndex = 0; slotIndex < tasks[taskIndex].count; slotIndex++) {
+                allShifts.push({ dayIndex, taskIndex });
+            }
+        }
+    }
+
+    // 2. 將任務格列表隨機打亂，確保公平性，避免總是先排星期一
+    allShifts.sort(() => Math.random() - 0.5);
+
+    // 3. 遍歷每一個被打亂的任務格，為它找到最合適的人
+    for (const shift of allShifts) {
+        const { dayIndex, taskIndex } = shift;
+
+        // 找出此刻最適合排這個班的人
+        let availablePersonnel = personnelPool.filter(p => {
+            const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(p.name);
+            const hasReachedWeeklyMax = weeklyCounts[p.originalIndex] >= p.maxShifts;
+            const isOffDay = p.offDays.includes(dayIndex);
+            return !isAlreadyAssignedToday && !hasReachedWeeklyMax && !isOffDay;
+        });
         
-        /* Loading Spinner */
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border-left-color: #09f;
-            animation: spin 1s ease infinite;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        if (availablePersonnel.length === 0) {
+            continue; // 如果找不到任何人，就跳過這個任務格
         }
 
+        // 排序規則：優先選擇本週班最少的人；如果班一樣少，就隨機選
+        availablePersonnel.sort((a, b) => {
+            const countA = weeklyCounts[a.originalIndex];
+            const countB = weeklyCounts[b.originalIndex];
+            if (countA !== countB) {
+                return countA - countB;
+            }
+            return Math.random() - 0.5;
+        });
 
-        /* --- 新增：班表美化樣式 --- */
-        .schedule-table {
-            border-collapse: separate; /* 讓 border-radius 生效 */
-            border-spacing: 0;
-            width: 100%;
-            border: 1px solid var(--border-light);
-            border-radius: 0.75rem; /* 圓角 */
-            overflow: hidden; /* 確保內容不會超出圓角範圍 */
-        }
-        .schedule-table th {
-            background-color: #f3f4f6; /* 淺灰色表頭 */
-            padding: 0.75rem;
-            text-align: center;
-            font-weight: 600;
-            border-bottom: 1px solid var(--border-light);
-            transition: background-color 0.3s;
-        }
-        .dark .schedule-table th {
-            background-color: #374151; /* 深色模式表頭 */
-            border-bottom-color: #4b5563;
-        }
-        .schedule-table td {
-            padding: 0.75rem;
-            text-align: center;
-            border-bottom: 1px solid var(--border-light);
-            transition: background-color 0.3s; /* 讓顏色有漸變效果 */
-        }
-        .dark .schedule-table td {
-            border-bottom-color: var(--border-dark);
-        }
-        .schedule-table tbody tr:last-child td {
-            border-bottom: none; /* 移除最後一行的底線 */
-        }
-        /* 斑馬條紋，增加可讀性 */
-        .schedule-table tbody tr:nth-child(even) {
-            background-color: #fafafa;
-        }
-        .dark .schedule-table tbody tr:nth-child(even) {
-            background-color: rgba(255, 255, 255, 0.03); /* 深色模式的細微條紋 */
-        }
-        .holiday-cell {
-            background-color: #e5e7eb;
-            color: #4b5563;
-            font-style: italic;
-        }
-        .dark .holiday-cell {
-            background-color: #4b5563;
-            color: #d1d5db;
-        }
-    </style>
-</head>
-<body class="theme-light">
-    <div class="container mx-auto p-4 md:p-8">
-        
-        <header class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl md:text-4xl font-bold text-blue-600 dark:text-blue-400">智慧班表產生器 Pro</h1>
-            <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
-                <svg id="theme-icon-light" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                <svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
-            </button>
-        </header>
+        // 指派最合適的人（排序後的第一位）
+        const personToAssign = availablePersonnel[0];
+        schedule[dayIndex][taskIndex].push(personToAssign.name);
+        weeklyCounts[personToAssign.originalIndex]++;
+    }
 
-        <!-- Profile Management -->
-        <div class="card p-4 rounded-lg shadow-md mb-6 fade-in">
-            <h2 class="text-xl font-bold mb-3">設定檔管理</h2>
-            <div class="flex flex-wrap items-center gap-2">
-                <label for="profile-select" class="font-medium">目前設定檔:</label>
-                <select id="profile-select" class="form-input rounded-md p-2 flex-grow"></select>
-                <button id="new-profile-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md transition">新增</button>
-                <button id="rename-profile-btn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-md transition">重新命名</button>
-                <button id="delete-profile-btn" class="btn-danger text-white font-bold py-2 px-4 rounded-md transition">刪除</button>
-                 <button id="import-profile-btn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-md transition">匯入設定</button>
-                <button id="export-profile-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition">匯出設定</button>
-                <input type="file" id="profile-file-input" class="hidden" accept=".json">
-            </div>
-        </div>
+    return schedule;
+};
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- Left Column: Settings -->
-            <div class="md:col-span-1 space-y-6">
-                <!-- Task Settings -->
-                <div id="task-settings" class="card p-4 rounded-lg shadow-md fade-in" style="animation-delay: 0.1s;">
-                    <h2 class="text-xl font-bold mb-3">1. 勤務設定</h2>
-                    <div id="task-list" class="space-y-2"></div>
-                    <button id="add-task" class="mt-3 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">新增勤務地點</button>
-                </div>
-                
-                <!-- Personnel Settings -->
-                <div id="personnel-settings" class="card p-4 rounded-lg shadow-md fade-in" style="animation-delay: 0.2s;">
-                    <h2 class="text-xl font-bold mb-3">2. 人員設定</h2>
-                    <div id="personnel-list" class="space-y-2"></div>
-                    <button id="add-personnel" class="mt-3 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">新增人員</button>
-                </div>
-            </div>
+app.post('/api/generate-schedule', async (req, res) => {
+    const { settings, startWeek, numWeeks } = req.body;
+    const colorSchemes = [
+        { header: '#cc4125' }, { header: '#e06666' },
+        { header: '#f6b26b' }, { header: '#ffd966' },
+        { header: '#93c47d' }, { header: '#76a5af' },
+        { header: '#6d9eeb' }, { header: '#6fa8dc' },
+        { header: '#8e7cc3' }, { header: '#c27ba0' }
+    ];
 
-            <!-- Right Column: Generation and Output -->
-            <div class="md:col-span-2 space-y-6">
-                <!-- Generation Settings -->
-                <div id="generation-settings" class="card p-4 rounded-lg shadow-md fade-in" style="animation-delay: 0.3s;">
-                    <h2 class="text-xl font-bold mb-3">3. 產生班表</h2>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label for="start-week" class="block font-medium text-sm text-muted">選擇開始週</label>
-                            <input type="week" id="start-week" class="form-input w-full p-2 rounded-md mt-1">
-                        </div>
-                        <div>
-                            <label for="num-weeks" class="block font-medium text-sm text-muted">產生週數</label>
-                            <input type="number" id="num-weeks" value="1" min="1" max="10" class="form-input w-full p-2 rounded-md mt-1">
-                        </div>
-                    </div>
-                    <button id="generate-schedule" class="mt-4 w-full text-lg bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md transition shadow-lg flex items-center justify-center gap-2">
-                        <span id="generate-btn-text">🚀 產生智慧班表</span>
-                        <div id="generate-spinner" class="spinner hidden"></div>
-                    </button>
-                </div>
+    if (!settings || !startWeek || !numWeeks) {
+        return res.status(400).json({ message: '缺少必要的排班參數' });
+    }
 
-                <!-- Schedule Output -->
-                <div id="output-container" class="card p-4 rounded-lg shadow-md hidden fade-in" style="animation-delay: 0.4s;">
-                    <div class="flex flex-wrap justify-between items-center mb-4">
-                        <h2 class="text-2xl font-bold">班表結果</h2>
-                        <div class="flex flex-wrap gap-2 mt-2 sm:mt-0">
-                            <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
-                            <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製 (純文字)</button>
-                            <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">匯出成 Excel</button>
-                            <button id="export-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition">下載成 PDF</button>
-                            <button id="print-schedule" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-md transition">專業列印</button>
-                        </div>
-                    </div>
-                    <div id="schedule-output" class="overflow-x-auto"></div>
-                </div>
+    try {
+        let generatedData = [];
+        for (let i = 0; i < numWeeks; i++) {
+            const { year, weekDates, weekDayDates } = getWeekInfo(startWeek, i);
+            const holidays = await getHolidaysForYear(year);
 
-                <!-- Saved Schedules -->
-                <div class="card p-4 rounded-lg shadow-md fade-in" style="animation-delay: 0.5s;">
-                    <h2 class="text-xl font-bold mb-3">已儲存的班表</h2>
-                    <ul id="saved-schedules-list" class="list-disc pl-5 space-y-1 text-blue-600 dark:text-blue-400">
-                        <!-- Saved schedules will be populated here -->
-                    </ul>
-                </div>
-            </div>
-        </div>
-        <footer class="text-center mt-8 text-sm text-muted">
-            <p>班表產生器 Pro &copy; 2024. All Rights Reserved.</p>
-        </footer>
-    </div>
-
-    <!-- Modal for personnel advanced settings -->
-    <div id="personnel-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
-        <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
-            <h3 class="text-2xl font-bold mb-4">進階設定: <span id="modal-personnel-name"></span></h3>
+            const scheduleDays = weekDates.slice(0, 5).map(dateStr => {
+                if (holidays.has(dateStr)) {
+                    return { shouldSchedule: false, description: '國定假日' };
+                }
+                return { shouldSchedule: true };
+            });
             
-            <div class="mb-4">
-                <label class="block font-medium mb-2">固定排休 (星期幾)</label>
-                <div id="off-days-container" class="flex flex-wrap gap-2">
-                    <!-- Checkboxes will be inserted here -->
-                </div>
-            </div>
+            const schedule = generateWeeklySchedule(settings, scheduleDays);
+            const startDate = weekDayDates[0];
+            const endDate = weekDayDates[weekDayDates.length-1];
 
-            <div class="mb-6">
-                <label for="preferred-task-select" class="block font-medium mb-2">偏好勤務地點</label>
-                <select id="preferred-task-select" class="form-input w-full p-2 rounded-md">
-                    <!-- Options will be inserted here -->
-                </select>
-            </div>
-            
-            <div class="flex justify-end gap-3">
-                <button id="modal-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
-                <button id="modal-save-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">儲存設定</button>
-            </div>
-        </div>
-    </div>
-
-
-<script>
-    // --- Global State & Configuration ---
-    const API_BASE_URL = '/api'; // Use relative path for production
-    let appState = {
-        activeProfile: 'default',
-        profiles: {
-            'default': {
-                settings: {
-                    tasks: [{ name: '任務一', count: 1 }],
-                    personnel: [{ name: '人員A', maxShifts: 5, offDays: [], preferredTask: '' }]
-                },
-                schedules: {}
-            }
-        },
-    };
-
-    // --- DOM Elements ---
-    document.addEventListener('DOMContentLoaded', () => {
-        const elements = {
-            profileSelect: document.getElementById('profile-select'),
-            newProfileBtn: document.getElementById('new-profile-btn'),
-            renameProfileBtn: document.getElementById('rename-profile-btn'),
-            deleteProfileBtn: document.getElementById('delete-profile-btn'),
-            importProfileBtn: document.getElementById('import-profile-btn'),
-            exportProfileBtn: document.getElementById('export-profile-btn'),
-            profileFileInput: document.getElementById('profile-file-input'),
-            taskList: document.getElementById('task-list'),
-            addTaskBtn: document.getElementById('add-task'),
-            personnelList: document.getElementById('personnel-list'),
-            addPersonnelBtn: document.getElementById('add-personnel'),
-            startWeekInput: document.getElementById('start-week'),
-            numWeeksInput: document.getElementById('num-weeks'),
-            generateBtn: document.getElementById('generate-schedule'),
-            generateBtnText: document.getElementById('generate-btn-text'),
-            generateSpinner: document.getElementById('generate-spinner'),
-            outputContainer: document.getElementById('output-container'),
-            scheduleOutput: document.getElementById('schedule-output'),
-            copyBtn: document.getElementById('copy-schedule'),
-            exportExcelBtn: document.getElementById('export-excel'),
-            exportPdfBtn: document.getElementById('export-pdf'),
-            printBtn: document.getElementById('print-schedule'),
-            saveScheduleBtn: document.getElementById('save-schedule-btn'),
-            savedSchedulesList: document.getElementById('saved-schedules-list'),
-            themeToggle: document.getElementById('theme-toggle'),
-            themeIconLight: document.getElementById('theme-icon-light'),
-            themeIconDark: document.getElementById('theme-icon-dark'),
-            // Modal elements
-            personnelModal: document.getElementById('personnel-modal'),
-            modalPersonnelName: document.getElementById('modal-personnel-name'),
-            offDaysContainer: document.getElementById('off-days-container'),
-            preferredTaskSelect: document.getElementById('preferred-task-select'),
-            modalCloseBtn: document.getElementById('modal-close-btn'),
-            modalSaveBtn: document.getElementById('modal-save-btn'),
-        };
-
-        let generatedData = null; // Store generated schedule data for export
-
-        // --- API Functions ---
-        const api = {
-            get: async (endpoint) => {
-                try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    return await response.json();
-                } catch (error) {
-                    console.error(`Failed to fetch ${endpoint}:`, error);
-                    alert(`無法從伺服器讀取資料: ${error.message}`);
-                    return null;
-                }
-            },
-            post: async (endpoint, body) => {
-                try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body),
-                    });
-                    if (!response.ok) {
-                         const errData = await response.json();
-                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
-                    }
-                    return await response.json();
-                } catch (error) {
-                    console.error(`Failed to post to ${endpoint}:`, error);
-                    alert(`操作失敗: ${error.message}`);
-                    return null;
-                }
-            },
-             put: async (endpoint, body) => {
-                try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body),
-                    });
-                     if (!response.ok) {
-                         const errData = await response.json();
-                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
-                    }
-                    return await response.json();
-                } catch (error) {
-                    console.error(`Failed to put to ${endpoint}:`, error);
-                    alert(`操作失敗: ${error.message}`);
-                    return null;
-                }
-            },
-            delete: async (endpoint) => {
-                 try {
-                    const response = await fetch(`${API_BASE_URL}${endpoint}`, { method: 'DELETE' });
-                     if (!response.ok) {
-                         const errData = await response.json();
-                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
-                    }
-                    return await response.json();
-                } catch (error) {
-                    console.error(`Failed to delete ${endpoint}:`, error);
-                    alert(`操作失敗: ${error.message}`);
-                    return null;
-                }
-            }
-        };
-
-        // --- Application Logic ---
-        const getActiveProfile = () => appState.profiles[appState.activeProfile];
-
-        const saveSettings = async () => {
-            const activeProfile = getActiveProfile();
-            if (!activeProfile) return;
-            await api.put(`/profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
-        };
-        
-        const renderTasks = () => {
-            elements.taskList.innerHTML = '';
-            const tasks = getActiveProfile()?.settings?.tasks || [];
-            tasks.forEach((task, index) => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center gap-2';
-                div.innerHTML = `
-                    <input type="text" value="${task.name}" class="form-input flex-grow p-1 rounded-md" placeholder="勤務名稱" data-index="${index}" data-field="name">
-                    <input type="number" value="${task.count}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count">
-                    <button class="remove-task text-red-500 hover:text-red-700 font-bold text-xl" data-index="${index}">&times;</button>
-                `;
-                elements.taskList.appendChild(div);
-            });
-        };
-
-        const renderPersonnel = () => {
-            elements.personnelList.innerHTML = '';
-            const personnel = getActiveProfile()?.settings?.personnel || [];
-            personnel.forEach((person, index) => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center gap-2';
-                div.innerHTML = `
-                    <input type="text" value="${person.name}" class="form-input flex-grow p-1 rounded-md" placeholder="人員姓名" data-index="${index}" data-field="name">
-                    <input type="number" value="${person.maxShifts}" class="form-input w-24 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
-                    <button class="advanced-settings-btn text-blue-500 hover:text-blue-700" data-index="${index}">⚙️</button>
-                    <button class="remove-personnel text-red-500 hover:text-red-700 font-bold text-xl" data-index="${index}">&times;</button>
-                `;
-                elements.personnelList.appendChild(div);
-            });
-        };
-
-        const renderProfileSelector = () => {
-            elements.profileSelect.innerHTML = '';
-            Object.keys(appState.profiles).forEach(name => {
-                const option = document.createElement('option');
-                option.value = option.textContent = name;
-                if (name === appState.activeProfile) {
-                    option.selected = true;
-                }
-                elements.profileSelect.appendChild(option);
-            });
-        };
-
-        const renderSavedSchedules = () => {
-            elements.savedSchedulesList.innerHTML = '<li>無 (尚未儲存任何班表)</li>';
-            const activeProfile = getActiveProfile();
-            if (!activeProfile) return;
-
-            const schedules = activeProfile?.schedules;
-            const scheduleNames = schedules ? Object.keys(schedules) : [];
-
-            if (scheduleNames.length > 0) {
-                elements.savedSchedulesList.innerHTML = '';
-                scheduleNames.forEach(name => {
-                    const li = document.createElement('li');
-                    li.className = 'flex justify-between items-center';
-                    li.innerHTML = `
-                        <a href="#" class="load-schedule-link hover:underline" data-name="${name}">${name}</a>
-                        <button class="delete-schedule-btn text-red-500 hover:text-red-700 text-xs" data-name="${name}">刪除</button>
-                    `;
-                    elements.savedSchedulesList.appendChild(li);
-                });
-            }
-        };
-
-        const renderAll = () => {
-            renderProfileSelector();
-            renderTasks();
-            renderPersonnel();
-            renderSavedSchedules();
-        };
-
-        const initApp = async () => {
-            try {
-                const data = await api.get('/profiles');
-                if (data && data.profiles) {
-                    appState.activeProfile = data.activeProfile;
-                    appState.profiles = data.profiles;
-                    renderAll();
-                } else {
-                   throw new Error('無法從伺服器獲取有效的設定檔資料。');
-                }
-            } catch(e) {
-                console.error("初始化 App 失敗:", e);
-                alert(`初始化失敗: ${e.message}`);
-            }
-        };
-
-        // --- Event Handlers ---
-        
-        elements.addTaskBtn.addEventListener('click', () => {
-            getActiveProfile().settings.tasks.push({ name: `任務${getActiveProfile().settings.tasks.length + 1}`, count: 1 });
-            renderTasks();
-            saveSettings();
-        });
-
-        elements.taskList.addEventListener('change', (e) => {
-            if (e.target.matches('input')) {
-                const { index, field } = e.target.dataset;
-                const value = e.target.type === 'number' ? parseInt(e.target.value, 10) : e.target.value;
-                getActiveProfile().settings.tasks[index][field] = value;
-                saveSettings();
-            }
-        });
-
-        elements.taskList.addEventListener('click', (e) => {
-            if (e.target.matches('.remove-task')) {
-                getActiveProfile().settings.tasks.splice(e.target.dataset.index, 1);
-                renderTasks();
-                saveSettings();
-            }
-        });
-
-        elements.addPersonnelBtn.addEventListener('click', () => {
-            getActiveProfile().settings.personnel.push({ name: `人員${getActiveProfile().settings.personnel.length + 1}`, maxShifts: 5, offDays: [], preferredTask: '' });
-            renderPersonnel();
-            saveSettings();
-        });
-        
-        elements.personnelList.addEventListener('change', (e) => {
-            if (e.target.matches('input')) {
-                const { index, field } = e.target.dataset;
-                const value = e.target.type === 'number' ? parseInt(e.target.value, 10) : e.target.value;
-                getActiveProfile().settings.personnel[index][field] = value;
-                saveSettings();
-            }
-        });
-
-        elements.personnelList.addEventListener('click', (e) => {
-            if (e.target.matches('.remove-personnel')) {
-                getActiveProfile().settings.personnel.splice(e.target.dataset.index, 1);
-                renderPersonnel();
-                saveSettings();
-            } else if (e.target.matches('.advanced-settings-btn')) {
-                openPersonnelModal(e.target.dataset.index);
-            }
-        });
-
-        elements.profileSelect.addEventListener('change', async (e) => {
-            const newProfileName = e.target.value;
-            const result = await api.put('/profiles/active', { name: newProfileName });
-            if (result) {
-                appState.activeProfile = newProfileName;
-                renderAll();
-            }
-        });
-
-        elements.newProfileBtn.addEventListener('click', async () => {
-            const name = prompt('請輸入新的設定檔名稱:');
-            if (name && !appState.profiles[name]) {
-                const result = await api.post('/profiles', { name });
-                if (result) {
-                    appState.profiles[name] = { settings: { tasks: [], personnel: [] }, schedules: {} };
-                    appState.activeProfile = name;
-                    renderAll();
-                }
-            } else if (name) {
-                alert('該名稱已存在！');
-            }
-        });
-
-        elements.renameProfileBtn.addEventListener('click', async () => {
-            const oldName = appState.activeProfile;
-            const newName = prompt(`請為「${oldName}」輸入新名稱:`, oldName);
-            if (newName && newName !== oldName && !appState.profiles[newName]) {
-                const result = await api.put(`/profiles/${oldName}/rename`, { newName });
-                 if (result) {
-                    appState.profiles[newName] = appState.profiles[oldName];
-                    delete appState.profiles[oldName];
-                    appState.activeProfile = newName;
-                    renderAll();
-                }
-            } else if (newName) {
-                alert('名稱無效或已存在！');
-            }
-        });
-
-        elements.deleteProfileBtn.addEventListener('click', async () => {
-            const nameToDelete = appState.activeProfile;
-            if (Object.keys(appState.profiles).length <= 1) {
-                alert('至少需保留一個設定檔！');
-                return;
-            }
-            if (confirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`)) {
-                const result = await api.delete(`/profiles/${nameToDelete}`);
-                if (result) {
-                    delete appState.profiles[nameToDelete];
-                    appState.activeProfile = Object.keys(appState.profiles)[0]; // Switch to first available
-                    await api.put('/profiles/active', { name: appState.activeProfile });
-                    renderAll();
-                }
-            }
-        });
-
-        elements.exportProfileBtn.addEventListener('click', () => {
-            const settings = getActiveProfile().settings;
-            const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${appState.activeProfile}_settings.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        });
-
-        elements.importProfileBtn.addEventListener('click', () => elements.profileFileInput.click());
-
-        elements.profileFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = async (event) => {
-                    try {
-                        const newSettings = JSON.parse(event.target.result);
-                        if (confirm('這將會覆蓋您目前的設定，確定要匯入嗎？')) {
-                            getActiveProfile().settings = newSettings;
-                            await saveSettings();
-                            renderTasks();
-                            renderPersonnel();
-                        }
-                    } catch (err) {
-                        alert('檔案格式錯誤，請確認是正確的 .json 設定檔。');
-                    }
-                };
-                reader.readAsText(file);
-            }
-        });
-        
-        // Modal Logic
-        let currentEditingPersonnelIndex = -1;
-        const openPersonnelModal = (index) => {
-            currentEditingPersonnelIndex = index;
-            const personnel = getActiveProfile().settings.personnel[index];
-            elements.modalPersonnelName.textContent = personnel.name;
-            
-            // Populate off days
-            const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
-            elements.offDaysContainer.innerHTML = weekDays.map((day, dayIndex) => `
-                <label class="flex items-center space-x-2">
-                    <input type="checkbox" class="form-checkbox rounded" value="${dayIndex}" ${personnel.offDays.includes(dayIndex) ? 'checked' : ''}>
-                    <span>${day}</span>
-                </label>
-            `).join('');
-
-            // Populate preferred task
-            const tasks = getActiveProfile().settings.tasks;
-            elements.preferredTaskSelect.innerHTML = '<option value="">無偏好</option>' + tasks.map(task => 
-                `<option value="${task.name}" ${personnel.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
-            ).join('');
-
-            elements.personnelModal.classList.remove('hidden');
-        };
-
-        const closePersonnelModal = () => {
-            elements.personnelModal.classList.add('hidden');
-            currentEditingPersonnelIndex = -1;
-        };
-        
-        elements.modalCloseBtn.addEventListener('click', closePersonnelModal);
-        
-        elements.modalSaveBtn.addEventListener('click', () => {
-            if (currentEditingPersonnelIndex > -1) {
-                const personnel = getActiveProfile().settings.personnel[currentEditingPersonnelIndex];
-                
-                // Save off days
-                personnel.offDays = Array.from(elements.offDaysContainer.querySelectorAll('input:checked')).map(cb => parseInt(cb.value));
-                
-                // Save preferred task
-                personnel.preferredTask = elements.preferredTaskSelect.value;
-                
-                saveSettings();
-                closePersonnelModal();
-            }
-        });
-        
-        // --- Schedule Generation & Display ---
-        elements.generateBtn.addEventListener('click', generateFullSchedule);
-        elements.copyBtn.addEventListener('click', copyScheduleToClipboard);
-        elements.exportExcelBtn.addEventListener('click', exportToExcel);
-        elements.exportPdfBtn.addEventListener('click', exportToPdf);
-        elements.printBtn.addEventListener('click', () => window.print());
-        
-        elements.saveScheduleBtn.addEventListener('click', async () => {
-            if (!generatedData) {
-                alert('請先產生班表！');
-                return;
-            }
-            const name = prompt('請為此班表命名 (例如: 2024-W35):');
-            if (name) {
-                const result = await api.post('/schedules', { name, data: generatedData });
-                if (result) {
-                    getActiveProfile().schedules[name] = generatedData;
-                    renderSavedSchedules();
-                    alert('班表已儲存！');
-                }
-            }
-        });
-
-        elements.savedSchedulesList.addEventListener('click', async (e) => {
-            e.preventDefault();
-            if (e.target.matches('.load-schedule-link')) {
-                const name = e.target.dataset.name;
-                const scheduleData = await api.get(`/schedules/${name}`);
-                if (scheduleData) {
-                    generatedData = scheduleData;
-                    displaySchedule(scheduleData);
-                }
-            } else if (e.target.matches('.delete-schedule-btn')) {
-                 const name = e.target.dataset.name;
-                 if (confirm(`確定要刪除班表「${name}」嗎？`)) {
-                     const result = await api.delete(`/schedules/${name}`);
-                     if (result) {
-                         delete getActiveProfile().schedules[name];
-                         renderSavedSchedules();
-                     }
-                 }
-            }
-        });
-        
-        function fineTuneSchedule() {
-            console.log("fineTuneSchedule called. This feature is under development.");
-            alert("班表微調功能正在開發中！");
-        }
-
-        // --- Theme Toggle ---
-        const applyTheme = (theme) => {
-            if (theme === 'dark') {
-                document.documentElement.classList.add('dark');
-                document.body.classList.remove('theme-light');
-                document.body.classList.add('theme-dark');
-                elements.themeIconLight.classList.add('hidden');
-                elements.themeIconDark.classList.remove('hidden');
-            } else {
-                document.documentElement.classList.remove('dark');
-                document.body.classList.remove('theme-dark');
-                document.body.classList.add('theme-light');
-                elements.themeIconLight.classList.remove('hidden');
-                elements.themeIconDark.classList.add('hidden');
-            }
-        };
-
-        elements.themeToggle.addEventListener('click', () => {
-            const isDark = document.documentElement.classList.contains('dark');
-            const newTheme = isDark ? 'light' : 'dark';
-            localStorage.setItem('theme', newTheme);
-            applyTheme(newTheme);
-        });
-        
-        async function generateFullSchedule() {
-            const settings = getActiveProfile().settings;
-            if (!settings.personnel || settings.personnel.length === 0 || !settings.tasks || settings.tasks.length === 0) {
-                alert('請先設定勤務與人員！');
-                return;
-            }
-            
-            const startWeek = elements.startWeekInput.value;
-            const numWeeks = parseInt(elements.numWeeksInput.value, 10);
-            if (!startWeek) {
-                alert('請選擇開始週！');
-                return;
-            }
-
-            elements.generateBtn.disabled = true;
-            elements.generateBtnText.classList.add('hidden');
-            elements.generateSpinner.classList.remove('hidden');
-            
-            try {
-                const scheduleData = await api.post('/generate-schedule', {
-                    settings,
-                    startWeek,
-                    numWeeks,
-                });
-
-                if (scheduleData) {
-                    generatedData = scheduleData;
-                    displaySchedule(generatedData);
-                } else {
-                     throw new Error('伺服器未回傳班表資料。');
-                }
-            } catch(e) {
-                console.error("產生班表失敗:", e);
-                alert(`產生班表失敗: ${e.message}`);
-            } finally {
-                elements.generateBtn.disabled = false;
-                elements.generateBtnText.classList.remove('hidden');
-                elements.generateSpinner.classList.add('hidden');
-            }
-        }
-
-        function displaySchedule(dataToDisplay) {
-            let html = '';
-            dataToDisplay.forEach((data, index) => {
-                const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
-                const weekDayNames = ['一', '二', '三', '四', '五'];
-                const headerStyle = `style="background-color: ${color.header}; color: white;"`;
-                html += `
-                    <div class="mb-8" id="schedule-week-${index}">
-                        <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
-                        <table class="schedule-table">
-                            <thead>
-                                <tr>
-                                    <th ${headerStyle}>勤務地點</th>
-                                    ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
-                                </tr>
-                            </thead>
-                            <tbody id="schedule-table-body-${index}">
-                                ${tasks.map((task, taskIndex) => {
-                                    let taskRow = `<tr>`;
-                                    // Task name cell
-                                    taskRow += `<td class="font-medium align-middle">${task.name}</td>`;
-                                    
-                                    // Day cells
-                                    taskRow += weekDayDates.map((_, dayIndex) => {
-                                        if (!scheduleDays[dayIndex].shouldSchedule) {
-                                            if (taskIndex === 0) {
-                                                return `<td class="holiday-cell align-middle" rowspan="${tasks.length}">${scheduleDays[dayIndex].description}</td>`;
-                                            }
-                                            return '';
-                                        } else {
-                                            const names = schedule[dayIndex][taskIndex];
-                                            const cellContent = names.join('<br>');
-                                            return `<td class="align-middle">${cellContent}</td>`;
-                                        }
-                                    }).join('');
-                                    
-                                    taskRow += `</tr>`;
-                                    return taskRow;
-                                }).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            });
-            elements.scheduleOutput.innerHTML = html;
-            elements.outputContainer.classList.remove('hidden');
-        }
-        
-        function copyScheduleToClipboard() {
-            if (!generatedData) return;
-            let tsvContent = '';
-            generatedData.forEach((data, index) => {
-                const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
-                const weekDayNames = ['一', '二', '三', '四', '五'];
-                tsvContent += `--- 第 ${index + 1} 週班表 (${dateRange}) ---\n`;
-                tsvContent += ['勤務地點', ...weekDayDates.slice(0, 5).map((date, i) => `星期${weekDayNames[i]}(${date})`)].join('\t') + '\n';
-
-                tasks.forEach((task, taskIndex) => {
-                    const maxSlots = task.count; // We need to handle multiple people per task
-                    const namesByDay = schedule.map(daySchedule => daySchedule[taskIndex]);
-                    
-                    for(let i = 0; i < maxSlots; i++) {
-                        let rowData = [i === 0 ? task.name : ''];
-                        let hasData = false;
-                        for(let dayIndex = 0; dayIndex < 5; dayIndex++) {
-                             if (!scheduleDays[dayIndex].shouldSchedule) {
-                                rowData.push(i === 0 ? scheduleDays[dayIndex].description : '');
-                             } else {
-                                 const name = namesByDay[dayIndex][i] || '';
-                                 rowData.push(name);
-                                 if(name) hasData = true;
-                             }
-                        }
-                        // Only add row if it has data
-                        if(hasData || i === 0) {
-                            tsvContent += rowData.join('\t') + '\n';
-                        }
-                    }
-                });
-                tsvContent += '\n';
-            });
-            navigator.clipboard.writeText(tsvContent).then(() => {
-                elements.copyBtn.textContent = '已複製！';
-                setTimeout(() => { elements.copyBtn.textContent = '複製 (純文字)'; }, 2000);
-            }).catch(err => {
-                console.error('複製失敗:', err);
-                alert('複製失敗，您的瀏覽器可能不支援此功能。');
+            generatedData.push({
+                schedule,
+                tasks: settings.tasks,
+                dateRange: `${startDate} - ${endDate}`,
+                weekDayDates,
+                scheduleDays,
+                color: colorSchemes[i % colorSchemes.length]
             });
         }
-        
-        function exportToExcel() {
-            if (!generatedData) return;
-            const wb = XLSX.utils.book_new();
-            generatedData.forEach((data, index) => {
-                const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
-                const weekDayNames = ['一', '二', '三', '四', '五'];
-                
-                const header = ['勤務地點', ...weekDayDates.slice(0, 5).map((date, i) => `星期${weekDayNames[i]}\n(${date})`)];
-                const ws_data = [header];
-                
-                tasks.forEach((task, taskIndex) => {
-                     const maxSlots = task.count;
-                     const namesByDay = schedule.map(daySchedule => daySchedule[taskIndex]);
+        res.json(generatedData);
+    } catch (e) {
+        console.error("排班時發生錯誤:", e);
+        res.status(500).json({ message: '產生班表時發生內部錯誤', error: e.message });
+    }
+});
 
-                     for(let i = 0; i < maxSlots; i++) {
-                        let rowData = [i === 0 ? task.name : ''];
-                        let hasData = false;
-                         for(let dayIndex = 0; dayIndex < 5; dayIndex++) {
-                             if (!scheduleDays[dayIndex].shouldSchedule) {
-                                rowData.push(i === 0 ? scheduleDays[dayIndex].description : '');
-                             } else {
-                                 const name = namesByDay[dayIndex][i] || '';
-                                 rowData.push(name);
-                                 if(name) hasData = true;
-                             }
-                        }
-                        if(hasData || i === 0){
-                           ws_data.push(rowData);
-                        }
-                    }
-                });
-                
-                const ws = XLSX.utils.aoa_to_sheet(ws_data);
-                XLSX.utils.book_append_sheet(wb, ws, `第${index+1}週 ${dateRange}`);
-            });
-            XLSX.writeFile(wb, "班表.xlsx");
-        }
 
-        function exportToPdf() {
-            if (!generatedData) return;
-            const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const scheduleElements = document.querySelectorAll('[id^="schedule-week-"]');
-            let yPos = 10;
-            const pageHeight = pdf.internal.pageSize.height - 20; // A4 height with margin
+// --- 啟動伺服器 ---
+const startServer = async () => {
+    try {
+        await client.connect();
+        console.log("已成功連線到 MongoDB Atlas!");
+        db = client.db(DB_NAME);
+        await ensureConfigDocument();
+        app.listen(PORT, () => {
+            console.log(`伺服器正在 http://localhost:${PORT} 上運行`);
+        });
+    } catch (err) {
+        console.error("無法連線到 MongoDB 或啟動伺服器:", err);
+        process.exit(1);
+    }
+};
 
-            const processElement = (index) => {
-                if (index >= scheduleElements.length) {
-                    pdf.save('班表.pdf');
-                    return;
-                }
-                const element = scheduleElements[index];
-                html2canvas(element, { scale: 2 }).then(canvas => {
-                    const imgData = canvas.toDataURL('image/png');
-                    const imgWidth = 190; // A4 width with margin
-                    const imgHeight = canvas.height * imgWidth / canvas.width;
-                    
-                    if (yPos + imgHeight > pageHeight && index > 0) {
-                        pdf.addPage();
-                        yPos = 10;
-                    }
-                    
-                    pdf.addImage(imgData, 'PNG', 10, yPos, imgWidth, imgHeight);
-                    yPos += imgHeight + 10;
-                    
-                    processElement(index + 1);
-                });
-            };
-            processElement(0);
-        }
-
-        // --- Initial Load ---
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        applyTheme(savedTheme);
-        
-        const today = new Date();
-        const year = today.getFullYear();
-        const week = Math.ceil((((today - new Date(year, 0, 1)) / 86400000) + new Date(year, 0, 1).getDay() + 1) / 7);
-        elements.startWeekInput.value = `${year}-W${String(week).padStart(2,'0')}`;
-
-        initApp();
-    });
-</script>
-</body>
-</html>
+startServer();
 
