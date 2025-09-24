@@ -269,7 +269,6 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         const { dayIndex, taskIndex } = shift;
 
         let availablePersonnel = personnelPool.filter(p => {
-            // --- FIX: This is the rule "Each person at most one shift per day" ---
             const isAlreadyAssignedToday = schedule[dayIndex].flat().includes(p.name);
             const hasReachedWeeklyMax = weeklyCounts[p.originalIndex] >= p.maxShifts;
             const isOffDay = p.offDays.includes(dayIndex);
