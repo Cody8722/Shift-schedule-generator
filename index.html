@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" class="">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,11 +13,76 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-light: #f9fafb;
+            --text-light: #000000;
+            --card-bg-light: #ffffff;
+            --muted-text-light: #6b7280;
+            --border-light: #e5e7eb;
+            --input-bg-light: #ffffff;
+            --header-light: #4c51bf;
+            
+            --bg-dark: #111827;
+            --text-dark: #f3f4f6;
+            --card-bg-dark: #1f2937;
+            --muted-text-dark: #9ca3af;
+            --border-dark: #4b5563;
+            --input-bg-dark: #374151;
+            --header-dark: #818cf8;
+        }
+
         body { 
             font-family: '標楷體', 'BiauKai', 'DFKai-SB', 'Noto Sans TC', sans-serif; 
-            color: #000000;
+            background-color: var(--bg-light);
+            color: var(--text-light);
+            transition: background-color 0.3s, color 0.3s;
         }
+        .dark body {
+            background-color: var(--bg-dark);
+            color: var(--text-dark);
+        }
+        .card {
+            background-color: var(--card-bg-light);
+            transition: background-color 0.3s;
+        }
+        .dark .card {
+            background-color: var(--card-bg-dark);
+        }
+        .text-muted {
+            color: var(--muted-text-light);
+        }
+        .dark .text-muted {
+            color: var(--muted-text-dark);
+        }
+        .border-default {
+            border-color: var(--border-light);
+        }
+        .dark .border-default {
+            border-color: var(--border-dark);
+        }
+        .input-bg {
+             background-color: var(--input-bg-light);
+             color: var(--text-light);
+        }
+        .dark .input-bg {
+             background-color: var(--input-bg-dark);
+             color: var(--text-dark);
+        }
+        .header-text { color: var(--header-light); }
+        .dark .header-text { color: var(--header-dark); }
         
+        .dark #schedule-output table th {
+            background-color: #374151 !important;
+            border-color: #4b5563 !important;
+        }
+        .dark #schedule-output td[style*="background-color"] {
+            background-color: #4b5563 !important;
+        }
+        .dark #schedule-output td {
+            border-color: #4b5563 !important;
+        }
+
+
         /* -- 列印專用樣式 -- */
         @media print {
             @page {
@@ -91,21 +156,28 @@
         .editable-cell:hover {
             background-color: #f0e6ff !important;
         }
+        .dark .editable-cell:hover {
+            background-color: #4338ca !important;
+        }
     </style>
 </head>
-<body class="bg-gray-50 text-black">
+<body>
     <div class="container mx-auto p-4 md:p-8">
-        <header class="text-center mb-8 no-print">
-            <h1 class="text-3xl md:text-4xl font-bold" style="color: #4c51bf;">班表產生器 (雲端資料庫版)</h1>
-            <p class="text-gray-500 mt-2">所有設定與班表將永久儲存在雲端資料庫</p>
+        <header class="relative text-center mb-8 no-print">
+            <h1 class="text-3xl md:text-4xl font-bold header-text">班表產生器 (雲端資料庫版)</h1>
+            <p class="text-muted mt-2">所有設定與班表將永久儲存在雲端資料庫</p>
+            <button id="theme-toggle" class="absolute top-0 right-0 p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 text-muted">
+                <svg id="theme-toggle-dark-icon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+                <svg id="theme-toggle-light-icon" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 7.072l.707-.707a1 1 0 10-1.414-1.414l-.707.707a1 1 0 001.414 1.414zM3 11a1 1 0 100-2H2a1 1 0 100 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+            </button>
         </header>
 
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div class="lg:col-span-1 bg-white p-6 rounded-2xl shadow-lg no-print space-y-4">
+            <div class="lg:col-span-1 card p-6 rounded-2xl shadow-lg no-print space-y-4">
                 <!-- Profile Management -->
-                <div class="p-3 border rounded-lg bg-gray-50 space-y-3">
-                    <label for="profile-selector" class="text-sm font-bold text-gray-700">設定檔管理</label>
-                    <select id="profile-selector" class="w-full p-2 border rounded-md shadow-sm text-black"></select>
+                <div class="p-3 border border-default rounded-lg bg-gray-50 dark:bg-gray-800 space-y-3">
+                    <label for="profile-selector" class="text-sm font-bold">設定檔管理</label>
+                    <select id="profile-selector" class="w-full p-2 border border-default rounded-md shadow-sm input-bg"></select>
                     <div class="grid grid-cols-3 gap-2">
                         <button id="new-profile-btn" class="text-sm bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600">新增</button>
                         <button id="rename-profile-btn" class="text-sm bg-yellow-500 text-white py-2 rounded-lg hover:bg-yellow-600">重新命名</button>
@@ -115,12 +187,12 @@
 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label for="start-date" class="text-sm font-medium text-gray-700">開始日期</label>
-                        <input type="date" id="start-date" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black">
+                        <label for="start-date" class="text-sm font-medium">開始日期</label>
+                        <input type="date" id="start-date" class="mt-1 w-full p-2 border border-default rounded-md shadow-sm input-bg">
                     </div>
                     <div>
-                        <label for="num-weeks" class="text-sm font-medium text-gray-700">產生週數</label>
-                        <select id="num-weeks" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black">
+                        <label for="num-weeks" class="text-sm font-medium">產生週數</label>
+                        <select id="num-weeks" class="mt-1 w-full p-2 border border-default rounded-md shadow-sm input-bg">
                             <option value="1">1 週</option>
                             <option value="2">2 週</option>
                             <option value="3">3 週</option>
@@ -131,52 +203,52 @@
 
                 <div class="mt-2 flex items-center space-x-2">
                     <input type="checkbox" id="skip-holidays" class="form-checkbox h-5 w-5 text-purple-600 rounded" checked>
-                    <label for="skip-holidays" class="text-sm font-medium text-gray-700">自動跳過國定假日 (台灣)</label>
+                    <label for="skip-holidays" class="text-sm font-medium">自動跳過國定假日 (台灣)</label>
                 </div>
 
                 <div>
                     <div class="flex justify-between items-center mb-1">
-                        <label for="tasks" class="text-sm font-medium text-gray-700">勤務地點／任務</label>
+                        <label for="tasks" class="text-sm font-medium">勤務地點／任務</label>
                         <div class="flex space-x-2">
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md save-template-btn" data-type="tasks">儲存列表</button>
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md load-template-btn" data-type="tasks">讀取列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md save-template-btn" data-type="tasks">儲存列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md load-template-btn" data-type="tasks">讀取列表</button>
                         </div>
                     </div>
-                    <textarea id="tasks" rows="4" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="素描教室:2&#10;大鏡子:1"></textarea>
+                    <textarea id="tasks" rows="4" class="mt-1 w-full p-2 border border-default rounded-md shadow-sm input-bg" placeholder="素描教室:2&#10;大鏡子:1"></textarea>
                 </div>
                 <div>
                      <div class="flex justify-between items-center mb-1">
-                        <label for="names" class="text-sm font-medium text-gray-700">人員名單</label>
+                        <label for="names" class="text-sm font-medium">人員名單</label>
                         <div class="flex space-x-2">
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md save-template-btn" data-type="names">儲存列表</button>
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md load-template-btn" data-type="names">讀取列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md save-template-btn" data-type="names">儲存列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md load-template-btn" data-type="names">讀取列表</button>
                         </div>
                     </div>
-                    <textarea id="names" rows="5" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="葉郁雅&#10;陳祈瑋:2"></textarea>
+                    <textarea id="names" rows="5" class="mt-1 w-full p-2 border border-default rounded-md shadow-sm input-bg" placeholder="葉郁雅&#10;陳祈瑋:2"></textarea>
                 </div>
                  <div>
                     <div class="flex justify-between items-center mb-1">
-                        <label for="preferences" class="text-sm font-medium text-gray-700">偏好位置 (選填)</label>
+                        <label for="preferences" class="text-sm font-medium">偏好位置 (選填)</label>
                         <div class="flex space-x-2">
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md save-template-btn" data-type="preferences">儲存列表</button>
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md load-template-btn" data-type="preferences">讀取列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md save-template-btn" data-type="preferences">儲存列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md load-template-btn" data-type="preferences">讀取列表</button>
                         </div>
                     </div>
-                    <textarea id="preferences" rows="3" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="葉郁雅:素描教室"></textarea>
+                    <textarea id="preferences" rows="3" class="mt-1 w-full p-2 border border-default rounded-md shadow-sm input-bg" placeholder="葉郁雅:素描教室"></textarea>
                 </div>
                 <div>
                     <div class="flex justify-between items-center mb-1">
-                        <label for="unavailability" class="text-sm font-medium text-gray-700">不能值勤時間 (選填)</label>
+                        <label for="unavailability" class="text-sm font-medium">不能值勤時間 (選填)</label>
                         <div class="flex space-x-2">
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md save-template-btn" data-type="unavailability">儲存列表</button>
-                            <button class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md load-template-btn" data-type="unavailability">讀取列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md save-template-btn" data-type="unavailability">儲存列表</button>
+                            <button class="text-xs bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 px-2 py-1 rounded-md load-template-btn" data-type="unavailability">讀取列表</button>
                         </div>
                     </div>
-                    <textarea id="unavailability" rows="3" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black" placeholder="陳祈瑋:一,三"></textarea>
+                    <textarea id="unavailability" rows="3" class="mt-1 w-full p-2 border border-default rounded-md shadow-sm input-bg" placeholder="陳祈瑋:一,三"></textarea>
                 </div>
                  <div>
-                    <label for="max-shifts" class="text-sm font-medium text-gray-700">預設每週最多值勤次數</label>
-                    <input type="number" id="max-shifts" value="3" min="1" class="mt-1 w-full p-2 border rounded-md shadow-sm text-black">
+                    <label for="max-shifts" class="text-sm font-medium">預設每週最多值勤次數</label>
+                    <input type="number" id="max-shifts" value="3" min="1" class="mt-1 w-full p-2 border border-default rounded-md shadow-sm input-bg">
                 </div>
                  <div class="space-y-3 pt-2">
                     <button id="generate-btn" class="w-full bg-purple-600 text-white font-bold py-3 rounded-lg hover:bg-purple-700 shadow-md">產生並儲存設定</button>
@@ -190,7 +262,7 @@
                          <button id="download-pdf-btn" class="w-full bg-gray-700 text-white py-2 rounded-lg hover:bg-gray-800 disabled:bg-gray-300" disabled>下載 PDF</button>
                          <button id="copy-btn" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-300" disabled>複製</button>
                     </div>
-                    <hr>
+                    <hr class="border-default">
                     <div class="grid grid-cols-2 gap-3">
                         <label for="import-file-input" class="w-full text-center bg-teal-500 text-white py-2 rounded-lg hover:bg-teal-600 cursor-pointer">匯入設定檔</label>
                         <input type="file" id="import-file-input" class="hidden" accept=".json">
@@ -200,8 +272,8 @@
             </div>
 
             <div id="main-results-column" class="lg:col-span-2 space-y-6">
-                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-lg min-h-[400px]">
-                     <div id="placeholder" class="flex flex-col items-center justify-center h-full text-gray-400">
+                <div class="card p-4 sm:p-6 rounded-2xl shadow-lg min-h-[400px]">
+                     <div id="placeholder" class="flex flex-col items-center justify-center h-full text-muted">
                         <p class="text-lg">產生的班表將會顯示在這裡</p>
                     </div>
                     <div id="schedule-output"></div>
@@ -219,10 +291,10 @@
 
     <!-- Modal for loading templates -->
     <div id="template-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 no-print z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div class="p-4 border-b flex justify-between items-center">
+        <div class="card rounded-lg shadow-xl w-full max-w-md">
+            <div class="p-4 border-b border-default flex justify-between items-center">
                 <h3 id="modal-title" class="text-lg font-bold">讀取列表</h3>
-                <button id="modal-close-btn" class="text-gray-500 hover:text-gray-800">&times;</button>
+                <button id="modal-close-btn" class="text-muted hover:text-gray-800 dark:hover:text-gray-300">&times;</button>
             </div>
             <div id="modal-body" class="p-4 max-h-64 overflow-y-auto">
                 <!-- Template list will be injected here -->
@@ -232,42 +304,42 @@
 
     <!-- Modal for Exporting Settings -->
     <div id="export-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 no-print z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div class="p-4 border-b flex justify-between items-center">
+        <div class="card rounded-lg shadow-xl w-full max-w-lg">
+            <div class="p-4 border-b border-default flex justify-between items-center">
                 <h3 id="export-modal-title" class="text-lg font-bold">選擇要匯出的項目</h3>
-                <button id="export-modal-close-btn" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+                <button id="export-modal-close-btn" class="text-muted hover:text-gray-800 dark:hover:text-gray-300 text-2xl">&times;</button>
             </div>
             <div id="export-modal-body" class="p-6 space-y-4">
-                <p class="text-sm text-gray-600">請勾選您想要包含在匯出檔案中的設定項目。</p>
+                <p class="text-sm text-muted">請勾選您想要包含在匯出檔案中的設定項目。</p>
                 <div class="grid grid-cols-2 gap-4">
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100">
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
                         <input type="checkbox" id="export-tasks" class="form-checkbox h-5 w-5 text-purple-600" checked>
                         <span>勤務地點／任務</span>
                     </label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100">
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
                         <input type="checkbox" id="export-names" class="form-checkbox h-5 w-5 text-purple-600" checked>
                         <span>人員名單</span>
                     </label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100">
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
                         <input type="checkbox" id="export-preferences" class="form-checkbox h-5 w-5 text-purple-600" checked>
                         <span>偏好位置</span>
                     </label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100">
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
                         <input type="checkbox" id="export-unavailability" class="form-checkbox h-5 w-5 text-purple-600" checked>
                         <span>不能值勤時間</span>
                     </label>
-                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100">
+                    <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
                         <input type="checkbox" id="export-maxShifts" class="form-checkbox h-5 w-5 text-purple-600" checked>
                         <span>預設值勤次數</span>
                     </label>
-                     <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100">
+                     <label class="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
                         <input type="checkbox" id="export-dates" class="form-checkbox h-5 w-5 text-purple-600" checked>
                         <span>日期與週數</span>
                     </label>
                 </div>
             </div>
-            <div class="p-4 border-t flex justify-end space-x-3">
-                <button id="export-modal-cancel-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">取消</button>
+            <div class="p-4 border-t border-default flex justify-end space-x-3">
+                <button id="export-modal-cancel-btn" class="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500">取消</button>
                 <button id="export-modal-confirm-btn" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">確認匯出</button>
             </div>
         </div>
@@ -275,10 +347,10 @@
 
     <!-- Fine Tune Changes Modal -->
     <div id="changes-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 no-print z-50">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div class="p-4 border-b flex justify-between items-center">
+        <div class="card rounded-lg shadow-xl w-full max-w-lg">
+            <div class="p-4 border-b border-default flex justify-between items-center">
                 <h3 id="changes-modal-title" class="text-lg font-bold">智慧微調變更報告</h3>
-                <button id="changes-modal-close-btn" class="text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+                <button id="changes-modal-close-btn" class="text-muted hover:text-gray-800 dark:hover:text-gray-300 text-2xl">&times;</button>
             </div>
             <div id="changes-modal-body" class="p-6 max-h-80 overflow-y-auto">
                 <!-- Changes list will be injected here -->
@@ -328,6 +400,41 @@ window.deleteSchedule = async (name) => {
 
 
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Theme Toggle ---
+    const themeToggleBtn = document.getElementById('theme-toggle');
+    const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
+    const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
+
+    // Function to apply theme
+    const applyTheme = (theme) => {
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            themeToggleLightIcon.classList.remove('hidden');
+            themeToggleDarkIcon.classList.add('hidden');
+        } else {
+            document.documentElement.classList.remove('dark');
+            themeToggleDarkIcon.classList.remove('hidden');
+            themeToggleLightIcon.classList.add('hidden');
+        }
+    };
+
+    // Check for saved theme in localStorage or system preference
+    const savedTheme = localStorage.getItem('theme');
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme) {
+        applyTheme(savedTheme);
+    } else {
+        applyTheme(systemPrefersDark ? 'dark' : 'light');
+    }
+
+    themeToggleBtn.addEventListener('click', () => {
+        const isDark = document.documentElement.classList.contains('dark');
+        const newTheme = isDark ? 'light' : 'dark';
+        localStorage.setItem('theme', newTheme);
+        applyTheme(newTheme);
+    });
+    
     // --- DOM Element Selection ---
     const allInputs = {
         startDate: document.getElementById('start-date'),
@@ -515,14 +622,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const scheduleNames = Object.keys(schedules);
         
         const container = document.createElement('div');
-        container.className = 'bg-white p-6 rounded-2xl shadow-lg';
+        container.className = 'card p-6 rounded-2xl shadow-lg';
 
         let content;
         if (scheduleNames.length === 0) {
-            content = '<p class="text-gray-500 text-center">目前沒有已儲存的班表。</p>';
+            content = '<p class="text-muted text-center">目前沒有已儲存的班表。</p>';
         } else {
             const listItems = scheduleNames.map(name => `
-                <li class="flex justify-between items-center p-2 border-b">
+                <li class="flex justify-between items-center p-2 border-b border-default">
                     <span class="truncate pr-4">${name}</span>
                     <div class="flex-shrink-0">
                         <button onclick="loadSchedule('${name.replace(/'/g, "\\'")}', false)" class="text-sm bg-green-500 text-white py-1 px-3 rounded hover:bg-green-600">載入</button>
@@ -794,14 +901,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const statsContainer = document.createElement('div');
             statsContainer.id = `stats-output-${index}`;
-            statsContainer.className = 'stats-container bg-white p-4 sm:p-6 rounded-2xl shadow-lg';
+            statsContainer.className = 'stats-container card p-4 sm:p-6 rounded-2xl shadow-lg';
             statsContainer.innerHTML = renderStatistics(data, index);
             statsOutputWrapper.appendChild(statsContainer);
         });
 
         if (allWarnings && allWarnings.length > 0) {
             const warningsContainer = document.createElement('div');
-            warningsContainer.className = 'warnings-container bg-yellow-50 border border-yellow-300 text-yellow-800 p-4 sm:p-6 rounded-2xl shadow-lg no-print';
+            warningsContainer.className = 'warnings-container bg-yellow-50 dark:bg-yellow-900/50 border border-yellow-300 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200 p-4 sm:p-6 rounded-2xl shadow-lg no-print';
             let warningsHTML = `<h3 class="text-lg font-bold mb-3 text-center">排班警告</h3><ul class="list-disc list-inside space-y-1">`;
             allWarnings.forEach(warning => {
                 warningsHTML += `<li>${warning}</li>`;
@@ -825,10 +932,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const table = document.createElement('table');
         table.className = 'w-full border-collapse text-center table-fixed';
         
-        let tableHead = `<thead><tr><th class="p-2 border border-gray-300 text-left" style="background-color: #${colorScheme.header};">勤務地點</th>`;
+        let tableHead = `<thead><tr><th class="p-2 border border-default text-left" style="background-color: #${colorScheme.header};">勤務地點</th>`;
         weekDayDates.slice(0, 5).forEach((date, index) => {
             const dayName = weekDayNames[index];
-            tableHead += `<th class="p-2 border border-gray-300" style="background-color: #${colorScheme.header};">星期${dayName}<br>(${date})</th>`;
+            tableHead += `<th class="p-2 border border-default" style="background-color: #${colorScheme.header};">星期${dayName}<br>(${date})</th>`;
         });
         tableHead += `</tr></thead>`;
         
@@ -837,7 +944,7 @@ document.addEventListener('DOMContentLoaded', () => {
             for (let i = 0; i < task.count; i++) {
                 tableBody += `<tr>`;
                 if (i === 0) {
-                    tableBody += `<td class="p-2 border border-gray-300 text-left font-semibold align-middle" style="background-color: #${colorScheme.header};" rowspan="${task.count}">${task.name}</td>`;
+                    tableBody += `<td class="p-2 border border-default text-left font-semibold align-middle" style="background-color: #${colorScheme.header};" rowspan="${task.count}">${task.name}</td>`;
                 }
                 for (let dayIndex = 0; dayIndex < 5; dayIndex++) { // Only loop through Mon-Fri
                      if (!scheduleDays[dayIndex].shouldSchedule) {
@@ -845,23 +952,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         const text = dayInfo.description || "休息";
                         const isHoliday = dayInfo.isHoliday;
                         
-                        let bgColor = 'bg-gray-100';
-                        let textColor = 'text-gray-400';
+                        let bgColor = 'bg-gray-100 dark:bg-gray-700';
+                        let textColor = 'text-gray-400 dark:text-gray-500';
 
                         if(isHoliday) {
-                            bgColor = 'bg-red-100';
-                            textColor = 'text-red-700';
+                            bgColor = 'bg-red-100 dark:bg-red-900/50';
+                            textColor = 'text-red-700 dark:text-red-300';
                         }
                         
                          if (i === 0) { 
-                            tableBody += `<td class="p-2 border border-gray-300 ${bgColor} ${textColor} font-bold align-middle" rowspan="${task.count}">${text}</td>`;
+                            tableBody += `<td class="p-2 border border-default ${bgColor} ${textColor} font-bold align-middle" rowspan="${task.count}">${text}</td>`;
                         }
                     } else {
                         const name = schedule[dayIndex][taskIndex][i];
-                        const cellContent = name || '<span class="text-gray-500">(空)</span>';
+                        const cellContent = name || `<span class="text-muted">(空)</span>`;
                         const bgColor = name ? `style="background-color: #${colorScheme.name};"` : '';
                         const editableClass = isEditMode ? 'editable-cell' : '';
-                        tableBody += `<td class="p-2 border border-gray-300 ${editableClass}" ${bgColor} data-week="${weekIndex}" data-day="${dayIndex}" data-task="${taskIndex}" data-slot="${i}">${cellContent}</td>`;
+                        tableBody += `<td class="p-2 border border-default ${editableClass}" ${bgColor} data-week="${weekIndex}" data-day="${dayIndex}" data-task="${taskIndex}" data-slot="${i}">${cellContent}</td>`;
                     }
                 }
                 tableBody += `</tr>`;
@@ -886,7 +993,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const count = shiftCounts[person.name];
             const max = person.maxShifts;
             const isOver = count > max;
-            const colorClass = isOver ? 'text-red-600 font-bold' : '';
+            const colorClass = isOver ? 'text-red-500 dark:text-red-400 font-bold' : '';
             statsHTML += `<div class="flex justify-between ${colorClass}"><span>${person.name}:</span><span>${count} 次</span></div>`;
         });
         statsHTML += '</div>';
@@ -1006,7 +1113,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const listItem = document.createElement('li');
             const loadButton = document.createElement('button');
             loadButton.textContent = name;
-            loadButton.className = 'w-full text-left p-2 rounded-md hover:bg-gray-100';
+            loadButton.className = 'w-full text-left p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700';
             loadButton.onclick = () => {
                 if (confirm(`確定要用 "${name}" 的內容覆蓋目前的輸入框嗎？`)) {
                     document.getElementById(type).value = specificTemplates[name];
@@ -1246,254 +1353,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     });
-    // 智慧微調函式 - 優化現有班表的人員分配
-function fineTuneSchedule() {
-    if (!generatedData || generatedData.length === 0) {
-        alert("請先產生班表才能進行智慧微調。");
-        return;
-    }
-
-    let totalChanges = 0;
-    let changeLog = [];
-
-    generatedData.forEach((weekData, weekIndex) => {
-        const { schedule, tasks, people, shiftCounts, scheduleDays } = weekData;
-        const originalShiftCounts = { ...shiftCounts };
-        
-        // 找出工作量不平均的人員
-        const maxShifts = Math.max(...Object.values(shiftCounts));
-        const minShifts = Math.min(...Object.values(shiftCounts));
-        const overloadedPeople = Object.keys(shiftCounts).filter(name => shiftCounts[name] >= maxShifts);
-        const underloadedPeople = Object.keys(shiftCounts).filter(name => shiftCounts[name] <= minShifts);
-
-        // 如果差距超過1，嘗試調整
-        if (maxShifts - minShifts > 1) {
-            for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-                if (!scheduleDays[dayIndex]?.shouldSchedule) continue;
-
-                for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
-                    const assignedPeople = schedule[dayIndex][taskIndex];
-                    
-                    for (let slotIndex = 0; slotIndex < assignedPeople.length; slotIndex++) {
-                        const currentPerson = assignedPeople[slotIndex];
-                        
-                        // 如果當前人員工作量過多
-                        if (overloadedPeople.includes(currentPerson)) {
-                            // 尋找可替換的人員
-                            for (const underloadedPerson of underloadedPeople) {
-                                if (canAssignPerson(underloadedPerson, dayIndex, taskIndex, weekData)) {
-                                    // 執行替換
-                                    schedule[dayIndex][taskIndex][slotIndex] = underloadedPerson;
-                                    shiftCounts[currentPerson]--;
-                                    shiftCounts[underloadedPerson]++;
-                                    
-                                    totalChanges++;
-                                    changeLog.push(`第${weekIndex + 1}週: ${currentPerson} → ${underloadedPerson} (${tasks[taskIndex].name}, ${getDayName(dayIndex)})`);
-                                    
-                                    // 更新列表
-                                    if (shiftCounts[currentPerson] < maxShifts) {
-                                        overloadedPeople.splice(overloadedPeople.indexOf(currentPerson), 1);
-                                    }
-                                    if (shiftCounts[underloadedPerson] > minShifts) {
-                                        underloadedPeople.splice(underloadedPeople.indexOf(underloadedPerson), 1);
-                                    }
-                                    
-                                    break; // 找到替換後跳出
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 檢查偏好設定優化
-        const { preferences } = parseInputs();
-        for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-            if (!scheduleDays[dayIndex]?.shouldSchedule) continue;
-
-            for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
-                const assignedPeople = schedule[dayIndex][taskIndex];
-                const taskName = tasks[taskIndex].name;
-                
-                // 尋找有偏好但沒被安排的人員
-                for (const person of people) {
-                    if (preferences[person.name]?.includes(taskName) && 
-                        !assignedPeople.includes(person.name) &&
-                        canAssignPerson(person.name, dayIndex, taskIndex, weekData)) {
-                        
-                        // 尋找沒有偏好的人員來替換
-                        for (let slotIndex = 0; slotIndex < assignedPeople.length; slotIndex++) {
-                            const currentPerson = assignedPeople[slotIndex];
-                            if (!preferences[currentPerson]?.includes(taskName)) {
-                                // 執行替換
-                                schedule[dayIndex][taskIndex][slotIndex] = person.name;
-                                
-                                totalChanges++;
-                                changeLog.push(`第${weekIndex + 1}週: ${currentPerson} → ${person.name} (偏好優化: ${taskName}, ${getDayName(dayIndex)})`);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // 顯示調整結果
-    if (totalChanges > 0) {
-        showChangesModal(changeLog, totalChanges);
-        renderAllOutputs(generatedData, []);
-    } else {
-        alert("目前的班表已經相當optimal，沒有需要調整的地方。");
-    }
-}
-
-// 檢查是否可以安排某人員到特定位置
-function canAssignPerson(personName, dayIndex, taskIndex, weekData) {
-    const { scheduleDays } = weekData;
-    const { unavailabilities } = parseInputs();
-    
-    // 檢查該日是否應該排班
-    if (!scheduleDays[dayIndex]?.shouldSchedule) return false;
-    
-    // 檢查不能值勤時間
-    const dayOfWeek = scheduleDays[dayIndex].date.getDay();
-    const mappedDay = (dayOfWeek + 6) % 7; // 轉換為週一=0的格式
-    
-    if (unavailabilities[personName]?.includes(mappedDay)) {
-        return false;
-    }
-    
-    // 檢查該人員當天是否已有其他任務
-    for (let tIndex = 0; tIndex < weekData.schedule[dayIndex].length; tIndex++) {
-        if (weekData.schedule[dayIndex][tIndex].includes(personName)) {
-            return false;
-        }
-    }
-    
-    return true;
-}
-
-// 取得星期名稱
-function getDayName(dayIndex) {
-    const days = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
-    return days[dayIndex];
-}
-
-// 顯示變更報告modal
-function showChangesModal(changeLog, totalChanges) {
-    if (changeLog.length === 0) {
-        changesModalBody.innerHTML = '<p class="text-gray-600">沒有進行任何調整。</p>';
-    } else {
-        let content = `<div class="mb-4"><p class="font-semibold text-green-600">成功進行了 ${totalChanges} 項調整：</p></div>`;
-        content += '<ul class="space-y-2">';
-        changeLog.forEach(change => {
-            content += `<li class="text-sm bg-gray-50 p-2 rounded border-l-4 border-blue-400">${change}</li>`;
-        });
-        content += '</ul>';
-        changesModalBody.innerHTML = content;
-    }
-    changesModal.style.display = 'flex';
-}
-
-// 處理儲存格編輯功能
-function handleCellEdit(event) {
-    if (!isEditMode) return;
-    
-    const cell = event.target;
-    const weekIndex = parseInt(cell.dataset.week);
-    const dayIndex = parseInt(cell.dataset.day);
-    const taskIndex = parseInt(cell.dataset.task);
-    const slotIndex = parseInt(cell.dataset.slot);
-    
-    const currentName = generatedData[weekIndex].schedule[dayIndex][taskIndex][slotIndex] || '';
-    const people = generatedData[weekIndex].people;
-    const peopleNames = people.map(p => p.name);
-    
-    // 建立選擇清單
-    let options = '<option value="">(空)</option>';
-    peopleNames.forEach(name => {
-        const selected = name === currentName ? 'selected' : '';
-        options += `<option value="${name}" ${selected}>${name}</option>`;
-    });
-    
-    // 建立暫時的選擇框
-    const originalContent = cell.innerHTML;
-    cell.innerHTML = `<select class="w-full p-1 border rounded text-sm">${options}</select>`;
-    
-    const select = cell.querySelector('select');
-    select.focus();
-    
-    // 處理選擇變更
-    const handleChange = () => {
-        const newName = select.value;
-        
-        // 檢查衝突 - 同一天是否已安排該人員
-        let hasConflict = false;
-        if (newName) {
-            for (let tIndex = 0; tIndex < generatedData[weekIndex].tasks.length; tIndex++) {
-                const dayTasks = generatedData[weekIndex].schedule[dayIndex][tIndex];
-                for (let sIndex = 0; sIndex < dayTasks.length; sIndex++) {
-                    if (dayTasks[sIndex] === newName && 
-                        !(tIndex === taskIndex && sIndex === slotIndex)) {
-                        hasConflict = true;
-                        break;
-                    }
-                }
-                if (hasConflict) break;
-            }
-        }
-        
-        if (hasConflict) {
-            alert(`${newName} 在該日已有其他任務安排，無法重複安排。`);
-            cell.innerHTML = originalContent;
-            return;
-        }
-        
-        // 更新資料
-        const oldName = generatedData[weekIndex].schedule[dayIndex][taskIndex][slotIndex];
-        generatedData[weekIndex].schedule[dayIndex][taskIndex][slotIndex] = newName;
-        
-        // 更新班次計數
-        if (oldName && generatedData[weekIndex].shiftCounts[oldName]) {
-            generatedData[weekIndex].shiftCounts[oldName]--;
-        }
-        if (newName && generatedData[weekIndex].shiftCounts[newName] !== undefined) {
-            generatedData[weekIndex].shiftCounts[newName]++;
-        }
-        
-        // 更新顯示
-        const displayName = newName || '<span class="text-gray-500">(空)</span>';
-        cell.innerHTML = displayName;
-        
-        // 標記為已修改
-        cell.style.backgroundColor = '#e0f2fe'; // 淺藍色標示已編輯
-        
-        // 更新統計顯示
-        const statsContainer = document.getElementById(`stats-output-${weekIndex}`);
-        if (statsContainer) {
-            statsContainer.innerHTML = renderStatistics(generatedData[weekIndex], weekIndex);
-        }
-        
-        console.log(`編輯完成: ${oldName || '(空)'} → ${newName || '(空)'}`);
-    };
-    
-    // 處理失去焦點或按Enter
-    select.addEventListener('change', handleChange);
-    select.addEventListener('blur', () => {
-        if (cell.querySelector('select')) {
-            handleChange();
-        }
-    });
-    select.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            handleChange();
-        } else if (e.key === 'Escape') {
-            cell.innerHTML = originalContent;
-        }
-    });
-}
     </script>
     </body>
     </html>
+
