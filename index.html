@@ -6,7 +6,6 @@
     <title>班表產生器 (雲端資料庫版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-    <!-- 新增 PDF 產生工具 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -87,17 +86,17 @@
         }
 
 
-        /* --- 新增：班表美化樣式 --- */
+        /* --- 班表美化樣式 --- */
         .schedule-table {
-            border-collapse: separate; /* 讓 border-radius 生效 */
+            border-collapse: separate;
             border-spacing: 0;
             width: 100%;
             border: 1px solid var(--border-light);
-            border-radius: 0.75rem; /* 圓角 */
-            overflow: hidden; /* 確保內容不會超出圓角範圍 */
+            border-radius: 0.75rem;
+            overflow: hidden;
         }
         .schedule-table th {
-            background-color: #f3f4f6; /* 淺灰色表頭 */
+            background-color: #f3f4f6;
             padding: 0.75rem;
             text-align: center;
             font-weight: 600;
@@ -105,27 +104,26 @@
             transition: background-color 0.3s;
         }
         .dark .schedule-table th {
-            background-color: #374151; /* 深色模式表頭 */
+            background-color: #374151;
             border-bottom-color: #4b5563;
         }
         .schedule-table td {
             padding: 0.75rem;
             text-align: center;
             border-bottom: 1px solid var(--border-light);
-            transition: background-color 0.3s; /* 讓顏色有漸變效果 */
+            transition: background-color 0.3s;
         }
         .dark .schedule-table td {
             border-bottom-color: var(--border-dark);
         }
         .schedule-table tbody tr:last-child td {
-            border-bottom: none; /* 移除最後一行的底線 */
+            border-bottom: none;
         }
-        /* 斑馬條紋，增加可讀性 */
         .schedule-table tbody tr:nth-child(even) {
             background-color: #fafafa;
         }
         .dark .schedule-table tbody tr:nth-child(even) {
-            background-color: rgba(255, 255, 255, 0.03); /* 深色模式的細微條紋 */
+            background-color: rgba(255, 255, 255, 0.03);
         }
         .holiday-cell {
             background-color: #e5e7eb;
@@ -268,7 +266,7 @@
 
 <script>
     // --- Global State & Configuration ---
-    const API_BASE_URL = `${window.location.origin}/api`;
+    const API_BASE_URL = `${window.location.origin}/api`; 
     let appState = {
         activeProfile: 'default',
         profiles: {
@@ -288,6 +286,27 @@
             console.log('[DEBUG]', ...args);
         }
     };
+    
+    // --- FIX: Define applyTheme in the global scope ---
+    const applyTheme = (theme) => {
+        const themeIconLight = document.getElementById('theme-icon-light');
+        const themeIconDark = document.getElementById('theme-icon-dark');
+        
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.body.classList.remove('theme-light');
+            document.body.classList.add('theme-dark');
+            if(themeIconLight) themeIconLight.classList.add('hidden');
+            if(themeIconDark) themeIconDark.classList.remove('hidden');
+        } else {
+            document.documentElement.classList.remove('dark');
+            document.body.classList.remove('theme-dark');
+            document.body.classList.add('theme-light');
+            if(themeIconLight) themeIconLight.classList.remove('hidden');
+            if(themeIconDark) themeIconDark.classList.add('hidden');
+        }
+    };
+
 
     // --- DOM Elements ---
     document.addEventListener('DOMContentLoaded', () => {
@@ -317,8 +336,6 @@
             saveScheduleBtn: document.getElementById('save-schedule-btn'),
             savedSchedulesList: document.getElementById('saved-schedules-list'),
             themeToggle: document.getElementById('theme-toggle'),
-            themeIconLight: document.getElementById('theme-icon-light'),
-            themeIconDark: document.getElementById('theme-icon-dark'),
             debugModeToggle: document.getElementById('debug-mode-toggle'),
             personnelModal: document.getElementById('personnel-modal'),
             modalPersonnelName: document.getElementById('modal-personnel-name'),
@@ -336,7 +353,10 @@
                 debugLog(`發送 GET 請求至: ${API_BASE_URL}/${endpoint}`);
                 try {
                     const response = await fetch(`${API_BASE_URL}/${endpoint}`);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(errText || `HTTP error! status: ${response.status}`);
+                    }
                     const data = await response.json();
                     debugLog(`收到 GET 回應從 ${endpoint}:`, data);
                     return data;
@@ -356,7 +376,12 @@
                     });
                     if (!response.ok) {
                          const errText = await response.text();
-                         throw new Error(errText || `HTTP error! status: ${response.status}`);
+                         try {
+                             const errJson = JSON.parse(errText);
+                             throw new Error(errJson.message || errText);
+                         } catch (e) {
+                             throw new Error(errText);
+                         }
                     }
                     const data = await response.json();
                     debugLog(`收到 POST 回應從 ${endpoint}:`, data);
@@ -367,22 +392,17 @@
                     return null;
                 }
             },
-             put: async (endpoint, body) => { /* ... content omitted ... */ },
-            delete: async (endpoint) => { /* ... content omitted ... */ }
+            put: async (endpoint, body) => { /* ... */ },
+            delete: async (endpoint) => { /* ... */ }
         };
 
         // --- Application Logic ---
         const getActiveProfile = () => appState.profiles[appState.activeProfile];
-
-        const saveSettings = async () => { /* ... content omitted ... */ };
-        
-        const renderTasks = () => { /* ... content omitted ... */ };
-
-        const renderPersonnel = () => { /* ... content omitted ... */ };
-
-        const renderProfileSelector = () => { /* ... content omitted ... */ };
-
-        const renderSavedSchedules = () => { /* ... content omitted ... */ };
+        const saveSettings = async () => { /* ... */ };
+        const renderTasks = () => { /* ... */ };
+        const renderPersonnel = () => { /* ... */ };
+        const renderProfileSelector = () => { /* ... */ };
+        const renderSavedSchedules = () => { /* ... */ };
 
         const renderAll = () => {
             renderProfileSelector();
@@ -409,20 +429,44 @@
         };
 
         // --- Event Handlers (omitted for brevity) ---
-        // ...
-        
-        // --- Schedule Generation & Display ---
-        async function generateFullSchedule() {
-            // ... (rest of the function is the same)
-        }
+        // ... (All event handlers remain the same) ...
 
-        function displaySchedule(dataToDisplay) {
-            // ... (rest of the function is the same)
-        }
+        // --- Theme & Debug Toggle ---
+        elements.themeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            const newTheme = isDark ? 'light' : 'dark';
+            localStorage.setItem('theme', newTheme);
+            applyTheme(newTheme);
+        });
+
+        const updateDebugMode = () => {
+            const isDebug = localStorage.getItem('debug') === 'true';
+            elements.debugModeToggle.checked = isDebug;
+            if (isDebug) {
+                console.log("除錯模式已啟用。詳細資訊將會印在 console 中。");
+            }
+        };
+
+        elements.debugModeToggle.addEventListener('change', () => {
+            if (elements.debugModeToggle.checked) {
+                localStorage.setItem('debug', 'true');
+                console.log("除錯模式已啟用。詳細資訊將會印在 console 中。");
+            } else {
+                localStorage.removeItem('debug');
+                console.log("除錯模式已停用。");
+            }
+        });
         
+        // --- Schedule Generation & Display (omitted for brevity) ---
+        async function generateFullSchedule() { /* ... */ }
+        function displaySchedule(dataToDisplay) { /* ... */ }
+        function copyScheduleToClipboard() { /* ... */ }
+        function exportToExcel() { /* ... */ }
+        function exportToPdf() { /* ... */ }
+
         // --- Initial Load ---
         const savedTheme = localStorage.getItem('theme') || 'light';
-        applyTheme(savedTheme);
+        applyTheme(savedTheme); // FIX: Call is now after function definition
         updateDebugMode();
         
         const today = new Date();
