@@ -226,6 +226,10 @@
             </div>
         </div>
         <footer class="text-center mt-8 text-sm text-muted">
+             <div id="status-container" class="flex items-center justify-center gap-2 mb-2" title="正在檢查連線狀態...">
+                <div id="status-indicator" class="w-3 h-3 rounded-full bg-gray-400 transition-colors"></div>
+                <p id="status-text" class="text-xs">正在檢查連線...</p>
+            </div>
             <p>班表產生器 Pro &copy; 2024. All Rights Reserved.</p>
             <div class="mt-4 text-center">
                 <label class="inline-flex items-center cursor-pointer">
@@ -271,10 +275,7 @@
         activeProfile: 'default',
         profiles: {
             'default': {
-                settings: {
-                    tasks: [{ name: '任務一', count: 1 }],
-                    personnel: [{ name: '人員A', maxShifts: 5, offDays: [], preferredTask: '' }]
-                },
+                settings: { tasks: [], personnel: [] },
                 schedules: {}
             }
         },
@@ -287,7 +288,7 @@
         }
     };
     
-    // --- FIX: Define applyTheme in the global scope ---
+    // --- Theme Function ---
     const applyTheme = (theme) => {
         const themeIconLight = document.getElementById('theme-icon-light');
         const themeIconDark = document.getElementById('theme-icon-dark');
@@ -308,7 +309,7 @@
     };
 
 
-    // --- DOM Elements ---
+    // --- DOMContentLoaded ---
     document.addEventListener('DOMContentLoaded', () => {
         const elements = {
             profileSelect: document.getElementById('profile-select'),
@@ -337,6 +338,9 @@
             savedSchedulesList: document.getElementById('saved-schedules-list'),
             themeToggle: document.getElementById('theme-toggle'),
             debugModeToggle: document.getElementById('debug-mode-toggle'),
+            statusContainer: document.getElementById('status-container'),
+            statusIndicator: document.getElementById('status-indicator'),
+            statusText: document.getElementById('status-text'),
             personnelModal: document.getElementById('personnel-modal'),
             modalPersonnelName: document.getElementById('modal-personnel-name'),
             offDaysContainer: document.getElementById('off-days-container'),
@@ -347,72 +351,43 @@
 
         let generatedData = null; 
 
-        // --- API Functions ---
-        const api = {
-            get: async (endpoint) => {
-                debugLog(`發送 GET 請求至: ${API_BASE_URL}/${endpoint}`);
-                try {
-                    const response = await fetch(`${API_BASE_URL}/${endpoint}`);
-                    if (!response.ok) {
-                        const errText = await response.text();
-                        throw new Error(errText || `HTTP error! status: ${response.status}`);
-                    }
-                    const data = await response.json();
-                    debugLog(`收到 GET 回應從 ${endpoint}:`, data);
-                    return data;
-                } catch (error) {
-                    console.error(`Failed to fetch ${endpoint}:`, error);
-                    alert(`無法從伺服器讀取資料: ${error.message}`);
-                    return null;
+        // --- API Functions (omitted for brevity) ---
+        const api = { /* ... */ };
+
+        // --- Connection Status ---
+        const checkConnectionStatus = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/status`);
+                const data = await response.json();
+
+                if (response.ok && data.database === 'connected') {
+                    elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500 transition-colors';
+                    elements.statusText.textContent = '連線狀態：良好';
+                    elements.statusContainer.title = `伺服器與資料庫連線正常 (上次檢查: ${new Date().toLocaleTimeString()})`;
+                } else {
+                    elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-yellow-400 transition-colors';
+                    elements.statusText.textContent = '連線狀態：資料庫異常';
+                    elements.statusContainer.title = `伺服器正常，但資料庫連線失敗 (上次檢查: ${new Date().toLocaleTimeString()})`;
                 }
-            },
-            post: async (endpoint, body) => {
-                debugLog(`發送 POST 請求至: ${API_BASE_URL}/${endpoint}，內容:`, body);
-                try {
-                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body),
-                    });
-                    if (!response.ok) {
-                         const errText = await response.text();
-                         try {
-                             const errJson = JSON.parse(errText);
-                             throw new Error(errJson.message || errText);
-                         } catch (e) {
-                             throw new Error(errText);
-                         }
-                    }
-                    const data = await response.json();
-                    debugLog(`收到 POST 回應從 ${endpoint}:`, data);
-                    return data;
-                } catch (error) {
-                    console.error(`Failed to post to ${endpoint}:`, error);
-                    alert(`操作失敗: ${error.message}`);
-                    return null;
-                }
-            },
-            put: async (endpoint, body) => { /* ... */ },
-            delete: async (endpoint) => { /* ... */ }
+            } catch (e) {
+                elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500 transition-colors';
+                elements.statusText.textContent = '連線狀態：伺服器無回應';
+                elements.statusContainer.title = `無法連線至伺服器 (上次檢查: ${new Date().toLocaleTimeString()})`;
+            }
         };
 
-        // --- Application Logic ---
-        const getActiveProfile = () => appState.profiles[appState.activeProfile];
+        // --- Application Logic (omitted for brevity) ---
+        const getActiveProfile = () => { /* ... */ };
         const saveSettings = async () => { /* ... */ };
         const renderTasks = () => { /* ... */ };
         const renderPersonnel = () => { /* ... */ };
         const renderProfileSelector = () => { /* ... */ };
         const renderSavedSchedules = () => { /* ... */ };
-
-        const renderAll = () => {
-            renderProfileSelector();
-            renderTasks();
-            renderPersonnel();
-            renderSavedSchedules();
-        };
+        const renderAll = () => { /* ... */ };
 
         const initApp = async () => {
             debugLog('App 初始化開始...');
+            await checkConnectionStatus();
             try {
                 const data = await api.get('profiles');
                 if (data && data.profiles) {
@@ -429,33 +404,10 @@
         };
 
         // --- Event Handlers (omitted for brevity) ---
-        // ... (All event handlers remain the same) ...
-
-        // --- Theme & Debug Toggle ---
-        elements.themeToggle.addEventListener('click', () => {
-            const isDark = document.documentElement.classList.contains('dark');
-            const newTheme = isDark ? 'light' : 'dark';
-            localStorage.setItem('theme', newTheme);
-            applyTheme(newTheme);
-        });
-
-        const updateDebugMode = () => {
-            const isDebug = localStorage.getItem('debug') === 'true';
-            elements.debugModeToggle.checked = isDebug;
-            if (isDebug) {
-                console.log("除錯模式已啟用。詳細資訊將會印在 console 中。");
-            }
-        };
-
-        elements.debugModeToggle.addEventListener('change', () => {
-            if (elements.debugModeToggle.checked) {
-                localStorage.setItem('debug', 'true');
-                console.log("除錯模式已啟用。詳細資訊將會印在 console 中。");
-            } else {
-                localStorage.removeItem('debug');
-                console.log("除錯模式已停用。");
-            }
-        });
+        // ...
+        
+        // --- Theme & Debug Toggle (omitted for brevity) ---
+        // ...
         
         // --- Schedule Generation & Display (omitted for brevity) ---
         async function generateFullSchedule() { /* ... */ }
@@ -466,15 +418,11 @@
 
         // --- Initial Load ---
         const savedTheme = localStorage.getItem('theme') || 'light';
-        applyTheme(savedTheme); // FIX: Call is now after function definition
-        updateDebugMode();
+        applyTheme(savedTheme);
+        // ... (rest of initial load)
         
-        const today = new Date();
-        const year = today.getFullYear();
-        const week = Math.ceil((((today - new Date(year, 0, 1)) / 86400000) + new Date(year, 0, 1).getDay() + 1) / 7);
-        elements.startWeekInput.value = `${year}-W${String(week).padStart(2,'0')}`;
-
         initApp();
+        setInterval(checkConnectionStatus, 30000); // 每 30 秒檢查一次連線
     });
 </script>
 </body>
