@@ -889,6 +889,7 @@
                                     taskRow += `<td class="font-medium align-middle">${task.name}</td>`;
                                     taskRow += weekDayDates.map((_, dayIndex) => {
                                         if (!scheduleDays[dayIndex].shouldSchedule) {
+                                            // FIX: 從 scheduleDays 物件中讀取具體的節日說明
                                             if (taskIndex === 0) return `<td class="holiday-cell align-middle" rowspan="${tasks.length}">${scheduleDays[dayIndex].description}</td>`;
                                             return '';
                                         } else {
