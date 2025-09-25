@@ -1,4 +1,4 @@
-// --- 模組引入 ---
+// --- 模듈引入 ---
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -67,12 +67,10 @@ const ensureConfigDocument = async () => {
         });
     }
 };
-
 const sanitizeString = (str) => {
     if (typeof str !== 'string') return '';
     return str.replace(/[<>&"']/g, '');
 };
-
 const getWeekInfo = (weekString, weekIndex) => {
     const [year, week] = weekString.split('-W').map(Number);
     const date = new Date(year, 0, 1 + (week - 1 + weekIndex) * 7);
@@ -97,12 +95,17 @@ const getHolidaysForYear = async (year) => {
     try {
         const data = await require('fs').promises.readFile(filePath, 'utf-8');
         const holidayData = JSON.parse(data);
-        const holidaySet = new Set(holidayData.filter(h => h.isHoliday).map(h => h.date));
-        holidaysCache[year] = holidaySet;
-        return holidaySet;
+        const holidayMap = new Map();
+        holidayData.forEach(h => {
+            if (h.isHoliday) {
+                holidayMap.set(h.date, h.description || '國定假日');
+            }
+        });
+        holidaysCache[year] = holidayMap;
+        return holidayMap;
     } catch (error) {
         debugServer(`找不到 ${year} 年的假日檔案:`, error.message);
-        holidaysCache[year] = new Set();
+        holidaysCache[year] = new Map();
         return holidaysCache[year];
     }
 };
@@ -150,8 +153,6 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
 };
 
 // --- API 路由實作 ---
-
-// /status 路由不需要檢查資料庫，所以定義在前面
 apiRouter.get('/status', async (req, res) => {
     if (isDbConnected) {
         res.status(200).json({ status: 'ok', database: 'connected' });
@@ -160,7 +161,6 @@ apiRouter.get('/status', async (req, res) => {
     }
 });
 
-// 將檢查中介軟體應用到所有後續需要資料庫的路由
 apiRouter.use(checkDbConnection);
 
 apiRouter.get('/profiles', async (req, res) => {
@@ -173,7 +173,6 @@ apiRouter.get('/profiles', async (req, res) => {
         res.status(500).json({ message: '讀取設定檔時發生錯誤', error: e.message });
     }
 });
-
 apiRouter.put('/profiles/active', async (req, res) => {
     debugServer(`收到請求: PUT ${req.originalUrl}`);
     const { name } = req.body;
@@ -186,7 +185,6 @@ apiRouter.put('/profiles/active', async (req, res) => {
         res.status(500).json({ message: '切換設定檔失敗', error: e.message });
      }
 });
-
 apiRouter.post('/profiles', async (req, res) => {
     debugServer(`收到請求: POST ${req.originalUrl}`);
     const { name } = req.body;
@@ -205,7 +203,6 @@ apiRouter.post('/profiles', async (req, res) => {
         res.status(500).json({ message: '新增設定檔失敗', error: e.message });
     }
 });
-
 apiRouter.put('/profiles/:name', async (req, res) => {
     debugServer(`收到請求: PUT ${req.originalUrl}`);
     const name = sanitizeString(req.params.name);
@@ -230,15 +227,88 @@ apiRouter.put('/profiles/:name', async (req, res) => {
         res.status(500).json({ message: '更新設定檔失敗', error: e.message });
      }
 });
-
-apiRouter.put('/profiles/:name/rename', async (req, res) => { /* ... */ });
-apiRouter.delete('/profiles/:name', async (req, res) => { /* ... */ });
-apiRouter.get('/schedules/:name', async (req, res) => { /* ... */ });
-apiRouter.post('/schedules', async (req, res) => { /* ... */ });
-apiRouter.delete('/schedules/:name', async (req, res) => { /* ... */ });
-
+apiRouter.put('/profiles/:name/rename', async (req, res) => {
+    debugServer(`收到請求: PUT ${req.originalUrl}`);
+    const oldName = sanitizeString(req.params.name);
+    const { newName } = req.body;
+    if (!newName || typeof newName !== 'string' || newName.trim() === '') return res.status(400).json({ message: '新名稱不可為空' });
+    const sanitizedNewName = sanitizeString(newName.trim());
+    try {
+        await db.collection(PROFILES_COLLECTION).updateOne({ _id: CONFIG_ID }, { $rename: { [`profiles.${oldName}`]: `profiles.${sanitizedNewName}` } });
+        res.json({ message: `設定檔已從 ${oldName} 改為 ${sanitizedNewName}` });
+    } catch (e) {
+        debugServer(`PUT /api/profiles/:name/rename 錯誤: %O`, e);
+        res.status(500).json({ message: '重新命名失敗', error: e.message });
+    }
+});
+apiRouter.delete('/profiles/:name', async (req, res) => {
+    debugServer(`收到請求: DELETE ${req.originalUrl}`);
+    const name = sanitizeString(req.params.name);
+    try {
+        await db.collection(PROFILES_COLLECTION).updateOne({ _id: CONFIG_ID }, { $unset: { [`profiles.${name}`]: "" } });
+        res.json({ message: `設定檔 ${name} 已刪除` });
+    } catch (e) {
+        debugServer(`DELETE /api/profiles/:name 錯誤: %O`, e);
+        res.status(500).json({ message: '刪除設定檔失敗', error: e.message });
+    }
+});
+apiRouter.get('/schedules/:name', async (req, res) => {
+    debugServer(`收到請求: GET ${req.originalUrl}`);
+    const name = sanitizeString(req.params.name);
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const scheduleData = config.profiles[config.activeProfile]?.schedules?.[name];
+        if (scheduleData) {
+            res.json(scheduleData);
+        } else {
+            res.status(404).json({ message: '找不到班表' });
+        }
+    } catch (e) {
+        debugServer(`GET /api/schedules/:name 錯誤: %O`, e);
+        res.status(500).json({ message: '讀取班表失敗', error: e.message });
+    }
+});
+apiRouter.post('/schedules', async (req, res) => {
+    debugServer(`收到請求: POST ${req.originalUrl}`);
+    const { name, data } = req.body;
+    if (!name || typeof name !== 'string' || name.trim() === '' || !data) {
+        return res.status(400).json({ message: '缺少班表名稱或內容' });
+    }
+    const sanitizedName = sanitizeString(name.trim());
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $set: { [`profiles.${activeProfile}.schedules.${sanitizedName}`]: data } }
+        );
+        res.status(201).json({ message: '班表已儲存' });
+    } catch (e) {
+        debugServer(`POST /api/schedules 錯誤: %O`, e);
+        res.status(500).json({ message: '儲存班表失敗', error: e.message });
+    }
+});
+apiRouter.delete('/schedules/:name', async (req, res) => {
+    debugServer(`收到請求: DELETE ${req.originalUrl}`);
+    const name = sanitizeString(req.params.name);
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+        if (config.profiles[activeProfile]?.schedules?.[name]) {
+             await db.collection(PROFILES_COLLECTION).updateOne(
+                { _id: CONFIG_ID },
+                { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } }
+            );
+            res.status(200).json({ message: '班表已刪除' });
+        } else {
+            res.status(404).json({ message: '找不到要刪除的班表' });
+        }
+    } catch (e) {
+        debugServer(`DELETE /api/schedules/:name 錯誤: %O`, e);
+        res.status(500).json({ message: '刪除班表失敗', error: e.message });
+    }
+});
 apiRouter.get('/holidays/:year', async (req, res) => {
-    // 這個路由不直接存取 db，所以可以不用 checkDbConnection，但為了統一性，保留也無妨
     debugServer(`收到請求: GET ${req.originalUrl}`);
     const year = sanitizeString(req.params.year);
     try {
@@ -250,8 +320,56 @@ apiRouter.get('/holidays/:year', async (req, res) => {
     }
 });
 
-apiRouter.post('/generate-schedule', async (req, res) => { /* ... */ });
+apiRouter.post('/generate-schedule', async (req, res) => {
+    debugServer(`收到請求: POST ${req.originalUrl}`);
+    const { settings, startWeek, numWeeks } = req.body;
+    if (!settings || !startWeek || !numWeeks) {
+        return res.status(400).json({ message: '缺少必要的排班參數' });
+    }
+    
+    try {
+        let generatedData = [];
+        const colorSchemes = [
+            { header: '#cc4125' }, { header: '#e06666' },
+            { header: '#f6b26b' }, { header: '#ffd966' },
+            { header: '#93c47d' }, { header: '#76a5af' },
+            { header: '#6d9eeb' }, { header: '#6fa8dc' },
+            { header: '#8e7cc3' }, { header: '#c27ba0' }
+        ];
+        for (let i = 0; i < numWeeks; i++) {
+            const { year, weekDates, weekDayDates } = getWeekInfo(startWeek, i);
+            const holidaysMap = await getHolidaysForYear(year);
+            
+            const scheduleDays = weekDates.slice(0, 5).map(dateStr => {
+                if (holidaysMap.has(dateStr)) {
+                    return {
+                        shouldSchedule: false,
+                        description: holidaysMap.get(dateStr)
+                    };
+                } else {
+                    return {
+                        shouldSchedule: true,
+                        description: ''
+                    };
+                }
+            });
 
+            const schedule = generateWeeklySchedule(settings, scheduleDays);
+            generatedData.push({
+                schedule,
+                tasks: settings.tasks,
+                dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`,
+                weekDayDates,
+                scheduleDays,
+                color: colorSchemes[i % colorSchemes.length]
+            });
+        }
+        res.json(generatedData);
+    } catch (e) {
+        debugServer(`POST /api/generate-schedule 錯誤: %O`, e);
+        res.status(500).json({ message: '產生班表時發生內部錯誤', error: e.message });
+    }
+});
 
 // --- 靜態檔案服務 & SPA Fallback ---
 app.use(express.static(path.join(__dirname)));
@@ -261,7 +379,6 @@ app.get('*', (req, res) => {
     }
     res.sendFile(path.join(__dirname, 'index.html'));
 });
-
 
 // --- 伺服器啟動函式 ---
 const startServer = async () => {
@@ -314,7 +431,6 @@ const gracefulShutdown = async (signal) => {
         process.exit(1);
     }
 };
-
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
