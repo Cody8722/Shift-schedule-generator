@@ -242,16 +242,71 @@ apiRouter.delete('/profiles/:name', async (req, res) => {
     }
 });
 
-apiRouter.get('/schedules/:name', async (req, res) => { /* ... */ });
-apiRouter.post('/schedules', async (req, res) => { /* ... */ });
-apiRouter.delete('/schedules/:name', async (req, res) => { /* ... */ });
+apiRouter.get('/schedules/:name', async (req, res) => {
+    debugServer(`收到請求: GET ${req.originalUrl}`);
+    const name = sanitizeString(req.params.name);
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const scheduleData = config.profiles[config.activeProfile]?.schedules?.[name];
+        if (scheduleData) {
+            res.json(scheduleData);
+        } else {
+            res.status(404).json({ message: '找不到班表' });
+        }
+    } catch (e) {
+        debugServer(`GET /api/schedules/:name 錯誤: %O`, e);
+        res.status(500).json({ message: '讀取班表失敗', error: e.message });
+    }
+});
+
+apiRouter.post('/schedules', async (req, res) => {
+    debugServer(`收到請求: POST ${req.originalUrl}`);
+    const { name, data } = req.body;
+    if (!name || typeof name !== 'string' || name.trim() === '' || !data) {
+        return res.status(400).json({ message: '缺少班表名稱或內容' });
+    }
+    const sanitizedName = sanitizeString(name.trim());
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+        await db.collection(PROFILES_COLLECTION).updateOne(
+            { _id: CONFIG_ID },
+            { $set: { [`profiles.${activeProfile}.schedules.${sanitizedName}`]: data } }
+        );
+        res.status(201).json({ message: '班表已儲存' });
+    } catch (e) {
+        debugServer(`POST /api/schedules 錯誤: %O`, e);
+        res.status(500).json({ message: '儲存班表失敗', error: e.message });
+    }
+});
+
+apiRouter.delete('/schedules/:name', async (req, res) => {
+    debugServer(`收到請求: DELETE ${req.originalUrl}`);
+    const name = sanitizeString(req.params.name);
+    try {
+        const config = await db.collection(PROFILES_COLLECTION).findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+        if (config.profiles[activeProfile]?.schedules?.[name]) {
+             await db.collection(PROFILES_COLLECTION).updateOne(
+                { _id: CONFIG_ID },
+                { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } }
+            );
+            res.status(200).json({ message: '班表已刪除' });
+        } else {
+            res.status(404).json({ message: '找不到要刪除的班表' });
+        }
+    } catch (e) {
+        debugServer(`DELETE /api/schedules/:name 錯誤: %O`, e);
+        res.status(500).json({ message: '刪除班表失敗', error: e.message });
+    }
+});
 
 apiRouter.get('/holidays/:year', async (req, res) => {
     debugServer(`收到請求: GET ${req.originalUrl}`);
     const year = sanitizeString(req.params.year);
     try {
         const holidays = await getHolidaysForYear(year);
-        res.json(Array.from(holidays)); // Convert Set to Array for JSON response
+        res.json(Array.from(holidays));
     } catch (e) {
         debugServer(`GET /api/holidays/:year 錯誤: %O`, e);
         res.status(500).json({ message: '讀取假日資料失敗', error: e.message });
@@ -275,6 +330,13 @@ apiRouter.post('/generate-schedule', async (req, res) => {
 
     try {
         let generatedData = [];
+        const colorSchemes = [
+            { header: '#cc4125' }, { header: '#e06666' },
+            { header: '#f6b26b' }, { header: '#ffd966' },
+            { header: '#93c47d' }, { header: '#76a5af' },
+            { header: '#6d9eeb' }, { header: '#6fa8dc' },
+            { header: '#8e7cc3' }, { header: '#c27ba0' }
+        ];
         for (let i = 0; i < numWeeks; i++) {
             const { year, weekDates, weekDayDates } = getWeekInfo(startWeek, i);
             const holidays = await getHolidaysForYear(year);
@@ -289,7 +351,7 @@ apiRouter.post('/generate-schedule', async (req, res) => {
                 dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`,
                 weekDayDates,
                 scheduleDays,
-                color: { header: '#6d9eeb' }
+                color: colorSchemes[i % colorSchemes.length]
             });
         }
         res.json(generatedData);
