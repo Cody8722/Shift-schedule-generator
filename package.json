@@ -1,6 +1,6 @@
 {
   "name": "schedule-server-mongo",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "An advanced server for the schedule generator app using MongoDB.",
   "main": "server.js",
   "scripts": {
@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "debug": "^4.3.4",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.2.0",
