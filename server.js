@@ -1,4 +1,4 @@
-// --- 模组引入 ---
+// --- 模組引入 ---
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -7,12 +7,12 @@ const rateLimit = require('express-rate-limit');
 const debug = require('debug');
 require('dotenv').config();
 
-// --- 除错日誌设定 ---
+// --- 除錯日誌設定 ---
 const debugServer = debug('app:server');
 const debugDb = debug('app:db');
 const debugSchedule = debug('app:schedule');
 
-// --- 常数设定 ---
+// --- 常數設定 ---
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -20,13 +20,13 @@ const DB_NAME = process.env.DB_NAME || 'scheduleApp';
 const PROFILES_COLLECTION = 'profiles';
 const CONFIG_ID = 'main_config';
 
-// --- 安全性：请求频率限制 ---
+// --- 安全性：請求頻率限制 ---
 const limiter = rateLimit({
-	windowMs: 15 * 60 * 1000, 
+	windowMs: 15 * 60 * 1000,
 	max: 100, 
 	standardHeaders: true,
 	legacyHeaders: false,
-    message: { message: '请求过於频繁，请稍後再试。' }
+    message: { message: '請求過於頻繁，請稍後再試。' }
 });
 
 // --- MongoDB 客戶端設定 ---
@@ -35,93 +35,35 @@ const client = new MongoClient(MONGODB_URI, {
 });
 
 let db;
+let isDbConnected = false;
 
 // --- 中介軟體 (Middleware) ---
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-
-// --- FIX: 信任 Zeabur 的代理伺服器 ---
-// This setting is crucial for rate limiting to work correctly behind a proxy like Zeabur.
 app.set('trust proxy', 1);
 
 // --- API 路由 (Routes) ---
 const apiRouter = express.Router();
-apiRouter.use(limiter); // Apply rate limiting to all API routes
+apiRouter.use(limiter);
 app.use('/api', apiRouter);
 
+// --- 輔助函式 (省略) ---
+// ...
 
-// 辅导函式... (省略)
-const ensureConfigDocument = async () => { /* ... */ };
-const sanitizeString = (str) => { /* ... */ };
-const getWeekInfo = (weekString, weekIndex) => { /* ... */ };
-const getHolidaysForYear = async (year) => { /* ... */ };
-const generateWeeklySchedule = (settings, scheduleDays) => { /* ... */ };
+// --- API 路由實作 ---
 
-// --- API 路由实作 ---
-apiRouter.get('/profiles', async (req, res) => { /* ... */ });
-apiRouter.put('/profiles/active', async (req, res) => { /* ... */ });
-apiRouter.post('/profiles', async (req, res) => { /* ... */ });
-apiRouter.put('/profiles/:name', async (req, res) => { /* ... */ });
-apiRouter.put('/profiles/:name/rename', async (req, res) => { /* ... */ });
-apiRouter.delete('/profiles/:name', async (req, res) => { /* ... */ });
-apiRouter.get('/schedules/:name', async (req, res) => { /* ... */ });
-apiRouter.post('/schedules', async (req, res) => { /* ... */ });
-apiRouter.delete('/schedules/:name', async (req, res) => { /* ... */ });
-apiRouter.get('/holidays/:year', async (req, res) => { /* ... */ });
-apiRouter.post('/generate-schedule', async (req, res) => {
-    debugServer(`收到请求: POST ${req.originalUrl}`);
-    const { settings, startWeek, numWeeks } = req.body;
-    const colorSchemes = [
-        { header: '#cc4125' }, { header: '#e06666' },
-        { header: '#f6b26b' }, { header: '#ffd966' },
-        { header: '#93c47d' }, { header: '#76a5af' },
-        { header: '#6d9eeb' }, { header: '#6fa8dc' },
-        { header: '#8e7cc3' }, { header: '#c27ba0' }
-    ];
-
-    if (!settings || !startWeek || !numWeeks) {
-        return res.status(400).json({ message: '缺少必要的排班参数' });
-    }
-    
-    const totalRequiredShifts = 5 * (settings.tasks || []).reduce((sum, task) => sum + (task.count || 0), 0);
-    const totalAvailableShifts = (settings.personnel || []).reduce((sum, p) => sum + (p.maxShifts || 0), 0);
-    if(totalRequiredShifts > totalAvailableShifts){
-        debugSchedule(`排班失败：需求班次 (${totalRequiredShifts}) > 可用班次 (${totalAvailableShifts})`);
-        return res.status(400).json({ message: `排班失败：总需求班次 (${totalRequiredShifts}) 超过总可用班次 (${totalAvailableShifts})。请增加人力或减少勤務需求。` });
-    }
-
-    try {
-        let generatedData = [];
-        for (let i = 0; i < numWeeks; i++) {
-            const { year, weekDates, weekDayDates } = getWeekInfo(startWeek, i);
-            const holidays = await getHolidaysForYear(year);
-
-            const scheduleDays = weekDates.slice(0, 5).map(dateStr => {
-                if (holidays.has(dateStr)) {
-                    return { shouldSchedule: false, description: '国定假日' };
-                }
-                return { shouldSchedule: true };
-            });
-            
-            const schedule = generateWeeklySchedule(settings, scheduleDays);
-            const startDate = weekDayDates[0];
-            const endDate = weekDayDates[weekDayDates.length-1];
-
-            generatedData.push({
-                schedule,
-                tasks: settings.tasks,
-                dateRange: `${startDate} - ${endDate}`,
-                weekDayDates,
-                scheduleDays,
-                color: colorSchemes[i % colorSchemes.length]
-            });
-        }
-        res.json(generatedData);
-    } catch (e) {
-        debugServer(`POST /api/generate-schedule 错误: %O`, e);
-        res.status(500).json({ message: '产生班表时发生内部错误', error: e.message });
+// 新增：狀態檢查端點
+apiRouter.get('/status', async (req, res) => {
+    // isDbConnected flag is updated by the connection logic
+    if (isDbConnected) {
+        res.status(200).json({ status: 'ok', database: 'connected' });
+    } else {
+        res.status(200).json({ status: 'ok', database: 'disconnected' });
     }
 });
+
+// ... 其他路由 ...
+apiRouter.post('/generate-schedule', async (req, res) => { /* ... */ });
 
 
 // --- 靜態檔案服務 & SPA Fallback ---
@@ -131,26 +73,39 @@ app.get('*', (req, res) => {
 });
 
 
-// --- 伺服器啟動 ---
+// --- 伺服器啟動與資料庫連線 ---
 const startServer = async () => {
     try {
-        debugServer('正在连线至 MongoDB...');
+        debugServer('正在連線至 MongoDB...');
         await client.connect();
-        debugDb('已成功连线到 MongoDB Atlas!');
         db = client.db(DB_NAME);
         
-        client.on('close', () => debugDb('MongoDB 连线已中断'));
-        client.on('reconnect', () => debugDb('已成功重新连线到 MongoDB'));
+        // 持續監控資料庫連線狀態
+        client.on('topologyDescriptionChanged', event => {
+            const newStatus = event.newDescription.hasReadableServer();
+            if (isDbConnected !== newStatus) {
+                isDbConnected = newStatus;
+                debugDb(`MongoDB 連線狀態改變: ${isDbConnected ? '已連線' : '已中斷'}`);
+            }
+        });
+        
+        // 初始檢查
+        isDbConnected = (await db.admin().ping()).ok === 1;
+        debugDb(`初始 MongoDB 連線狀態: ${isDbConnected ? '已連線' : '已中斷'}`);
 
         await ensureConfigDocument();
         
         app.listen(PORT, () => {
-            debugServer(`伺服器正在 http://localhost:${PORT} 上运行`);
+            debugServer(`伺服器正在 http://localhost:${PORT} 上運行`);
         });
     } catch (err) {
-        console.error("无法连线到 MongoDB 或启动伺服器:", err);
-        debugServer('伺服器启动失败: %O', err);
-        process.exit(1);
+        console.error("無法連線到 MongoDB 或啟動伺服器:", err);
+        isDbConnected = false;
+        debugServer('伺服器啟動失敗: %O', err);
+        // 即使資料庫連線失敗，伺服器還是要啟動，只是狀態會是 error
+        app.listen(PORT, () => {
+            debugServer(`伺服器正在 http://localhost:${PORT} 上運行 (資料庫連線失敗)`);
+        });
     }
 };
 
