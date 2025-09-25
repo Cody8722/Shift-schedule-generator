@@ -763,6 +763,9 @@
             localStorage.setItem('theme', newTheme);
             applyTheme(newTheme);
         });
+        const updateDebugMode = () => {
+            elements.debugModeToggle.checked = localStorage.getItem('debug') === 'true';
+        };
         elements.debugModeToggle.addEventListener('change', () => {
             localStorage.setItem('debug', elements.debugModeToggle.checked);
             if (elements.debugModeToggle.checked) {
@@ -832,8 +835,7 @@
                                         <td class="font-medium align-middle">${task.name}</td>
                                         ${weekDayDates.map((_, dayIndex) => {
                                             if (!scheduleDays[dayIndex].shouldSchedule) {
-                                                if (taskIndex === 0) return `<td class="holiday-cell align-middle" rowspan="${tasks.length}">${scheduleDays[dayIndex].description}</td>`;
-                                                return '';
+                                                return `<td class="holiday-cell align-middle">${scheduleDays[dayIndex].description}</td>`;
                                             } else {
                                                 return `<td class="align-middle">${schedule[dayIndex][taskIndex].join('<br>')}</td>`;
                                             }
@@ -933,9 +935,6 @@
         // --- Initial Load ---
         const savedTheme = localStorage.getItem('theme') || 'light';
         applyTheme(savedTheme);
-        const updateDebugMode = () => {
-            elements.debugModeToggle.checked = localStorage.getItem('debug') === 'true';
-        };
         updateDebugMode();
         
         const today = new Date();
