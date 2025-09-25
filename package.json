@@ -1,21 +1,35 @@
 {
-  "name": "schedule-server-mongo",
-  "version": "2.3.0",
-  "description": "A robust server for the schedule generator app using MongoDB.",
+  "name": "schedule-generator-pro",
+  "version": "1.0.0",
+  "description": "智慧排班表產生器 Pro - 雲端資料庫版",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "debug": "DEBUG=app:* node server.js"
   },
+  "keywords": [
+    "schedule",
+    "generator",
+    "shift",
+    "planning",
+    "mongodb",
+    "express"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
   "dependencies": {
+    "express": "^4.18.2",
     "cors": "^2.8.5",
+    "mongodb": "^6.3.0",
+    "express-rate-limit": "^7.1.5",
     "debug": "^4.3.4",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "express-rate-limit": "^7.2.0",
-    "mongodb": "^6.5.0"
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=16.0.0"
   }
 }
-
