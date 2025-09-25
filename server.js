@@ -1,4 +1,4 @@
-// --- 模듈引入 ---
+// --- 模組引入 ---
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -90,10 +90,14 @@ const getWeekInfo = (weekString, weekIndex) => {
 
 const holidaysCache = {};
 const getHolidaysForYear = async (year) => {
-    if (holidaysCache[year]) return holidaysCache[year];
+    if (holidaysCache[year]) {
+        debugDb(`從快取中讀取 ${year} 年的假日資料。`);
+        return holidaysCache[year];
+    }
     const filePath = path.join(__dirname, 'holidays', `${year}.json`);
     try {
         const data = await require('fs').promises.readFile(filePath, 'utf-8');
+        debugDb(`成功讀取假日檔案: ${filePath}`);
         const holidayData = JSON.parse(data);
         const holidayMap = new Map();
         holidayData.forEach(h => {
@@ -101,10 +105,11 @@ const getHolidaysForYear = async (year) => {
                 holidayMap.set(h.date, h.description || '國定假日');
             }
         });
+        debugDb(`為 ${year} 年建立了 ${holidayMap.size} 個假日項目。`);
         holidaysCache[year] = holidayMap;
         return holidayMap;
     } catch (error) {
-        debugServer(`找不到 ${year} 年的假日檔案:`, error.message);
+        debugServer(`讀取或解析假日檔案 ${filePath} 失敗:`, error.message);
         holidaysCache[year] = new Map();
         return holidaysCache[year];
     }
@@ -312,8 +317,9 @@ apiRouter.get('/holidays/:year', async (req, res) => {
     debugServer(`收到請求: GET ${req.originalUrl}`);
     const year = sanitizeString(req.params.year);
     try {
-        const holidays = await getHolidaysForYear(year);
-        res.json(Array.from(holidays));
+        const holidaysMap = await getHolidaysForYear(year);
+        const holidaysArray = Array.from(holidaysMap, ([date, description]) => ({ date, description, isHoliday: true }));
+        res.json(holidaysArray);
     } catch (e) {
         debugServer(`GET /api/holidays/:year 錯誤: %O`, e);
         res.status(500).json({ message: '讀取假日資料失敗', error: e.message });
