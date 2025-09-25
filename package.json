@@ -1,7 +1,7 @@
 {
   "name": "schedule-server-mongo",
-  "version": "2.2.0",
-  "description": "An advanced server for the schedule generator app using MongoDB.",
+  "version": "2.3.0",
+  "description": "A robust server for the schedule generator app using MongoDB.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
