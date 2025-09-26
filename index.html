@@ -1074,10 +1074,23 @@
                     const imgData = canvas.toDataURL('image/png');
                     const pageWidth = 190; // A4 portrait width (210mm) with 10mm margins
                     const pageHeight = 277; // A4 portrait height (297mm) with 10mm margins
-                    const imgHeight = canvas.height * pageWidth / canvas.width;
-                    const finalHeight = Math.min(imgHeight, pageHeight);
                     
-                    pdf.addImage(imgData, 'PNG', 10, 10, pageWidth, finalHeight);
+                    const canvasAspectRatio = canvas.width / canvas.height;
+                    const pageAspectRatio = pageWidth / pageHeight;
+
+                    let imgWidth, imgHeight;
+
+                    // If image is wider than page, fit to width. Otherwise, fit to height.
+                    // This avoids stretching.
+                    if(canvasAspectRatio > pageAspectRatio) {
+                        imgWidth = pageWidth;
+                        imgHeight = pageWidth / canvasAspectRatio;
+                    } else {
+                        imgHeight = pageHeight;
+                        imgWidth = pageHeight * canvasAspectRatio;
+                    }
+                    
+                    pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
                 } catch (err) {
                     console.error("html2canvas failed:", err);
                 } finally {
