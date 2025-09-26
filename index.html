@@ -724,35 +724,167 @@
             if (result) {
                 appState.activeProfile = newProfileName;
                 renderAll();
-                generatedData = null; // Clear old schedule on profile change
+                generatedData = null; 
                 elements.outputContainer.classList.add('hidden');
             }
         });
 
-        elements.newProfileBtn.addEventListener('click', async () => { /* ... */ });
-        elements.renameProfileBtn.addEventListener('click', async () => { /* ... */ });
-        elements.deleteProfileBtn.addEventListener('click', async () => { /* ... */ });
-        elements.exportProfileBtn.addEventListener('click', () => { /* ... */ });
+        elements.newProfileBtn.addEventListener('click', async () => {
+            const name = prompt('請輸入新的設定檔名稱:');
+            if (name && name.trim()) {
+                if (appState.profiles[name.trim()]) return alert('該名稱已存在！');
+                const result = await api.post('profiles', { name: name.trim() });
+                if (result) await initApp();
+            }
+        });
+
+        elements.renameProfileBtn.addEventListener('click', async () => {
+            const oldName = appState.activeProfile;
+            const newName = prompt(`請為「${oldName}」輸入新名稱:`, oldName);
+            if (newName && newName.trim() && newName.trim() !== oldName) {
+                if (appState.profiles[newName.trim()]) return alert('該名稱已存在！');
+                const result = await api.put(`profiles/${oldName}/rename`, { newName: newName.trim() });
+                 if (result) await initApp();
+            }
+        });
+
+        elements.deleteProfileBtn.addEventListener('click', async () => {
+            const nameToDelete = appState.activeProfile;
+            if (Object.keys(appState.profiles).length <= 1) return alert('至少需保留一個設定檔！');
+            if (confirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`)) {
+                const result = await api.delete(`profiles/${nameToDelete}`);
+                if (result) await initApp();
+            }
+        });
+
+        elements.exportProfileBtn.addEventListener('click', () => {
+            const settings = getActiveProfile()?.settings;
+            if(!settings) return;
+            const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${appState.activeProfile}_settings.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
         elements.importProfileBtn.addEventListener('click', () => elements.profileFileInput.click());
-        elements.profileFileInput.addEventListener('change', (e) => { /* ... */ });
+
+        elements.profileFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const newSettings = JSON.parse(event.target.result);
+                        if (!newSettings.tasks || !newSettings.personnel) throw new Error("檔案缺少必要欄位");
+                        if (confirm('這將會覆蓋您目前的設定，確定要匯入嗎？')) {
+                            getActiveProfile().settings = newSettings;
+                            await saveSettings();
+                            renderAll();
+                        }
+                    } catch (err) {
+                        alert(`檔案格式錯誤: ${err.message}`);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
         
         let currentEditingPersonnelIndex = -1;
-        const openPersonnelModal = (index) => { /* ... */ };
-        const closePersonnelModal = () => { /* ... */ };
+        const openPersonnelModal = (index) => {
+            currentEditingPersonnelIndex = index;
+            const personnel = getActiveProfile().settings.personnel[index];
+            elements.modalPersonnelName.textContent = personnel.name;
+            const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
+            elements.offDaysContainer.innerHTML = weekDays.map((day, dayIndex) => `
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" class="form-checkbox rounded" value="${dayIndex}" ${personnel.offDays?.includes(dayIndex) ? 'checked' : ''}>
+                    <span>${day}</span>
+                </label>
+            `).join('');
+            const tasks = getActiveProfile().settings.tasks;
+            elements.preferredTaskSelect.innerHTML = '<option value="">無偏好</option>' + tasks.map(task => 
+                `<option value="${task.name}" ${personnel.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
+            ).join('');
+            elements.personnelModal.classList.remove('hidden');
+        };
+
+        const closePersonnelModal = () => {
+            elements.personnelModal.classList.add('hidden');
+            currentEditingPersonnelIndex = -1;
+        };
         elements.modalCloseBtn.addEventListener('click', closePersonnelModal);
         
         elements.generateBtn.addEventListener('click', generateFullSchedule);
         elements.copyBtn.addEventListener('click', copyScheduleToClipboard);
         elements.exportExcelBtn.addEventListener('click', exportToExcel);
         elements.exportPdfBtn.addEventListener('click', exportToPdf);
-        elements.saveScheduleBtn.addEventListener('click', async () => { /* ... */ });
-        elements.savedSchedulesList.addEventListener('click', async (e) => { /* ... */ });
-        
-        elements.themeToggle.addEventListener('click', () => { /* ... */ });
-        const updateDebugMode = () => { /* ... */ };
-        elements.debugModeToggle.addEventListener('change', () => { /* ... */ });
 
-        elements.accordionContainer.addEventListener('click', (e) => { /* ... */ });
+        elements.saveScheduleBtn.addEventListener('click', async () => {
+            if (!generatedData) return alert('請先產生班表！');
+            const name = prompt('請為此班表命名 (例如: 2024-W35):');
+            if (name && name.trim()) {
+                const result = await api.post('schedules', { name: name.trim(), data: generatedData });
+                if (result) {
+                    getActiveProfile().schedules[name.trim()] = generatedData;
+                    renderSavedSchedules();
+                    alert('班表已儲存！');
+                }
+            }
+        });
+
+        elements.savedSchedulesList.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const link = e.target.closest('.load-schedule-link');
+            const btn = e.target.closest('.delete-schedule-btn');
+            if (link) {
+                const name = link.dataset.name;
+                const scheduleData = await api.get(`schedules/${name}`);
+                if (scheduleData) {
+                    generatedData = scheduleData;
+                    displaySchedule(scheduleData);
+                }
+            } else if (btn) {
+                 const name = btn.dataset.name;
+                 if (confirm(`確定要刪除班表「${name}」嗎？`)) {
+                     const result = await api.delete(`schedules/${name}`);
+                     if (result) {
+                         delete getActiveProfile().schedules[name];
+                         renderSavedSchedules();
+                     }
+                 }
+            }
+        });
+        
+        elements.themeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            const newTheme = isDark ? 'light' : 'dark';
+            localStorage.setItem('theme', newTheme);
+            applyTheme(newTheme);
+        });
+
+        const updateDebugMode = () => {
+            elements.debugModeToggle.checked = localStorage.getItem('debug') === 'true';
+        };
+
+        elements.debugModeToggle.addEventListener('change', () => {
+            localStorage.setItem('debug', elements.debugModeToggle.checked);
+        });
+
+        elements.accordionContainer.addEventListener('click', (e) => {
+            const header = e.target.closest('.accordion-header');
+            if (header) {
+                const item = header.parentElement;
+                if (window.innerWidth < 1024) {
+                    item.parentElement.querySelectorAll('.accordion-item').forEach(otherItem => {
+                        if (otherItem !== item) otherItem.classList.remove('active');
+                    });
+                }
+                item.classList.toggle('active');
+            }
+        });
         
         async function generateFullSchedule() {
             const settings = getActiveProfile().settings;
@@ -781,17 +913,133 @@
             }
         }
 
-        function displaySchedule(dataToDisplay) { /* ... */ }
-        function copyScheduleToClipboard() { /* ... */ }
-        function exportToExcel() { /* ... */ }
-        function exportToPdf() { /* ... */ }
+        function displaySchedule(dataToDisplay) {
+            let html = '';
+            dataToDisplay.forEach((data, index) => {
+                const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
+                const weekDayNames = ['一', '二', '三', '四', '五'];
+                const headerStyle = `style="background-color: ${color.header}; color: white;"`;
+
+                html += `
+                    <div class="mb-8" id="schedule-week-${index}">
+                        <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
+                        <table class="schedule-table">
+                            <thead>
+                                <tr>
+                                    <th ${headerStyle}>勤務地點</th>
+                                    ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tasks.map((task, taskIndex) => `
+                                    <tr>
+                                        <td class="font-medium align-middle">${task.name}</td>
+                                        ${weekDayDates.map((_, dayIndex) => {
+                                            if (!scheduleDays[dayIndex].shouldSchedule) {
+                                                return `<td class="holiday-cell align-middle">${scheduleDays[dayIndex].description}</td>`;
+                                            } else {
+                                                return `<td class="align-middle">${schedule[dayIndex][taskIndex].join('<br>')}</td>`;
+                                            }
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            });
+            elements.scheduleOutput.innerHTML = html;
+            elements.outputContainer.classList.remove('hidden');
+        }
+
+        function copyScheduleToClipboard() {
+            if (!generatedData) return;
+            let textContent = '';
+            generatedData.forEach((data, index) => {
+                const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
+                textContent += `第 ${index + 1} 週班表 (${dateRange})\n`;
+                const header = ['勤務地點', '星期一', '星期二', '星期三', '星期四', '星期五'].join('\t');
+                textContent += header + '\n';
+                tasks.forEach((task, taskIndex) => {
+                    let row = `${task.name}\t`;
+                    row += weekDayDates.map((_, dayIndex) => {
+                        if (!scheduleDays[dayIndex].shouldSchedule) return scheduleDays[dayIndex].description;
+                        return schedule[dayIndex][taskIndex].join(', ');
+                    }).join('\t');
+                    textContent += row + '\n';
+                });
+                textContent += '\n';
+            });
+            navigator.clipboard.writeText(textContent).then(() => {
+                alert('班表已複製到剪貼簿！');
+            }).catch(err => alert('複製失敗！'));
+        }
+
+        function exportToExcel() {
+            if (!generatedData) return;
+            const wb = XLSX.utils.book_new();
+            generatedData.forEach((data, index) => {
+                const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
+                const header = ['勤務地點', ...weekDayDates.map((date, i) => `星期${['一','二','三','四','五'][i]}\n(${date})`)];
+                const ws_data = [header];
+                tasks.forEach((task, taskIndex) => {
+                    const row = [task.name];
+                    weekDayDates.forEach((_, dayIndex) => {
+                        if (!scheduleDays[dayIndex].shouldSchedule) {
+                            row.push(scheduleDays[dayIndex].description);
+                        } else {
+                            row.push(schedule[dayIndex][taskIndex].join('\n'));
+                        }
+                    });
+                    ws_data.push(row);
+                });
+                
+                const ws = XLSX.utils.aoa_to_sheet(ws_data);
+                ws['!cols'] = [{wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}];
+                Object.keys(ws).forEach(cell => {
+                    if (ws[cell].v) ws[cell].s = { alignment: { wrapText: true, vertical: 'top' } };
+                });
+                XLSX.utils.book_append_sheet(wb, ws, `第${index+1}週`);
+            });
+            XLSX.writeFile(wb, "班表.xlsx");
+        }
+
+        function exportToPdf() {
+            if (!generatedData) return;
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('l', 'mm', 'a4');
+            const scheduleElements = document.querySelectorAll('[id^="schedule-week-"]');
+            let yPos = 10;
+            const pageHeight = pdf.internal.pageSize.height - 20;
+
+            const processElement = (index) => {
+                if (index >= scheduleElements.length) {
+                    pdf.save('班表.pdf');
+                    return;
+                }
+                const element = scheduleElements[index];
+                html2canvas(element, { scale: 2 }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgWidth = 277; 
+                    const imgHeight = canvas.height * imgWidth / canvas.width;
+                    if (yPos + imgHeight > pageHeight && index > 0) {
+                        pdf.addPage();
+                        yPos = 10;
+                    }
+                    pdf.addImage(imgData, 'PNG', 10, yPos, imgWidth, imgHeight);
+                    yPos += imgHeight + 10;
+                    processElement(index + 1);
+                });
+            };
+            processElement(0);
+        }
 
         const setInitialAccordionState = () => {
             const accordions = document.querySelectorAll('.accordion-item');
-            if (window.innerWidth >= 1024) { // lg breakpoint
+            if (window.innerWidth >= 1024) { 
                 accordions.forEach(item => item.classList.add('active'));
             } else {
-                 accordions[3]?.classList.add('active'); // "Generate" accordion
+                 accordions[3]?.classList.add('active');
             }
         };
 
