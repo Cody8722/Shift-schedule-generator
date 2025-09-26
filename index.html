@@ -1010,63 +1010,68 @@
             XLSX.writeFile(wb, "班表.xlsx");
         }
 
-        function exportToPdf() {
+        async function exportToPdf() {
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('l', 'mm', 'a4'); 
-            const scheduleElements = document.querySelectorAll('[id^="schedule-week-"]');
+            const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
             
             const style = document.createElement('style');
             style.innerHTML = `
-                .pdf-export-mode h3 { font-size: 14px !important; margin-bottom: 4px !important; }
-                .pdf-export-mode table { font-size: 10px !important; }
-                .pdf-export-mode th, .pdf-export-mode td { padding: 5px !important; }
+                .pdf-export-container { 
+                    /* A4 landscape width in pixels approx for 96 DPI, provides a good base */
+                    width: 1123px; 
+                    padding: 20px;
+                    background: white;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                .pdf-export-container h3 { font-size: 14px !important; margin-bottom: 4px !important; }
+                .pdf-export-container table { font-size: 10px !important; }
+                .pdf-export-container th, .pdf-export-container td { padding: 4px !important; }
             `;
             document.head.appendChild(style);
 
-            let yPos = 10;
-            const pageHeight = pdf.internal.pageSize.height - 10;
+            const processBatch = async (batchIndex) => {
+                const start = batchIndex * 4;
+                const end = start + 4;
+                const batchElements = allScheduleElements.slice(start, end);
 
-            const processElement = (index) => {
-                if (index >= scheduleElements.length) {
+                if (batchElements.length === 0) {
                     document.head.removeChild(style);
                     pdf.save('班表.pdf');
                     return;
                 }
                 
-                if (index > 0 && index % 4 === 0) {
+                if (batchIndex > 0) {
                     pdf.addPage();
-                    yPos = 10;
                 }
 
-                const element = scheduleElements[index];
-                element.classList.add('pdf-export-mode');
-
-                html2canvas(element, { scale: 2 }).then(canvas => {
-                    element.classList.remove('pdf-export-mode');
-
+                const container = document.createElement('div');
+                container.className = 'pdf-export-container';
+                batchElements.forEach(el => container.appendChild(el.cloneNode(true)));
+                
+                document.body.appendChild(container);
+                
+                try {
+                    const canvas = await html2canvas(container, { scale: 2 });
                     const imgData = canvas.toDataURL('image/png');
-                    const imgWidth = 277; 
+                    const imgWidth = 277; // A4 landscape width (297mm) with 10mm margins
                     const imgHeight = canvas.height * imgWidth / canvas.width;
                     
-                    if (yPos + imgHeight > pageHeight && yPos > 10) { 
-                         pdf.addPage();
-                         yPos = 10;
-                    }
-
-                    pdf.addImage(imgData, 'PNG', 10, yPos, imgWidth, imgHeight);
-                    yPos += imgHeight + 5; 
-                    
-                    processElement(index + 1);
-                }).catch(err => {
+                    pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+                } catch (err) {
                     console.error("html2canvas failed:", err);
-                    element.classList.remove('pdf-export-mode');
-                    document.head.removeChild(style);
-                });
+                } finally {
+                    document.body.removeChild(container);
+                    await processBatch(batchIndex + 1);
+                }
             };
 
-            processElement(0);
+            await processBatch(0);
         }
+
 
         const setInitialAccordionState = () => {
             const accordions = document.querySelectorAll('.accordion-item');
