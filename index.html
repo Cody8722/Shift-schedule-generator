@@ -1033,61 +1033,44 @@
             `;
             document.head.appendChild(style);
 
-            // Calculate how many weeks can fit on one page
+            // Create one tall container for all schedules
             const container = document.createElement('div');
             container.className = 'pdf-export-container';
-            const singleWeekEl = allScheduleElements[0].cloneNode(true);
-            container.appendChild(singleWeekEl);
+            allScheduleElements.forEach(el => container.appendChild(el.cloneNode(true)));
             document.body.appendChild(container);
-            const singleWeekHeight = container.offsetHeight;
-            document.body.removeChild(container);
-            
-            // A4 Portrait height in pixels (approx)
-            const pageHeightInPx = 1123; 
-            const weeksPerPage = Math.floor((pageHeightInPx - 40) / singleWeekHeight) || 1;
-            debugLog(`Calculated weeks per page: ${weeksPerPage}`);
 
-
-            const processBatch = async (batchIndex) => {
-                const start = batchIndex * weeksPerPage;
-                const end = start + weeksPerPage;
-                const batchElements = allScheduleElements.slice(start, end);
-
-                if (batchElements.length === 0) {
-                    document.head.removeChild(style);
-                    pdf.save('班表.pdf');
-                    return;
-                }
+            try {
+                const canvas = await html2canvas(container, { scale: 2 });
+                const imgData = canvas.toDataURL('image/png');
                 
-                if (batchIndex > 0) {
+                const pdfPageWidth = pdf.internal.pageSize.getWidth();
+                const pdfPageHeight = pdf.internal.pageSize.getHeight();
+                const margin = 10;
+                const contentWidth = pdfPageWidth - (margin * 2);
+                const contentHeight = pdfPageHeight - (margin * 2);
+                
+                const totalImgHeight = canvas.height * contentWidth / canvas.width;
+                
+                let heightLeft = totalImgHeight;
+                let position = 0;
+
+                pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
+                heightLeft -= contentHeight;
+
+                while (heightLeft > 0) {
                     pdf.addPage();
+                    position -= contentHeight;
+                    pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
+                    heightLeft -= contentHeight;
                 }
+                pdf.save('班表.pdf');
 
-                const pageContainer = document.createElement('div');
-                pageContainer.className = 'pdf-export-container';
-                batchElements.forEach(el => pageContainer.appendChild(el.cloneNode(true)));
-                
-                document.body.appendChild(pageContainer);
-                
-                try {
-                    const canvas = await html2canvas(pageContainer, { scale: 2 });
-                    const imgData = canvas.toDataURL('image/png');
-                    const pageWidth = 190; // A4 portrait width (210mm) with 10mm margins
-                    
-                    // FIX: Always scale to fit width and maintain aspect ratio
-                    const imgWidth = pageWidth;
-                    const imgHeight = canvas.height * imgWidth / canvas.width;
-                    
-                    pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
-                } catch (err) {
-                    console.error("html2canvas failed:", err);
-                } finally {
-                    document.body.removeChild(pageContainer);
-                    await processBatch(batchIndex + 1);
-                }
-            };
-
-            await processBatch(0);
+            } catch (err) {
+                console.error("html2canvas failed:", err);
+            } finally {
+                document.body.removeChild(container);
+                document.head.removeChild(style);
+            }
         }
 
 
