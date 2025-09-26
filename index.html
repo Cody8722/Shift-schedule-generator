@@ -888,9 +888,15 @@
         
         async function generateFullSchedule() {
             const settings = getActiveProfile().settings;
-            if (!settings.personnel?.length || !settings.tasks?.length) return alert('請先設定勤務與人員！');
+            if (!settings.personnel?.length || !settings.tasks?.length) {
+                alert('請先設定勤務與人員！');
+                return;
+            }
             const startWeek = elements.startWeekInput.value;
-            if (!startWeek) return alert('請選擇開始週！');
+            if (!startWeek) {
+                alert('請選擇開始週！');
+                return;
+            }
 
             elements.generateBtn.disabled = true;
             elements.generateBtnText.classList.add('hidden');
@@ -1007,30 +1013,58 @@
         function exportToPdf() {
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('l', 'mm', 'a4');
+            const pdf = new jsPDF('l', 'mm', 'a4'); 
             const scheduleElements = document.querySelectorAll('[id^="schedule-week-"]');
+            
+            const style = document.createElement('style');
+            style.innerHTML = `
+                .pdf-export-mode h3 { font-size: 14px !important; margin-bottom: 4px !important; }
+                .pdf-export-mode table { font-size: 10px !important; }
+                .pdf-export-mode th, .pdf-export-mode td { padding: 5px !important; }
+            `;
+            document.head.appendChild(style);
+
             let yPos = 10;
-            const pageHeight = pdf.internal.pageSize.height - 20;
+            const pageHeight = pdf.internal.pageSize.height - 10;
 
             const processElement = (index) => {
                 if (index >= scheduleElements.length) {
+                    document.head.removeChild(style);
                     pdf.save('班表.pdf');
                     return;
                 }
+                
+                if (index > 0 && index % 4 === 0) {
+                    pdf.addPage();
+                    yPos = 10;
+                }
+
                 const element = scheduleElements[index];
+                element.classList.add('pdf-export-mode');
+
                 html2canvas(element, { scale: 2 }).then(canvas => {
+                    element.classList.remove('pdf-export-mode');
+
                     const imgData = canvas.toDataURL('image/png');
                     const imgWidth = 277; 
                     const imgHeight = canvas.height * imgWidth / canvas.width;
-                    if (yPos + imgHeight > pageHeight && index > 0) {
-                        pdf.addPage();
-                        yPos = 10;
+                    
+                    if (yPos + imgHeight > pageHeight && yPos > 10) { 
+                         pdf.addPage();
+                         yPos = 10;
                     }
+
                     pdf.addImage(imgData, 'PNG', 10, yPos, imgWidth, imgHeight);
-                    yPos += imgHeight + 10;
+                    yPos += imgHeight + 5; 
+                    
                     processElement(index + 1);
+                }).catch(err => {
+                    console.error("html2canvas failed:", err);
+                    element.classList.remove('pdf-export-mode');
+                    document.head.removeChild(style);
                 });
             };
+
             processElement(0);
         }
 
