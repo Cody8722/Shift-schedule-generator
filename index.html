@@ -99,6 +99,30 @@
             transform: rotate(90deg);
         }
         
+        /* Custom Week Picker Styles */
+        .week-picker-day {
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .week-picker-day:hover {
+            background-color: #dbeafe; /* blue-100 */
+        }
+        .dark .week-picker-day:hover {
+            background-color: #374151; /* gray-700 */
+        }
+        .week-picker-day.selected {
+            background-color: var(--primary-color) !important;
+            color: white;
+        }
+        .week-picker-day.today {
+            border: 1px solid var(--primary-color);
+        }
+        .week-picker-day.other-month {
+            color: #9ca3af; /* gray-400 */
+        }
+        .dark .week-picker-day.other-month {
+            color: #6b7280; /* gray-500 */
+        }
+
         .schedule-table {
             border-collapse: separate;
             border-spacing: 0;
@@ -115,12 +139,14 @@
             font-weight: 600;
             border-bottom: 1px solid var(--border-light);
         }
-        .dark .schedule-table th { border-bottom-color: #4b5563; }
+        .dark .schedule-table th { 
+            border-bottom-color: #4b5563;
+        }
         .schedule-table td {
             padding: 0.75rem 1rem;
             text-align: center;
             border-bottom: 1px solid var(--border-light);
-            vertical-align: top; /* Keep cell content aligned to the top */
+            vertical-align: top;
         }
         .dark .schedule-table td { border-bottom-color: var(--border-dark); }
         .schedule-table tbody tr:last-child td { border-bottom: none; }
@@ -196,7 +222,7 @@
                         </div>
                     </div>
                      <!-- Accordion Item 4: Generate Schedule -->
-                    <div class="accordion-item card rounded-lg shadow-md overflow-hidden mt-4 active">
+                    <div class="accordion-item card rounded-lg shadow-md overflow-hidden mt-4">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>3. 產生班表</span>
                              <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
@@ -204,8 +230,22 @@
                         <div class="accordion-content">
                             <div class="grid grid-cols-1 gap-4">
                                 <div>
-                                    <label for="start-week" class="block font-medium text-sm text-muted mb-1">選擇開始週</label>
-                                    <input type="week" id="start-week" class="form-input w-full p-2 rounded-md">
+                                    <label for="start-week-display" class="block font-medium text-sm text-muted mb-1">選擇開始週</label>
+                                    <div class="relative">
+                                        <button type="button" id="start-week-display" class="form-input w-full p-2 rounded-md text-left flex justify-between items-center">
+                                            <span id="start-week-text"></span>
+                                            <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path></svg>
+                                        </button>
+                                        <div id="week-picker-container" class="absolute z-10 mt-1 card rounded-lg shadow-xl p-3 hidden w-full md:w-80">
+                                            <div id="week-picker-header" class="flex justify-between items-center mb-2">
+                                                <button id="week-picker-prev" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&lt;</button>
+                                                <span id="week-picker-month-year" class="font-bold"></span>
+                                                <button id="week-picker-next" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&gt;</button>
+                                            </div>
+                                            <div id="week-picker-grid" class="grid grid-cols-7 gap-1 text-center text-sm"></div>
+                                        </div>
+                                    </div>
+                                    <input type="week" id="start-week" class="hidden">
                                 </div>
                                 <div>
                                     <label for="num-weeks" class="block font-medium text-sm text-muted mb-1">產生週數</label>
@@ -333,12 +373,22 @@
             newPersonnelNameInput: document.getElementById('new-personnel-name'),
             addPersonnelBtn: document.getElementById('add-personnel-btn'),
 
-            startWeekInput: document.getElementById('start-week'),
+            startWeekInput: document.getElementById('start-week'), // Hidden input
             numWeeksInput: document.getElementById('num-weeks'),
             generateBtn: document.getElementById('generate-schedule'),
             generateBtnText: document.getElementById('generate-btn-text'),
             generateSpinner: document.getElementById('generate-spinner'),
             
+            // Custom week picker elements
+            startWeekDisplay: document.getElementById('start-week-display'),
+            startWeekText: document.getElementById('start-week-text'),
+            weekPickerContainer: document.getElementById('week-picker-container'),
+            weekPickerHeader: document.getElementById('week-picker-header'),
+            weekPickerPrevBtn: document.getElementById('week-picker-prev'),
+            weekPickerNextBtn: document.getElementById('week-picker-next'),
+            weekPickerMonthYear: document.getElementById('week-picker-month-year'),
+            weekPickerGrid: document.getElementById('week-picker-grid'),
+
             outputContainer: document.getElementById('output-container'),
             scheduleOutput: document.getElementById('schedule-output'),
             copyBtn: document.getElementById('copy-schedule'),
@@ -364,8 +414,11 @@
         };
 
         let generatedData = null; 
+        let weekPickerState = {
+            currentDate: new Date(),
+            selectedDate: new Date(),
+        };
 
-        // --- API Functions ---
         const api = {
             get: async (endpoint) => {
                 debugLog(`GET Request to: ${API_BASE_URL}/${endpoint}`);
@@ -437,8 +490,7 @@
                     const data = await response.json();
                     debugLog(`DELETE Response from ${endpoint}:`, data);
                     return data;
-                } catch (error)
- {
+                } catch (error) {
                     console.error(`Failed to delete ${endpoint}:`, error);
                     alert(`操作失敗: ${error.message}`);
                     return null;
@@ -446,7 +498,6 @@
             }
         };
 
-        // --- Connection Status ---
         const checkConnectionStatus = async () => {
             try {
                 const response = await fetch(`${API_BASE_URL}/status`);
@@ -454,26 +505,25 @@
                 if (response.ok && data.database === 'connected') {
                     elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500 transition-colors';
                     elements.statusText.textContent = '連線狀態：良好';
-                    elements.statusContainer.title = `伺服器與資料庫連線正常 (上次檢查: ${new Date().toLocaleTimeString()})`;
                 } else {
                     elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-yellow-400 transition-colors';
                     elements.statusText.textContent = '連線狀態：資料庫異常';
-                    elements.statusContainer.title = `伺服器正常，但資料庫連線失敗 (上次檢查: ${new Date().toLocaleTimeString()})`;
                 }
             } catch (e) {
                 elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500 transition-colors';
                 elements.statusText.textContent = '連線狀態：伺服器無回應';
-                elements.statusContainer.title = `無法連線至伺服器 (上次檢查: ${new Date().toLocaleTimeString()})`;
             }
         };
 
-        // --- Application Logic ---
         const getActiveProfile = () => appState.profiles[appState.activeProfile];
+        
         const saveSettings = async () => {
             const activeProfile = getActiveProfile();
             if (!activeProfile) return;
-            await api.put(`profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
+            const result = await api.put(`profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
+            if(!result) alert('設定儲存失敗!');
         };
+        
         const renderTasks = () => {
             elements.taskList.innerHTML = '';
             const tasks = getActiveProfile()?.settings?.tasks || [];
@@ -488,6 +538,7 @@
                 elements.taskList.appendChild(div);
             });
         };
+        
         const renderPersonnel = () => {
              elements.personnelList.innerHTML = '';
             const personnel = getActiveProfile()?.settings?.personnel || [];
@@ -503,17 +554,17 @@
                 elements.personnelList.appendChild(div);
             });
         };
+        
         const renderProfileSelector = () => {
             elements.profileSelect.innerHTML = '';
             Object.keys(appState.profiles).forEach(name => {
                 const option = document.createElement('option');
                 option.value = option.textContent = name;
-                if (name === appState.activeProfile) {
-                    option.selected = true;
-                }
+                if (name === appState.activeProfile) option.selected = true;
                 elements.profileSelect.appendChild(option);
             });
         };
+        
         const renderSavedSchedules = () => {
             elements.savedSchedulesList.innerHTML = '<li class="text-gray-500">無 (尚未儲存任何班表)</li>';
             const schedules = getActiveProfile()?.schedules;
@@ -531,6 +582,7 @@
                 });
             }
         };
+        
         const renderAll = () => {
             renderProfileSelector();
             renderTasks();
@@ -539,12 +591,11 @@
         };
 
         const initApp = async () => {
-            debugLog('App 初始化開始...');
+             debugLog('App 初始化開始...');
             await checkConnectionStatus();
             try {
                 const data = await api.get('profiles');
                 if (data && data.profiles) {
-                    debugLog('從伺服器獲取設定檔資料:', data);
                     appState.activeProfile = data.activeProfile;
                     appState.profiles = data.profiles;
                     renderAll();
@@ -553,11 +604,107 @@
                 }
             } catch(e) {
                 console.error("初始化 App 失敗:", e);
-                alert("初始化 App 失敗: " + e.message);
+            }
+        };
+
+        const getISOWeek = (date) => {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        }
+
+        const renderWeekPicker = () => {
+            const year = weekPickerState.currentDate.getFullYear();
+            const month = weekPickerState.currentDate.getMonth();
+            elements.weekPickerMonthYear.textContent = `${year}年 ${month + 1}月`;
+            
+            elements.weekPickerGrid.innerHTML = '';
+            const weekDays = ['一', '二', '三', '四', '五', '六', '日'];
+            weekDays.forEach(day => {
+                const dayEl = document.createElement('div');
+                dayEl.className = 'font-bold text-xs text-muted';
+                dayEl.textContent = day;
+                elements.weekPickerGrid.appendChild(dayEl);
+            });
+
+            const firstDayOfMonth = new Date(year, month, 1);
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            
+            let dayOfWeek = firstDayOfMonth.getDay();
+            dayOfWeek = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+            for (let i = 0; i < dayOfWeek; i++) {
+                elements.weekPickerGrid.appendChild(document.createElement('div'));
+            }
+            
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+            
+            const selectedMonday = new Date(weekPickerState.selectedDate);
+            selectedMonday.setDate(selectedMonday.getDate() - (selectedMonday.getDay() === 0 ? 6 : selectedMonday.getDay() - 1));
+            const selectedMondayStr = `${selectedMonday.getFullYear()}-${selectedMonday.getMonth()}-${selectedMonday.getDate()}`;
+
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayEl = document.createElement('div');
+                dayEl.textContent = i;
+                const currentDate = new Date(year, month, i);
+                
+                const currentMonday = new Date(currentDate);
+                currentMonday.setDate(currentMonday.getDate() - (currentMonday.getDay() === 0 ? 6 : currentMonday.getDay() - 1));
+                const currentMondayStr = `${currentMonday.getFullYear()}-${currentMonday.getMonth()}-${currentMonday.getDate()}`;
+
+                let classes = 'week-picker-day cursor-pointer p-1 rounded-full';
+                if (`${year}-${month}-${i}` === todayStr) classes += ' today';
+                if (currentMondayStr === selectedMondayStr) classes += ' selected';
+                
+                dayEl.className = classes;
+                dayEl.dataset.date = currentDate.toISOString();
+                elements.weekPickerGrid.appendChild(dayEl);
             }
         };
         
-        // --- Event Handlers ---
+        const updateStartWeekValue = (date) => {
+            weekPickerState.selectedDate = new Date(date);
+            const year = weekPickerState.selectedDate.getFullYear();
+            const week = getISOWeek(weekPickerState.selectedDate);
+            const weekString = `${year}-W${String(week).padStart(2, '0')}`;
+            elements.startWeekInput.value = weekString;
+            elements.startWeekText.textContent = weekString;
+        };
+
+        elements.startWeekDisplay.addEventListener('click', () => {
+            elements.weekPickerContainer.classList.toggle('hidden');
+            if (!elements.weekPickerContainer.classList.contains('hidden')) {
+                renderWeekPicker();
+            }
+        });
+        
+        elements.weekPickerPrevBtn.addEventListener('click', () => {
+            weekPickerState.currentDate.setMonth(weekPickerState.currentDate.getMonth() - 1);
+            renderWeekPicker();
+        });
+        
+        elements.weekPickerNextBtn.addEventListener('click', () => {
+            weekPickerState.currentDate.setMonth(weekPickerState.currentDate.getMonth() + 1);
+            renderWeekPicker();
+        });
+
+        elements.weekPickerGrid.addEventListener('click', (e) => {
+            if (e.target.dataset.date) {
+                updateStartWeekValue(new Date(e.target.dataset.date));
+                renderWeekPicker(); // Re-render to show selection
+                elements.weekPickerContainer.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!elements.startWeekDisplay.contains(e.target) && !elements.weekPickerContainer.contains(e.target)) {
+                elements.weekPickerContainer.classList.add('hidden');
+            }
+        });
+
         elements.addTaskBtn.addEventListener('click', () => {
             const name = elements.newTaskNameInput.value.trim();
             const count = parseInt(elements.newTaskCountInput.value, 10) || 1;
@@ -567,7 +714,6 @@
                 saveSettings();
                 elements.newTaskNameInput.value = '';
                 elements.newTaskCountInput.value = '1';
-                elements.newTaskNameInput.focus();
             }
         });
 
@@ -580,6 +726,7 @@
                 saveSettings();
             }
         });
+
         elements.taskList.addEventListener('click', (e) => {
             if (e.target.matches('.remove-task')) {
                 getActiveProfile().settings.tasks.splice(e.target.dataset.index, 1);
@@ -595,7 +742,6 @@
                 renderPersonnel();
                 saveSettings();
                 elements.newPersonnelNameInput.value = '';
-                elements.newPersonnelNameInput.focus();
             }
         });
 
@@ -608,6 +754,7 @@
                 saveSettings();
             }
         });
+
         elements.personnelList.addEventListener('click', (e) => {
             if (e.target.matches('.remove-personnel')) {
                 getActiveProfile().settings.personnel.splice(e.target.dataset.index, 1);
@@ -626,6 +773,7 @@
                 renderAll();
             }
         });
+
         elements.newProfileBtn.addEventListener('click', async () => {
             const name = prompt('請輸入新的設定檔名稱:');
             if (name && name.trim()) {
@@ -634,6 +782,7 @@
                 if (result) await initApp();
             }
         });
+
         elements.renameProfileBtn.addEventListener('click', async () => {
             const oldName = appState.activeProfile;
             const newName = prompt(`請為「${oldName}」輸入新名稱:`, oldName);
@@ -643,6 +792,7 @@
                  if (result) await initApp();
             }
         });
+
         elements.deleteProfileBtn.addEventListener('click', async () => {
             const nameToDelete = appState.activeProfile;
             if (Object.keys(appState.profiles).length <= 1) return alert('至少需保留一個設定檔！');
@@ -651,6 +801,7 @@
                 if (result) await initApp();
             }
         });
+
         elements.exportProfileBtn.addEventListener('click', () => {
             const settings = getActiveProfile().settings;
             const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
@@ -661,7 +812,9 @@
             a.click();
             URL.revokeObjectURL(url);
         });
+
         elements.importProfileBtn.addEventListener('click', () => elements.profileFileInput.click());
+
         elements.profileFileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -669,9 +822,7 @@
                 reader.onload = async (event) => {
                     try {
                         const newSettings = JSON.parse(event.target.result);
-                        if (!newSettings.tasks || !newSettings.personnel) {
-                            throw new Error("檔案缺少必要欄位 (tasks/personnel)");
-                        }
+                        if (!newSettings.tasks || !newSettings.personnel) throw new Error("檔案缺少必要欄位");
                         if (confirm('這將會覆蓋您目前的設定，確定要匯入嗎？')) {
                             getActiveProfile().settings = newSettings;
                             await saveSettings();
@@ -693,7 +844,7 @@
             const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
             elements.offDaysContainer.innerHTML = weekDays.map((day, dayIndex) => `
                 <label class="flex items-center space-x-2">
-                    <input type="checkbox" class="form-checkbox rounded" value="${dayIndex}" ${personnel.offDays.includes(dayIndex) ? 'checked' : ''}>
+                    <input type="checkbox" class="form-checkbox rounded" value="${dayIndex}" ${personnel.offDays?.includes(dayIndex) ? 'checked' : ''}>
                     <span>${day}</span>
                 </label>
             `).join('');
@@ -703,11 +854,14 @@
             ).join('');
             elements.personnelModal.classList.remove('hidden');
         };
+
         const closePersonnelModal = () => {
             elements.personnelModal.classList.add('hidden');
             currentEditingPersonnelIndex = -1;
         };
+
         elements.modalCloseBtn.addEventListener('click', closePersonnelModal);
+        
         elements.modalSaveBtn.addEventListener('click', () => {
             if (currentEditingPersonnelIndex > -1) {
                 const personnel = getActiveProfile().settings.personnel[currentEditingPersonnelIndex];
@@ -735,6 +889,7 @@
                 }
             }
         });
+
         elements.savedSchedulesList.addEventListener('click', async (e) => {
             e.preventDefault();
             const link = e.target.closest('.load-schedule-link');
@@ -764,30 +919,31 @@
             localStorage.setItem('theme', newTheme);
             applyTheme(newTheme);
         });
+
         const updateDebugMode = () => {
             elements.debugModeToggle.checked = localStorage.getItem('debug') === 'true';
         };
+
         elements.debugModeToggle.addEventListener('change', () => {
             localStorage.setItem('debug', elements.debugModeToggle.checked);
-            if (elements.debugModeToggle.checked) {
-                 console.log("除錯模式已啟用。");
-            } else {
-                 console.log("除錯模式已停用。");
-            }
         });
 
-        // --- Accordion Logic ---
         elements.accordionContainer.addEventListener('click', (e) => {
             const header = e.target.closest('.accordion-header');
             if (header) {
                 const item = header.parentElement;
+                // On mobile, close others. On desktop, allow multiple open.
+                if (window.innerWidth < 1024) {
+                    item.parentElement.querySelectorAll('.accordion-item').forEach(otherItem => {
+                        if (otherItem !== item) otherItem.classList.remove('active');
+                    });
+                }
                 item.classList.toggle('active');
             }
         });
         
-        // --- Schedule Generation & Display ---
         async function generateFullSchedule() {
-             const settings = getActiveProfile().settings;
+            const settings = getActiveProfile().settings;
             if (!settings.personnel?.length || !settings.tasks?.length) return alert('請先設定勤務與人員！');
             const startWeek = elements.startWeekInput.value;
             if (!startWeek) return alert('請選擇開始週！');
@@ -820,7 +976,9 @@
             dataToDisplay.forEach((data, index) => {
                 const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
                 const weekDayNames = ['一', '二', '三', '四', '五'];
+                // FIX: Add dark mode style for header
                 const headerStyle = `style="background-color: ${color.header}; color: white;"`;
+
                 html += `
                     <div class="mb-8" id="schedule-week-${index}">
                         <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
@@ -873,11 +1031,9 @@
             });
             navigator.clipboard.writeText(textContent).then(() => {
                 alert('班表已複製到剪貼簿！');
-            }).catch(err => {
-                console.error('複製失敗:', err);
-                alert('複製失敗！');
-            });
+            }).catch(err => alert('複製失敗！'));
         }
+
         function exportToExcel() {
             if (!generatedData) return;
             const wb = XLSX.utils.book_new();
@@ -898,22 +1054,19 @@
                 });
                 
                 const ws = XLSX.utils.aoa_to_sheet(ws_data);
-                // Set column widths and wrap text
                 ws['!cols'] = [{wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}];
                 Object.keys(ws).forEach(cell => {
-                    if (ws[cell].v) {
-                       ws[cell].s = { alignment: { wrapText: true, vertical: 'top' } };
-                    }
+                    if (ws[cell].v) ws[cell].s = { alignment: { wrapText: true, vertical: 'top' } };
                 });
-
                 XLSX.utils.book_append_sheet(wb, ws, `第${index+1}週`);
             });
             XLSX.writeFile(wb, "班表.xlsx");
         }
+
         function exportToPdf() {
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('l', 'mm', 'a4'); // Landscape
+            const pdf = new jsPDF('l', 'mm', 'a4');
             const scheduleElements = document.querySelectorAll('[id^="schedule-week-"]');
             let yPos = 10;
             const pageHeight = pdf.internal.pageSize.height - 20;
@@ -945,14 +1098,27 @@
         applyTheme(savedTheme);
         updateDebugMode();
         
-        const today = new Date();
-        const year = today.getFullYear();
-        const week = Math.ceil((((today - new Date(year, 0, 1)) / 86400000) + new Date(year, 0, 1).getDay() + 1) / 7);
-        elements.startWeekInput.value = `${year}-W${String(week).padStart(2,'0')}`;
+        // FIX: Set accordion state based on screen size
+        const setInitialAccordionState = () => {
+            const accordions = document.querySelectorAll('.accordion-item');
+            if (window.innerWidth >= 1024) { // lg breakpoint in tailwind
+                accordions.forEach(item => item.classList.add('active'));
+            } else {
+                // Keep the "Generate" accordion open on mobile
+                 accordions.forEach((item, index) => {
+                    if(index === 3) item.classList.add('active'); // The 4th item
+                    else item.classList.remove('active');
+                 });
+            }
+        };
+
+        updateStartWeekValue(new Date());
         
         initApp();
+        setInitialAccordionState();
         setInterval(checkConnectionStatus, 30000);
     });
 </script>
 </body>
 </html>
+
