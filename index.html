@@ -1013,29 +1013,44 @@
         async function exportToPdf() {
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('l', 'mm', 'a4'); 
+            const pdf = new jsPDF('p', 'mm', 'a4'); // Portrait mode
             const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
             
             const style = document.createElement('style');
             style.innerHTML = `
+                /* A4 portrait width in pixels approx for 96 DPI, provides a good base */
                 .pdf-export-container { 
-                    /* A4 landscape width in pixels approx for 96 DPI, provides a good base */
-                    width: 1123px; 
-                    padding: 20px;
+                    width: 794px; 
+                    padding: 10px;
                     background: white;
                     display: flex;
                     flex-direction: column;
-                    gap: 10px;
+                    gap: 8px;
                 }
-                .pdf-export-container h3 { font-size: 14px !important; margin-bottom: 4px !important; }
-                .pdf-export-container table { font-size: 10px !important; }
-                .pdf-export-container th, .pdf-export-container td { padding: 4px !important; }
+                .pdf-export-container h3 { font-size: 12px !important; margin-bottom: 3px !important; }
+                .pdf-export-container table { font-size: 8px !important; }
+                .pdf-export-container th, .pdf-export-container td { padding: 3px !important; }
             `;
             document.head.appendChild(style);
 
+            // Calculate how many weeks can fit on one page
+            const container = document.createElement('div');
+            container.className = 'pdf-export-container';
+            const singleWeekEl = allScheduleElements[0].cloneNode(true);
+            container.appendChild(singleWeekEl);
+            document.body.appendChild(container);
+            const singleWeekHeight = container.offsetHeight;
+            document.body.removeChild(container);
+            
+            // A4 Portrait height in pixels (approx)
+            const pageHeightInPx = 1123; 
+            const weeksPerPage = Math.floor((pageHeightInPx - 40) / singleWeekHeight) || 1;
+            debugLog(`Calculated weeks per page: ${weeksPerPage}`);
+
+
             const processBatch = async (batchIndex) => {
-                const start = batchIndex * 4;
-                const end = start + 4;
+                const start = batchIndex * weeksPerPage;
+                const end = start + weeksPerPage;
                 const batchElements = allScheduleElements.slice(start, end);
 
                 if (batchElements.length === 0) {
@@ -1048,23 +1063,25 @@
                     pdf.addPage();
                 }
 
-                const container = document.createElement('div');
-                container.className = 'pdf-export-container';
-                batchElements.forEach(el => container.appendChild(el.cloneNode(true)));
+                const pageContainer = document.createElement('div');
+                pageContainer.className = 'pdf-export-container';
+                batchElements.forEach(el => pageContainer.appendChild(el.cloneNode(true)));
                 
-                document.body.appendChild(container);
+                document.body.appendChild(pageContainer);
                 
                 try {
-                    const canvas = await html2canvas(container, { scale: 2 });
+                    const canvas = await html2canvas(pageContainer, { scale: 2 });
                     const imgData = canvas.toDataURL('image/png');
-                    const imgWidth = 277; // A4 landscape width (297mm) with 10mm margins
-                    const imgHeight = canvas.height * imgWidth / canvas.width;
+                    const pageWidth = 190; // A4 portrait width (210mm) with 10mm margins
+                    const pageHeight = 277; // A4 portrait height (297mm) with 10mm margins
+                    const imgHeight = canvas.height * pageWidth / canvas.width;
+                    const finalHeight = Math.min(imgHeight, pageHeight);
                     
-                    pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+                    pdf.addImage(imgData, 'PNG', 10, 10, pageWidth, finalHeight);
                 } catch (err) {
                     console.error("html2canvas failed:", err);
                 } finally {
-                    document.body.removeChild(container);
+                    document.body.removeChild(pageContainer);
                     await processBatch(batchIndex + 1);
                 }
             };
@@ -1090,5 +1107,4 @@
 </script>
 </body>
 </html>
-"
 
