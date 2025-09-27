@@ -1043,24 +1043,23 @@
                 
                 const pdfPageWidth = pdf.internal.pageSize.getWidth();
                 const pdfPageHeight = pdf.internal.pageSize.getHeight();
-                const margin = 10;
                 
-                const contentWidth = pdfPageWidth - (margin * 2);
-                const contentHeight = pdfPageHeight - (margin * 2);
+                // Keep the original aspect ratio
+                const imgProps = pdf.getImageProperties(imgData);
+                const pdfWidth = pdfPageWidth;
+                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
                 
-                const totalImgHeight = canvas.height * contentWidth / canvas.width;
-                
-                let heightLeft = totalImgHeight;
+                let heightLeft = pdfHeight;
                 let position = 0;
 
-                pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
-                heightLeft -= contentHeight;
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                heightLeft -= pdfPageHeight;
 
                 while (heightLeft > 0) {
                     pdf.addPage();
-                    position -= contentHeight;
-                    pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
-                    heightLeft -= contentHeight;
+                    position -= pdfPageHeight;
+                    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+                    heightLeft -= pdfPageHeight;
                 }
                 pdf.save('班表.pdf');
 
@@ -1090,4 +1089,16 @@
 </script>
 </body>
 </html>
+" code between  and  in the most up-to-date Canvas "班表產生器 (完整最終版)" document above and am asking a query about/based on this code below.
+Instructions to follow:
+  * Don't output/edit the document if the query is Direct/Simple. For example, if the query asks for a simple explanation, output a direct answer.
+  * Make sure to **edit** the document if the query shows the intent of editing the document, in which case output the entire edited document, **not just that section or the edits**.
+    * Don't output the same document/empty document and say that you have edited it.
+    * Don't change unrelated code in the document.
+  * Don't output  and  in your final response.
+  * Any references like "this" or "selected code" refers to the code between  and  tags.
+  * Just acknowledge my request in the introduction.
+  * Make sure to refer to the document as "Canvas" in your response.
+
+你不覺得這個比例很奇怪嗎
 
