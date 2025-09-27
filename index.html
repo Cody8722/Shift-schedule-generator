@@ -1019,7 +1019,7 @@
             const style = document.createElement('style');
             style.innerHTML = `
                 .pdf-export-container { 
-                    display: inline-block; 
+                    display: inline-block; /* Crucial for shrink-wrapping content width */
                     padding: 10px;
                     background: white;
                 }
@@ -1097,4 +1097,3 @@
 </script>
 </body>
 </html>
-
