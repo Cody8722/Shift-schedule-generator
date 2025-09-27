@@ -1018,9 +1018,8 @@
             
             const style = document.createElement('style');
             style.innerHTML = `
-                /* A4 portrait width in pixels approx for 96 DPI, provides a good base */
                 .pdf-export-container { 
-                    width: 794px; 
+                    width: 794px; /* A4 portrait width in pixels approx for 96 DPI */
                     padding: 10px;
                     background: white;
                     display: flex;
@@ -1033,7 +1032,6 @@
             `;
             document.head.appendChild(style);
 
-            // Create one tall container for all schedules
             const container = document.createElement('div');
             container.className = 'pdf-export-container';
             allScheduleElements.forEach(el => container.appendChild(el.cloneNode(true)));
@@ -1046,6 +1044,7 @@
                 const pdfPageWidth = pdf.internal.pageSize.getWidth();
                 const pdfPageHeight = pdf.internal.pageSize.getHeight();
                 const margin = 10;
+                
                 const contentWidth = pdfPageWidth - (margin * 2);
                 const contentHeight = pdfPageHeight - (margin * 2);
                 
