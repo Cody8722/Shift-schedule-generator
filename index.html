@@ -1019,22 +1019,23 @@
             const style = document.createElement('style');
             style.innerHTML = `
                 .pdf-export-container { 
-                    width: 794px; /* A4 portrait width in pixels approx for 96 DPI */
+                    display: inline-block; /* Crucial for shrink-wrapping content width */
                     padding: 10px;
                     background: white;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 8px;
                 }
-                .pdf-export-container h3 { font-size: 12px !important; margin-bottom: 3px !important; }
-                .pdf-export-container table { font-size: 8px !important; }
-                .pdf-export-container th, .pdf-export-container td { padding: 3px !important; }
+                .pdf-export-container .mb-8 { margin-bottom: 8px; } /* Re-apply spacing */
+                .pdf-export-container h3 { font-size: 14px !important; margin-bottom: 4px !important; }
+                .pdf-export-container table { font-size: 10px !important; }
+                .pdf-export-container th, .pdf-export-container td { padding: 4px !important; }
             `;
             document.head.appendChild(style);
 
             const container = document.createElement('div');
             container.className = 'pdf-export-container';
             allScheduleElements.forEach(el => container.appendChild(el.cloneNode(true)));
+            
+            container.style.position = 'absolute';
+            container.style.left = '-9999px';
             document.body.appendChild(container);
 
             try {
@@ -1043,22 +1044,23 @@
                 
                 const pdfPageWidth = pdf.internal.pageSize.getWidth();
                 const pdfPageHeight = pdf.internal.pageSize.getHeight();
+                const margin = 10;
                 
-                // Keep the original aspect ratio
+                const contentWidth = pdfPageWidth - (margin * 2);
+                
                 const imgProps = pdf.getImageProperties(imgData);
-                const pdfWidth = pdfPageWidth;
-                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                const totalImgHeight = (imgProps.height * contentWidth) / imgProps.width;
                 
-                let heightLeft = pdfHeight;
+                let heightLeft = totalImgHeight;
                 let position = 0;
 
-                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-                heightLeft -= pdfPageHeight;
+                pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
+                heightLeft -= (pdfPageHeight - margin);
 
                 while (heightLeft > 0) {
-                    pdf.addPage();
                     position -= pdfPageHeight;
-                    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
                     heightLeft -= pdfPageHeight;
                 }
                 pdf.save('班表.pdf');
@@ -1089,16 +1091,4 @@
 </script>
 </body>
 </html>
-" code between  and  in the most up-to-date Canvas "班表產生器 (完整最終版)" document above and am asking a query about/based on this code below.
-Instructions to follow:
-  * Don't output/edit the document if the query is Direct/Simple. For example, if the query asks for a simple explanation, output a direct answer.
-  * Make sure to **edit** the document if the query shows the intent of editing the document, in which case output the entire edited document, **not just that section or the edits**.
-    * Don't output the same document/empty document and say that you have edited it.
-    * Don't change unrelated code in the document.
-  * Don't output  and  in your final response.
-  * Any references like "this" or "selected code" refers to the code between  and  tags.
-  * Just acknowledge my request in the introduction.
-  * Make sure to refer to the document as "Canvas" in your response.
-
-你不覺得這個比例很奇怪嗎
 
