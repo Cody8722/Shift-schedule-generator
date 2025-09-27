@@ -1013,17 +1013,17 @@
         async function exportToPdf() {
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF('p', 'mm', 'a4'); // Portrait mode
+            
             const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
             
             const style = document.createElement('style');
             style.innerHTML = `
                 .pdf-export-container { 
-                    display: inline-block; /* Crucial for shrink-wrapping content width */
+                    display: inline-block; 
                     padding: 10px;
                     background: white;
                 }
-                .pdf-export-container .mb-8 { margin-bottom: 8px; } /* Re-apply spacing */
+                .pdf-export-container .mb-8 { margin-bottom: 8px !important; }
                 .pdf-export-container h3 { font-size: 14px !important; margin-bottom: 4px !important; }
                 .pdf-export-container table { font-size: 10px !important; }
                 .pdf-export-container th, .pdf-export-container td { padding: 4px !important; }
@@ -1040,36 +1040,42 @@
 
             try {
                 const canvas = await html2canvas(container, { scale: 2 });
+                document.body.removeChild(container);
+                document.head.removeChild(style);
+
                 const imgData = canvas.toDataURL('image/png');
                 
+                const pdf = new jsPDF('p', 'mm', 'a4');
                 const pdfPageWidth = pdf.internal.pageSize.getWidth();
                 const pdfPageHeight = pdf.internal.pageSize.getHeight();
-                const margin = 10;
-                
-                const contentWidth = pdfPageWidth - (margin * 2);
                 
                 const imgProps = pdf.getImageProperties(imgData);
-                const totalImgHeight = (imgProps.height * contentWidth) / imgProps.width;
+                const imgWidth = imgProps.width;
+                const imgHeight = imgProps.height;
                 
-                let heightLeft = totalImgHeight;
+                const ratio = imgHeight / imgWidth;
+                const pdfImageWidth = pdfPageWidth;
+                const pdfImageHeight = pdfImageWidth * ratio;
+
+                let heightLeft = pdfImageHeight;
                 let position = 0;
 
-                pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
-                heightLeft -= (pdfPageHeight - margin);
+                pdf.addImage(imgData, 'PNG', 0, position, pdfImageWidth, pdfImageHeight);
+                heightLeft -= pdfPageHeight;
 
                 while (heightLeft > 0) {
                     position -= pdfPageHeight;
                     pdf.addPage();
-                    pdf.addImage(imgData, 'PNG', margin, position + margin, contentWidth, totalImgHeight);
+                    pdf.addImage(imgData, 'PNG', 0, position, pdfImageWidth, pdfImageHeight);
                     heightLeft -= pdfPageHeight;
                 }
+                
                 pdf.save('班表.pdf');
 
             } catch (err) {
                 console.error("html2canvas failed:", err);
-            } finally {
-                document.body.removeChild(container);
-                document.head.removeChild(style);
+                if (document.body.contains(container)) document.body.removeChild(container);
+                if (document.head.contains(style)) document.head.removeChild(style);
             }
         }
 
