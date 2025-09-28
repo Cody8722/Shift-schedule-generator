@@ -1009,7 +1009,7 @@
             });
             XLSX.writeFile(wb, "班表.xlsx");
         }
-
+        
         async function exportToPdf() {
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
@@ -1019,14 +1019,15 @@
             const style = document.createElement('style');
             style.innerHTML = `
                 .pdf-export-container { 
-                    display: inline-block; /* Crucial for shrink-wrapping content width */
-                    padding: 10px;
+                    display: inline-block;
+                    padding: 20px;
                     background: white;
+                    max-width: 800px;
                 }
-                .pdf-export-container .mb-8 { margin-bottom: 8px !important; }
-                .pdf-export-container h3 { font-size: 14px !important; margin-bottom: 4px !important; }
-                .pdf-export-container table { font-size: 10px !important; }
-                .pdf-export-container th, .pdf-export-container td { padding: 4px !important; }
+                .pdf-export-container .mb-8 { margin-bottom: 16px !important; }
+                .pdf-export-container h3 { font-size: 16px !important; margin-bottom: 8px !important; }
+                .pdf-export-container table { font-size: 12px !important; width: 100% !important; }
+                .pdf-export-container th, .pdf-export-container td { padding: 8px !important; }
             `;
             document.head.appendChild(style);
 
@@ -1039,12 +1040,18 @@
             document.body.appendChild(container);
 
             try {
-                const canvas = await html2canvas(container, { scale: 2 });
+                const canvas = await html2canvas(container, { 
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff'
+                });
                 document.body.removeChild(container);
                 document.head.removeChild(style);
 
                 const imgData = canvas.toDataURL('image/png');
                 
+                // 使用直向A4
                 const pdf = new jsPDF('p', 'mm', 'a4');
                 const pdfPageWidth = pdf.internal.pageSize.getWidth();
                 const pdfPageHeight = pdf.internal.pageSize.getHeight();
@@ -1053,21 +1060,33 @@
                 const imgWidth = imgProps.width;
                 const imgHeight = imgProps.height;
                 
-                const ratio = imgHeight / imgWidth;
-                const pdfImageWidth = pdfPageWidth;
-                const pdfImageHeight = pdfImageWidth * ratio;
+                // 計算最佳縮放比例，考慮頁面邊距
+                const margin = 10; // 10mm 邊距
+                const availableWidth = pdfPageWidth - (margin * 2);
+                const availableHeight = pdfPageHeight - (margin * 2);
+                
+                const widthScale = availableWidth / (imgWidth / 96 * 25.4); // 轉換像素到mm
+                const heightScale = availableHeight / (imgHeight / 96 * 25.4);
+                const scale = Math.min(widthScale, heightScale, 1); // 不放大，只縮小
+                
+                const pdfImageWidth = (imgWidth / 96 * 25.4) * scale;
+                const pdfImageHeight = (imgHeight / 96 * 25.4) * scale;
+                
+                // 計算置中位置
+                const xPosition = (pdfPageWidth - pdfImageWidth) / 2;
+                const yPosition = margin;
 
                 let heightLeft = pdfImageHeight;
                 let position = 0;
 
-                pdf.addImage(imgData, 'PNG', 0, position, pdfImageWidth, pdfImageHeight);
-                heightLeft -= pdfPageHeight;
+                pdf.addImage(imgData, 'PNG', xPosition, yPosition - (position * (pdfPageHeight - margin * 2) / pdfImageHeight), pdfImageWidth, pdfImageHeight);
+                heightLeft -= availableHeight;
 
                 while (heightLeft > 0) {
-                    position -= pdfPageHeight;
+                    position += availableHeight;
                     pdf.addPage();
-                    pdf.addImage(imgData, 'PNG', 0, position, pdfImageWidth, pdfImageHeight);
-                    heightLeft -= pdfPageHeight;
+                    pdf.addImage(imgData, 'PNG', xPosition, yPosition - (position * (pdfPageHeight - margin * 2) / pdfImageHeight), pdfImageWidth, pdfImageHeight);
+                    heightLeft -= availableHeight;
                 }
                 
                 pdf.save('班表.pdf');
