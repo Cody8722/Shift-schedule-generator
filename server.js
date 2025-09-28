@@ -198,7 +198,6 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
                     const person = combinedPool.shift();
                     weeklySchedule[dayIndex][taskIndex].push(person.name);
                     shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
-                    // Remove person from all pools for the day
                     dailyAvailablePersonnel = dailyAvailablePersonnel.filter(p => p.name !== person.name);
                 } else {
                      weeklySchedule[dayIndex][taskIndex].push('人力不足');
@@ -292,7 +291,6 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
         }
         
         let update = { $rename: { [`profiles.${oldName}`]: `profiles.${newName}` } };
-        // 如果被重新命名的設定檔是作用中的，一併更新 activeProfile
         if (config.activeProfile === oldName) {
             update.$set = { activeProfile: newName };
         }
@@ -461,8 +459,8 @@ const startServer = async () => {
         isDbConnected = false;
         debugServer('伺服器啟動失敗: %O', err);
 
-        // 即使資料庫連線失敗，仍啟動伺服器提供靜態檔案與排班功能
         await preloadHolidays();
+        
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行 (資料庫連線失敗)`);
         });
