@@ -181,7 +181,6 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
             let preferredPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask === task.name);
             let otherPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask !== task.name);
             
-            // Fisher-Yates shuffle for variety
             for (let i = preferredPersonnel.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [preferredPersonnel[i], preferredPersonnel[j]] = [preferredPersonnel[j], preferredPersonnel[i]];
@@ -442,7 +441,7 @@ const startServer = async () => {
         await client.db("admin").command({ ping: 1 });
         debugDb("成功 Ping 到您的部署。您已成功連線至 MongoDB！");
         db = client.db(DB_NAME);
-        configCollection = db.collection('config');
+        configCollection = db.collection('config'); // 修正：確保使用 'config' collection
         isDbConnected = true;
         
         if (isDbConnected) {
