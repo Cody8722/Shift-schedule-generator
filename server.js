@@ -45,10 +45,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// 速率限制
 const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 分鐘
-    max: 200, // 每個 IP 每 15 分鐘最多 200 次請求
+    windowMs: 15 * 60 * 1000,
+    max: 200,
     standardHeaders: true,
     legacyHeaders: false,
     message: '來自此 IP 的請求過多，請於 15 分鐘後再試。'
@@ -56,13 +55,8 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 
 // --- 輔助函式 ---
-
-// 確保基礎設定文件存在 (更安全版本)
 const ensureConfigDocument = async () => {
     debugDb('正在確認主要設定檔...');
-    // 使用 $setOnInsert 搭配 upsert: true 是最安全的作法。
-    // 這代表：如果文件不存在，就用以下欄位建立它。
-    // 如果文件已存在，這個操作將不會做任何事，完美地保留了現有資料。
     const update = {
         $setOnInsert: {
             _id: CONFIG_ID,
@@ -85,7 +79,6 @@ const ensureConfigDocument = async () => {
     }
 };
 
-// 取得週次資訊
 const getWeekInfo = (weekString, weekIndex) => {
     const [year, weekNum] = weekString.split('-W').map(Number);
     const simpleDate = new Date(year, 0, 1 + (weekNum - 1) * 7);
@@ -96,10 +89,8 @@ const getWeekInfo = (weekString, weekIndex) => {
     } else {
         isoWeekStart.setDate(simpleDate.getDate() + 8 - simpleDate.getDay());
     }
-
     const baseDate = new Date(isoWeekStart);
     baseDate.setDate(baseDate.getDate() + weekIndex * 7);
-    
     const weekDates = [];
     const weekDayDates = [];
     for (let i = 0; i < 5; i++) {
@@ -114,15 +105,11 @@ const getWeekInfo = (weekString, weekIndex) => {
     return { year, weekDates, weekDayDates };
 };
 
-// 取得年度假日資料 (含快取)
 const getHolidaysForYear = async (year) => {
     if (holidaysCache.has(year)) {
-        debugDb(`從快取為 ${year} 年讀取假日資料。`);
         return holidaysCache.get(year);
     }
-
     const filePath = path.join(__dirname, 'holidays', `${year}.json`);
-    debugDb(`從檔案系統讀取假日資料: ${filePath}`);
     try {
         const data = await require('fs').promises.readFile(filePath, 'utf-8');
         const holidayData = JSON.parse(data);
@@ -133,7 +120,6 @@ const getHolidaysForYear = async (year) => {
             }
         });
         holidaysCache.set(year, holidayMap);
-        debugDb(`已快取 ${year} 年的 ${holidayMap.size} 個假日項目。`);
         return holidayMap;
     } catch (error) {
         if (error.code !== 'ENOENT') {
@@ -143,9 +129,7 @@ const getHolidaysForYear = async (year) => {
     }
 };
 
-// 預載所有假日檔案至快取
 const preloadHolidays = async () => {
-    debugServer('正在預先載入所有假日檔案至快取...');
     const holidayDir = path.join(__dirname, 'holidays');
     try {
         const files = await require('fs').promises.readdir(holidayDir);
@@ -154,13 +138,11 @@ const preloadHolidays = async () => {
             const year = path.basename(file, '.json');
             return getHolidaysForYear(year);
         }));
-        debugServer(`成功預載 ${holidaysCache.size} 個年度的假日資料。`);
     } catch (error) {
         debugServer('預載假日檔案時發生錯誤:', error);
     }
 };
 
-// 產生單週班表
 const generateWeeklySchedule = (settings, scheduleDays) => {
     const { personnel, tasks } = settings;
     let availablePersonnel = [...personnel];
@@ -169,18 +151,14 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
 
     for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
-
         let dailyAvailablePersonnel = availablePersonnel.filter(p =>
             !p.offDays?.includes(dayIndex) &&
             (shiftCounts.get(p.name) || 0) < (p.maxShifts || 5)
         );
-
         for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
             const task = tasks[taskIndex];
-            
             let preferredPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask === task.name);
             let otherPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask !== task.name);
-            
             for (let i = preferredPersonnel.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [preferredPersonnel[i], preferredPersonnel[j]] = [preferredPersonnel[j], preferredPersonnel[i]];
@@ -189,9 +167,7 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
                 const j = Math.floor(Math.random() * (i + 1));
                 [otherPersonnel[i], otherPersonnel[j]] = [otherPersonnel[j], otherPersonnel[i]];
             }
-
             const combinedPool = [...preferredPersonnel, ...otherPersonnel];
-
             for (let i = 0; i < task.count; i++) {
                 if (combinedPool.length > 0) {
                     const person = combinedPool.shift();
@@ -207,18 +183,9 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
     return weeklySchedule;
 };
 
-
 // --- API 路由 ---
+app.get('/api/status', (req, res) => res.json({ server: 'running', database: isDbConnected ? 'connected' : 'disconnected' }));
 
-// 取得伺服器與資料庫狀態
-app.get('/api/status', (req, res) => {
-    res.json({
-        server: 'running',
-        database: isDbConnected ? 'connected' : 'disconnected'
-    });
-});
-
-// 取得所有設定檔
 app.get('/api/profiles', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
@@ -230,7 +197,6 @@ app.get('/api/profiles', async (req, res) => {
     }
 });
 
-// 更新作用中的設定檔
 app.put('/api/profiles/active', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
@@ -244,16 +210,11 @@ app.put('/api/profiles/active', async (req, res) => {
     }
 });
 
-// 新增設定檔
 app.post('/api/profiles', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const { name } = req.body;
-        const update = {
-            $set: {
-                [`profiles.${name}`]: { settings: { tasks: [], personnel: [] }, schedules: {} }
-            }
-        };
+        const update = { $set: { [`profiles.${name}`]: { settings: { tasks: [], personnel: [] }, schedules: {} } } };
         const result = await configCollection.updateOne({ _id: CONFIG_ID, [`profiles.${name}`]: { $exists: false } }, update);
         if (result.modifiedCount === 0) throw new Error('設定檔已存在');
         res.status(201).json({ message: '設定檔已新增' });
@@ -263,7 +224,6 @@ app.post('/api/profiles', async (req, res) => {
     }
 });
 
-// 更新特定設定檔的設定
 app.put('/api/profiles/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
@@ -278,7 +238,6 @@ app.put('/api/profiles/:name', async (req, res) => {
     }
 });
 
-// 重新命名設定檔
 app.put('/api/profiles/:name/rename', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
@@ -288,12 +247,10 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
         if (!config.profiles[oldName] || config.profiles[newName]) {
             return res.status(400).json({ message: '無效的名稱或新名稱已存在' });
         }
-        
         let update = { $rename: { [`profiles.${oldName}`]: `profiles.${newName}` } };
         if (config.activeProfile === oldName) {
             update.$set = { activeProfile: newName };
         }
-        
         const result = await configCollection.updateOne({ _id: CONFIG_ID }, update);
         if (result.modifiedCount === 0) throw new Error('重新命名失敗');
         res.json({ message: '設定檔已重新命名' });
@@ -303,7 +260,6 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
     }
 });
 
-// 刪除設定檔
 app.delete('/api/profiles/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
@@ -311,13 +267,11 @@ app.delete('/api/profiles/:name', async (req, res) => {
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const profileKeys = Object.keys(config.profiles);
         if (profileKeys.length <= 1) return res.status(400).json({ message: '無法刪除最後一個設定檔' });
-
         let update = { $unset: { [`profiles.${nameToDelete}`]: "" } };
         if (config.activeProfile === nameToDelete) {
             const newActiveProfile = profileKeys.find(key => key !== nameToDelete);
             update.$set = { activeProfile: newActiveProfile };
         }
-
         await configCollection.updateOne({ _id: CONFIG_ID }, update);
         res.json({ message: '設定檔已刪除' });
     } catch (error) {
@@ -326,17 +280,13 @@ app.delete('/api/profiles/:name', async (req, res) => {
     }
 });
 
-// 儲存班表
 app.post('/api/schedules', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const { name, data } = req.body;
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const activeProfile = config.activeProfile;
-        const result = await configCollection.updateOne(
-            { _id: CONFIG_ID },
-            { $set: { [`profiles.${activeProfile}.schedules.${name}`]: data } }
-        );
+        const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $set: { [`profiles.${activeProfile}.schedules.${name}`]: data } });
         if (result.modifiedCount === 0) throw new Error('儲存班表失敗');
         res.status(201).json({ message: '班表已儲存' });
     } catch (error) {
@@ -345,7 +295,6 @@ app.post('/api/schedules', async (req, res) => {
     }
 });
 
-// 取得特定班表
 app.get('/api/schedules/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
@@ -360,18 +309,13 @@ app.get('/api/schedules/:name', async (req, res) => {
     }
 });
 
-
-// 刪除特定班表
 app.delete('/api/schedules/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const { name } = req.params;
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const activeProfile = config.activeProfile;
-        const result = await configCollection.updateOne(
-            { _id: CONFIG_ID },
-            { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } }
-        );
+        const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } });
         if (result.modifiedCount === 0) throw new Error('刪除班表失敗');
         res.json({ message: '班表已刪除' });
     } catch (error) {
@@ -380,39 +324,17 @@ app.delete('/api/schedules/:name', async (req, res) => {
     }
 });
 
-// 產生班表
 app.post('/api/generate-schedule', async (req, res) => {
     try {
         const { settings, startWeek, numWeeks } = req.body;
-        debugSchedule('收到班表產生請求:', { startWeek, numWeeks });
-
         const fullScheduleData = [];
-        const colors = [
-            { header: '#0284c7', row: '#f0f9ff' },
-            { header: '#15803d', row: '#f0fdf4' },
-            { header: '#be185d', row: '#fdf2f8' },
-            { header: '#86198f', row: '#faf5ff' },
-        ];
-
+        const colors = [ { header: '#0284c7', row: '#f0f9ff' }, { header: '#15803d', row: '#f0fdf4' }, { header: '#be185d', row: '#fdf2f8' }, { header: '#86198f', row: '#faf5ff' } ];
         for (let i = 0; i < numWeeks; i++) {
             const { year, weekDates, weekDayDates } = getWeekInfo(startWeek, i);
             const holidays = await getHolidaysForYear(year);
-            const scheduleDays = weekDates.map(date => ({
-                date,
-                shouldSchedule: !holidays.has(date),
-                description: holidays.get(date) || ''
-            }));
-            
+            const scheduleDays = weekDates.map(date => ({ date, shouldSchedule: !holidays.has(date), description: holidays.get(date) || '' }));
             const weeklySchedule = generateWeeklySchedule(settings, scheduleDays);
-            
-            fullScheduleData.push({
-                schedule: weeklySchedule,
-                tasks: settings.tasks,
-                dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`,
-                weekDayDates,
-                scheduleDays,
-                color: colors[i % colors.length]
-            });
+            fullScheduleData.push({ schedule: weeklySchedule, tasks: settings.tasks, dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`, weekDayDates, scheduleDays, color: colors[i % colors.length] });
         }
         res.json(fullScheduleData);
     } catch (error) {
@@ -421,7 +343,6 @@ app.post('/api/generate-schedule', async (req, res) => {
     }
 });
 
-// --- 根路由 ---
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -441,15 +362,14 @@ const startServer = async () => {
         await client.db("admin").command({ ping: 1 });
         debugDb("成功 Ping 到您的部署。您已成功連線至 MongoDB！");
         db = client.db(DB_NAME);
-        configCollection = db.collection('config'); // 修正：確保使用 'config' collection
+        // *** 最終修正：確保使用您真正存放資料的 'profiles' 集合 ***
+        configCollection = db.collection('profiles'); 
         isDbConnected = true;
         
         if (isDbConnected) {
             await ensureConfigDocument();
         }
-        
         await preloadHolidays();
-        
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行`);
         });
@@ -457,19 +377,15 @@ const startServer = async () => {
         console.error("無法連線到 MongoDB 或啟動伺服器:", err);
         isDbConnected = false;
         debugServer('伺服器啟動失敗: %O', err);
-
         await preloadHolidays();
-        
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行 (資料庫連線失敗)`);
         });
     }
 };
 
-// --- 執行伺服器啟動 ---
 startServer();
 
-// --- 應用程式關閉處理 ---
 process.on('SIGINT', async () => {
     debugServer('收到 SIGINT。正在關閉連線...');
     if (client) {
