@@ -12,6 +12,9 @@ const debugServer = debug('app:server');
 const debugDb = debug('app:db');
 const debugSchedule = debug('app:schedule');
 
+// --- 快取設定 ---
+const holidaysCache = new Map();
+
 // --- 常數設定 ---
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -88,30 +91,49 @@ const getWeekInfo = (weekString, weekIndex) => {
     return { year, weekDates, weekDayDates };
 };
 
-const holidaysCache = {};
 const getHolidaysForYear = async (year) => {
-    if (holidaysCache[year]) {
-        debugDb(`從快取中讀取 ${year} 年的假日資料。`);
-        return holidaysCache[year];
+    if (holidaysCache.has(year)) {
+        debugDb(`從快取為 ${year} 年讀取假日資料。`);
+        return holidaysCache.get(year);
     }
+
     const filePath = path.join(__dirname, 'holidays', `${year}.json`);
+    debugDb(`從檔案系統讀取假日資料: ${filePath}`);
     try {
         const data = await require('fs').promises.readFile(filePath, 'utf-8');
-        debugDb(`成功讀取假日檔案: ${filePath}`);
         const holidayData = JSON.parse(data);
         const holidayMap = new Map();
         holidayData.forEach(h => {
             if (h.isHoliday) {
-                holidayMap.set(h.date, h.description || '國定假日');
+                // 處理不同的假日描述欄位 (name 或 description)
+                holidayMap.set(h.date, h.description || h.name || '國定假日');
             }
         });
-        debugDb(`為 ${year} 年建立了 ${holidayMap.size} 個假日項目。`);
-        holidaysCache[year] = holidayMap;
+        holidaysCache.set(year, holidayMap);
+        debugDb(`已快取 ${year} 年的 ${holidayMap.size} 個假日項目。`);
         return holidayMap;
     } catch (error) {
-        debugServer(`讀取或解析假日檔案 ${filePath} 失敗:`, error.message);
-        holidaysCache[year] = new Map();
-        return holidaysCache[year];
+        if (error.code !== 'ENOENT') { // 只記錄非「找不到檔案」的錯誤
+            debugServer(`讀取或解析假日檔案 ${filePath} 失敗:`, error.message);
+        }
+        return new Map(); // 即使失敗也回傳空 Map
+    }
+};
+
+const preloadHolidays = async () => {
+    debugServer('正在預先載入所有假日檔案至快取...');
+    const holidayDir = path.join(__dirname, 'holidays');
+    try {
+        const files = await require('fs').promises.readdir(holidayDir);
+        const jsonFiles = files.filter(file => file.endsWith('.json'));
+        // 使用 Promise.all 平行處理所有檔案讀取
+        await Promise.all(jsonFiles.map(file => {
+            const year = path.basename(file, '.json');
+            return getHolidaysForYear(year); // 呼叫此函式以載入並快取
+        }));
+        debugServer(`成功預載 ${holidaysCache.size} 個年度的假日資料。`);
+    } catch (error) {
+        debugServer('預載假日檔案時發生錯誤:', error);
     }
 };
 
@@ -409,6 +431,8 @@ const startServer = async () => {
             await ensureConfigDocument();
         }
         
+        await preloadHolidays();
+        
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行`);
         });
@@ -416,6 +440,9 @@ const startServer = async () => {
         console.error("無法連線到 MongoDB 或啟動伺服器:", err);
         isDbConnected = false;
         debugServer('伺服器啟動失敗: %O', err);
+
+        await preloadHolidays();
+        
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行 (資料庫連線失敗)`);
         });
@@ -439,4 +466,5 @@ const gracefulShutdown = async (signal) => {
 };
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
 
