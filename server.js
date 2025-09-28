@@ -20,7 +20,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'scheduleApp';
-const CONFIG_ID = 'appConfig';
+// *** 最終、最關鍵的修正：使用您指出的正確 ID ***
+const CONFIG_ID = 'main_config'; 
 
 // --- 資料庫客戶端設定 ---
 let client;
