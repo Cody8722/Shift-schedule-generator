@@ -337,6 +337,7 @@
 <script>
     // --- Global State & Configuration ---
     const API_BASE_URL = `${window.location.origin}/api`; 
+    let currentTheme = 'light';
     let appState = {
         activeProfile: 'default',
         profiles: {
@@ -709,8 +710,7 @@
                 renderAll();
             }
             // Initial UI setup
-            const preferredTheme = localStorage.getItem('theme') || 'light';
-            applyTheme(preferredTheme);
+            applyTheme(currentTheme);
             updateStartWeekValue(new Date());
             setInitialAccordionState();
             setInterval(checkConnectionStatus, 30000);
@@ -1155,9 +1155,8 @@
         
         elements.themeToggle.addEventListener('click', () => {
             const isDark = document.documentElement.classList.contains('dark');
-            const newTheme = isDark ? 'light' : 'dark';
-            localStorage.setItem('theme', newTheme);
-            applyTheme(newTheme);
+            currentTheme = isDark ? 'light' : 'dark';
+            applyTheme(currentTheme);
         });
 
         const setInitialAccordionState = () => {
@@ -1168,6 +1167,14 @@
                  accordions[3]?.classList.add('active'); // "產生班表" is default open on mobile
             }
         };
+
+        elements.accordionContainer.addEventListener('click', (e) => {
+            const header = e.target.closest('.accordion-header');
+            if (header) {
+                const accordionItem = header.parentElement;
+                accordionItem.classList.toggle('active');
+            }
+        });
 
         initApp();
     });
