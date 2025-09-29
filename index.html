@@ -891,6 +891,7 @@
         });
 
         elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
+        
         elements.weekPickerPrevBtn.addEventListener('click', () => {
             weekPickerState.currentDate.setMonth(weekPickerState.currentDate.getMonth() - 1);
             renderWeekPicker();
@@ -902,43 +903,37 @@
         elements.weekPickerGrid.addEventListener('click', (e) => {
             if (e.target.classList.contains('week-picker-day')) {
                 updateStartWeekValue(e.target.dataset.date);
-                elements.weekPickerContainer.classList.add('hidden');
+                closeAllPopups();
                 renderWeekPicker();
             }
         });
         
-        const closeAllPopups = (except) => {
-            if (except !== 'week') {
-                elements.weekPickerContainer.classList.add('hidden');
-            }
-            if (except !== 'holiday') {
-                elements.holidayListContainer.classList.add('hidden');
-                elements.holidaySettingsBtn.setAttribute('aria-expanded', 'false');
-            }
+        const closeAllPopups = () => {
+            elements.weekPickerContainer.classList.add('hidden');
+            elements.holidayListContainer.classList.add('hidden');
+            elements.holidaySettingsBtn.setAttribute('aria-expanded', 'false');
         };
 
         elements.startWeekDisplay.addEventListener('click', (e) => {
             e.stopPropagation();
-            const isCurrentlyHidden = elements.weekPickerContainer.classList.contains('hidden');
-            closeAllPopups('week');
-            if (isCurrentlyHidden) {
-                elements.weekPickerContainer.classList.remove('hidden');
+            const isHidden = elements.weekPickerContainer.classList.contains('hidden');
+            closeAllPopups(); 
+            if (isHidden) {
+                 elements.weekPickerContainer.classList.remove('hidden');
             }
         });
         
         elements.holidaySettingsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const isCurrentlyHidden = elements.holidayListContainer.classList.contains('hidden');
-            closeAllPopups('holiday');
-            if (isCurrentlyHidden) {
-                elements.holidayListContainer.classList.remove('hidden');
-                elements.holidaySettingsBtn.setAttribute('aria-expanded', 'true');
+            const isHidden = elements.holidayListContainer.classList.contains('hidden');
+            closeAllPopups();
+            if (isHidden) {
+                 elements.holidayListContainer.classList.remove('hidden');
+                 elements.holidaySettingsBtn.setAttribute('aria-expanded', 'true');
             }
         });
 
-        document.addEventListener('click', (e) => {
-            closeAllPopups();
-        });
+        document.addEventListener('click', closeAllPopups);
         
         elements.weekPickerContainer.addEventListener('click', e => e.stopPropagation());
         elements.holidayListContainer.addEventListener('click', e => e.stopPropagation());
@@ -1179,3 +1174,4 @@
 </script>
 </body>
 </html>
+
