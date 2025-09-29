@@ -155,13 +155,11 @@
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
         
-        /* Holiday List Style Fix */
-        .dark #holiday-list {
-            background-color: #374151; /* gray-700 */
-            color: #d1d5db; /* gray-300 */
+        #holiday-arrow {
+            transition: transform 0.2s ease-in-out;
         }
-        .dark #holiday-list .text-gray-500 {
-            color: #9ca3af; /* gray-400 */
+        #holiday-settings-btn[aria-expanded="true"] #holiday-arrow {
+            transform: rotate(180deg);
         }
     </style>
 </head>
@@ -261,11 +259,17 @@
                                     <input type="number" id="num-weeks" value="1" min="1" max="10" class="form-input w-full p-2 rounded-md">
                                 </div>
                                 <!-- Holiday Exclusion Section -->
-                                <div id="holiday-exclusion-container" class="space-y-2">
-                                     <label class="block font-medium text-sm text-muted mb-1">假日排休設定</label>
-                                     <div id="holiday-list" class="p-3 bg-gray-50 rounded-md border border-gray-200 dark:border-gray-700 max-h-40 overflow-y-auto">
-                                         <p class="text-sm text-gray-500">請先選擇日期範圍...</p>
-                                     </div>
+                                <div id="holiday-exclusion-container" class="relative">
+                                    <label class="block font-medium text-sm text-muted mb-1">假日排休設定</label>
+                                    <button type="button" id="holiday-settings-btn" class="form-input w-full p-2 rounded-md text-left flex justify-between items-center" aria-expanded="false">
+                                        <span id="holiday-settings-text">編輯假日選項</span>
+                                        <svg class="w-5 h-5 text-gray-400" id="holiday-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </button>
+                                    <div id="holiday-list-container" class="absolute z-10 mt-1 card rounded-lg shadow-xl p-3 hidden w-full">
+                                        <div id="holiday-list" class="max-h-48 overflow-y-auto space-y-2">
+                                            <p class="text-sm text-gray-500">請先選擇日期範圍...</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <button id="generate-schedule" class="mt-4 w-full text-lg bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md transition shadow-lg flex items-center justify-center gap-2">
@@ -406,6 +410,10 @@
             modalSaveBtn: document.getElementById('modal-save-btn'),
             accordionContainer: document.getElementById('accordion-container'),
             holidayList: document.getElementById('holiday-list'),
+            holidaySettingsBtn: document.getElementById('holiday-settings-btn'),
+            holidayListContainer: document.getElementById('holiday-list-container'),
+            holidaySettingsText: document.getElementById('holiday-settings-text'),
+            holidayArrow: document.getElementById('holiday-arrow'),
         };
 
         let generatedData = null; 
@@ -590,11 +598,24 @@
             };
         };
         
+        const updateHolidayButtonText = () => {
+            const totalCount = elements.holidayList.querySelectorAll('.holiday-checkbox').length;
+            if (totalCount === 0) {
+                elements.holidaySettingsText.textContent = '範圍內無國定假日';
+                elements.holidaySettingsBtn.disabled = true;
+            } else {
+                const selectedCount = elements.holidayList.querySelectorAll('.holiday-checkbox:checked').length;
+                elements.holidaySettingsText.textContent = `已選 ${selectedCount} / ${totalCount} 個假日進行排休`;
+                elements.holidaySettingsBtn.disabled = false;
+            }
+        };
+        
         const updateHolidaySelectionUI = async () => {
             const startWeek = elements.startWeekInput.value;
             const numWeeks = elements.numWeeksInput.value;
             if (!startWeek || !numWeeks || parseInt(numWeeks) < 1) {
                 elements.holidayList.innerHTML = '<p class="text-sm text-gray-500">請先選擇有效的日期範圍...</p>';
+                updateHolidayButtonText();
                 return;
             };
 
@@ -607,19 +628,24 @@
 
                 if (holidays.length === 0) {
                     elements.holidayList.innerHTML = '<p class="text-sm text-gray-500">所選範圍內無國定假日。</p>';
-                    return;
+                } else {
+                    elements.holidayList.innerHTML = holidays.map(holiday => `
+                        <label class="flex items-center space-x-2 text-sm cursor-pointer">
+                            <input type="checkbox" class="form-checkbox rounded holiday-checkbox" value="${holiday.date}" checked>
+                            <span>${holiday.name} (${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)})</span>
+                        </label>
+                    `).join('');
+                    
+                    elements.holidayList.querySelectorAll('.holiday-checkbox').forEach(checkbox => {
+                        checkbox.addEventListener('change', updateHolidayButtonText);
+                    });
                 }
-
-                elements.holidayList.innerHTML = holidays.map(holiday => `
-                    <label class="flex items-center space-x-2 text-sm cursor-pointer">
-                        <input type="checkbox" class="form-checkbox rounded holiday-checkbox" value="${holiday.date}" checked>
-                        <span>${holiday.name} (${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)})</span>
-                    </label>
-                `).join('');
+                updateHolidayButtonText();
 
             } catch (error) {
                 console.error(error);
                 elements.holidayList.innerHTML = '<p class="text-sm text-red-500">查詢假日失敗！</p>';
+                updateHolidayButtonText();
             }
         };
 
@@ -881,6 +907,23 @@
                 renderWeekPicker();
             }
         });
+        
+        elements.holidaySettingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isHidden = elements.holidayListContainer.classList.toggle('hidden');
+            elements.holidaySettingsBtn.setAttribute('aria-expanded', !isHidden);
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!elements.weekPickerContainer.classList.contains('hidden') && !elements.startWeekDisplay.contains(e.target) && !elements.weekPickerContainer.contains(e.target)) {
+                elements.weekPickerContainer.classList.add('hidden');
+            }
+            if (!elements.holidayListContainer.classList.contains('hidden') && !elements.holidaySettingsBtn.contains(e.target) && !elements.holidayListContainer.contains(e.target)) {
+                 elements.holidayListContainer.classList.add('hidden');
+                 elements.holidaySettingsBtn.setAttribute('aria-expanded', 'false');
+            }
+        });
+
 
         async function generateFullSchedule() {
             const settings = getActiveProfile().settings;
