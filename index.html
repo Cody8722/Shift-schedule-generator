@@ -154,6 +154,15 @@
         .dark .schedule-table tbody tr:nth-child(even) { background-color: rgba(255, 255, 255, 0.03); }
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
+        
+        /* Holiday List Style Fix */
+        .dark #holiday-list {
+            background-color: #374151; /* gray-700 */
+            color: #d1d5db; /* gray-300 */
+        }
+        .dark #holiday-list .text-gray-500 {
+            color: #9ca3af; /* gray-400 */
+        }
     </style>
 </head>
 <body class="theme-light">
@@ -254,7 +263,7 @@
                                 <!-- Holiday Exclusion Section -->
                                 <div id="holiday-exclusion-container" class="space-y-2">
                                      <label class="block font-medium text-sm text-muted mb-1">假日排休設定</label>
-                                     <div id="holiday-list" class="p-3 bg-gray-50 dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 max-h-40 overflow-y-auto">
+                                     <div id="holiday-list" class="p-3 bg-gray-50 rounded-md border border-gray-200 dark:border-gray-700 max-h-40 overflow-y-auto">
                                          <p class="text-sm text-gray-500">請先選擇日期範圍...</p>
                                      </div>
                                 </div>
