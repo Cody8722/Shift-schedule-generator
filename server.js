@@ -20,7 +20,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'scheduleApp';
-// *** 最終、最關鍵的修正：使用您指出的正確 ID ***
 const CONFIG_ID = 'main_config'; 
 
 // --- 資料庫客戶端設定 ---
@@ -97,13 +96,14 @@ const getWeekInfo = (weekString, weekIndex) => {
     for (let i = 0; i < 5; i++) {
         const date = new Date(baseDate);
         date.setDate(date.getDate() + i);
+        const currentYear = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
-        const formattedDate = `${year}${month}${day}`;
+        const formattedDate = `${currentYear}${month}${day}`;
         weekDates.push(formattedDate);
         weekDayDates.push(`${month}/${day}`);
     }
-    return { year, weekDates, weekDayDates };
+    return { weekDates, weekDayDates };
 };
 
 const getHolidaysForYear = async (year) => {
@@ -186,6 +186,43 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
 
 // --- API 路由 ---
 app.get('/api/status', (req, res) => res.json({ server: 'running', database: isDbConnected ? 'connected' : 'disconnected' }));
+
+app.get('/api/holidays-in-range', async (req, res) => {
+    const { startWeek, numWeeks } = req.query;
+    if (!startWeek || !numWeeks) {
+        return res.status(400).json({ message: "缺少 startWeek 或 numWeeks 參數" });
+    }
+
+    try {
+        const allDatesInRange = [];
+        const numWeeksInt = parseInt(numWeeks, 10);
+
+        for (let i = 0; i < numWeeksInt; i++) {
+            const { weekDates } = getWeekInfo(startWeek, i);
+            allDatesInRange.push(...weekDates);
+        }
+        
+        const years = [...new Set(allDatesInRange.map(d => parseInt(d.substring(0, 4))))];
+        const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
+        
+        const combinedHolidays = new Map();
+        allHolidayMaps.forEach(holidayMap => {
+            for (const [date, name] of holidayMap.entries()) {
+                combinedHolidays.set(date, name);
+            }
+        });
+
+        const holidaysInRange = allDatesInRange
+            .filter(date => combinedHolidays.has(date))
+            .map(date => ({ date, name: combinedHolidays.get(date) }));
+            
+        res.json(holidaysInRange);
+
+    } catch (error) {
+        debugSchedule('查詢區間假日失敗:', error);
+        res.status(500).json({ message: '查詢假日資料時發生錯誤' });
+    }
+});
 
 app.get('/api/profiles', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
@@ -327,13 +364,24 @@ app.delete('/api/schedules/:name', async (req, res) => {
 
 app.post('/api/generate-schedule', async (req, res) => {
     try {
-        const { settings, startWeek, numWeeks } = req.body;
+        const { settings, startWeek, numWeeks, activeHolidays } = req.body;
         const fullScheduleData = [];
         const colors = [ { header: '#0284c7', row: '#f0f9ff' }, { header: '#15803d', row: '#f0fdf4' }, { header: '#be185d', row: '#fdf2f8' }, { header: '#86198f', row: '#faf5ff' } ];
         for (let i = 0; i < numWeeks; i++) {
-            const { year, weekDates, weekDayDates } = getWeekInfo(startWeek, i);
-            const holidays = await getHolidaysForYear(year);
-            const scheduleDays = weekDates.map(date => ({ date, shouldSchedule: !holidays.has(date), description: holidays.get(date) || '' }));
+            const { weekDates, weekDayDates } = getWeekInfo(startWeek, i);
+            const years = [...new Set(weekDates.map(d => parseInt(d.substring(0, 4))))];
+            const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
+            const originalHolidaysMap = new Map();
+            allHolidayMaps.forEach(holidayMap => {
+                for (const [date, name] of holidayMap.entries()) {
+                    originalHolidaysMap.set(date, name);
+                }
+            });
+            const scheduleDays = weekDates.map(date => ({
+                date,
+                shouldSchedule: !activeHolidays.includes(date),
+                description: activeHolidays.includes(date) ? originalHolidaysMap.get(date) || '假日' : ''
+            }));
             const weeklySchedule = generateWeeklySchedule(settings, scheduleDays);
             fullScheduleData.push({ schedule: weeklySchedule, tasks: settings.tasks, dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`, weekDayDates, scheduleDays, color: colors[i % colors.length] });
         }
@@ -363,7 +411,6 @@ const startServer = async () => {
         await client.db("admin").command({ ping: 1 });
         debugDb("成功 Ping 到您的部署。您已成功連線至 MongoDB！");
         db = client.db(DB_NAME);
-        // *** 最終修正：確保使用您真正存放資料的 'profiles' 集合 ***
         configCollection = db.collection('profiles'); 
         isDbConnected = true;
         
