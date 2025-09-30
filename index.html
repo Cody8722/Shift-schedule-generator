@@ -1111,6 +1111,29 @@
             }
         });
 
+        const setInitialAccordionState = () => {
+            const accordions = document.querySelectorAll('.accordion-item');
+            if (window.innerWidth >= 1024) { 
+                accordions.forEach(item => item.classList.add('active'));
+            } else {
+                 accordions[3]?.classList.add('active');
+            }
+        };
+
+        elements.accordionContainer.addEventListener('click', (e) => {
+            const header = e.target.closest('.accordion-header');
+            if (header) {
+                const accordionItem = header.parentElement;
+                accordionItem.classList.toggle('active');
+            }
+        });
+
+        elements.themeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            currentTheme = isDark ? 'light' : 'dark';
+            applyTheme(currentTheme);
+        });
+
         initApp();
     });
 </script>
