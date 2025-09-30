@@ -81,9 +81,6 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         /* Accordion Styles */
-        .accordion-item {
-             overflow: visible; /* CRITICAL FIX: Allow popups to display outside */
-        }
         .accordion-content {
             max-height: 0;
             overflow: hidden;
@@ -93,7 +90,6 @@
         .accordion-item.active .accordion-content {
             padding: 1rem 1rem;
             max-height: 1000px; /* Adjust as needed */
-            overflow: visible;
             transition: max-height 0.5s ease-in, padding 0.3s ease-in;
         }
         .accordion-arrow {
@@ -159,12 +155,6 @@
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
         
-        #holiday-arrow {
-            transition: transform 0.2s ease-in-out;
-        }
-        #holiday-settings-btn[aria-expanded="true"] #holiday-arrow {
-            transform: rotate(180deg);
-        }
     </style>
 </head>
 <body class="theme-light">
@@ -263,17 +253,12 @@
                                     <input type="number" id="num-weeks" value="1" min="1" max="10" class="form-input w-full p-2 rounded-md">
                                 </div>
                                 <!-- Holiday Exclusion Section -->
-                                <div id="holiday-exclusion-container" class="relative">
+                                <div>
                                     <label class="block font-medium text-sm text-muted mb-1">假日排休設定</label>
                                     <button type="button" id="holiday-settings-btn" class="form-input w-full p-2 rounded-md text-left flex justify-between items-center" aria-expanded="false">
                                         <span id="holiday-settings-text">編輯假日選項</span>
-                                        <svg class="w-5 h-5 text-gray-400" id="holiday-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                     </button>
-                                    <div id="holiday-list-container" class="absolute z-20 mt-1 card rounded-lg shadow-xl p-3 hidden w-full">
-                                        <div id="holiday-list" class="max-h-48 overflow-y-auto space-y-2">
-                                            <p class="text-sm text-gray-500">請先選擇日期範圍...</p>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                             <button id="generate-schedule" class="mt-4 w-full text-lg bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md transition shadow-lg flex items-center justify-center gap-2">
@@ -338,6 +323,20 @@
         </div>
     </div>
 
+    <!-- Modal for holiday settings -->
+    <div id="holiday-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
+            <h3 class="text-2xl font-bold mb-4">假日排休設定</h3>
+            <div id="modal-holiday-list" class="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-600 p-3 rounded-md mb-6">
+                <!-- Holiday checkboxes will be populated here -->
+            </div>
+            <div class="flex justify-end gap-3">
+                <button id="modal-holiday-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
+                <button id="modal-holiday-save-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">確定</button>
+            </div>
+        </div>
+    </div>
+
 <script>
     // --- Global State & Configuration ---
     const API_BASE_URL = `${window.location.origin}/api`; 
@@ -351,6 +350,9 @@
             }
         },
     };
+    
+    let availableHolidays = [];
+    let activeHolidayDates = new Set();
     
     const applyTheme = (theme) => {
         const themeIconLight = document.getElementById('theme-icon-light');
@@ -414,11 +416,12 @@
             modalCloseBtn: document.getElementById('modal-close-btn'),
             modalSaveBtn: document.getElementById('modal-save-btn'),
             accordionContainer: document.getElementById('accordion-container'),
-            holidayList: document.getElementById('holiday-list'),
             holidaySettingsBtn: document.getElementById('holiday-settings-btn'),
-            holidayListContainer: document.getElementById('holiday-list-container'),
             holidaySettingsText: document.getElementById('holiday-settings-text'),
-            holidayArrow: document.getElementById('holiday-arrow'),
+            holidayModal: document.getElementById('holiday-modal'),
+            modalHolidayList: document.getElementById('modal-holiday-list'),
+            modalHolidayCloseBtn: document.getElementById('modal-holiday-close-btn'),
+            modalHolidaySaveBtn: document.getElementById('modal-holiday-save-btn'),
         };
 
         let generatedData = null; 
@@ -604,13 +607,11 @@
         };
         
         const updateHolidayButtonText = () => {
-            const totalCount = elements.holidayList.querySelectorAll('.holiday-checkbox').length;
-            if (totalCount === 0) {
+            if (availableHolidays.length === 0) {
                 elements.holidaySettingsText.textContent = '範圍內無國定假日';
                 elements.holidaySettingsBtn.disabled = true;
             } else {
-                const selectedCount = elements.holidayList.querySelectorAll('.holiday-checkbox:checked').length;
-                elements.holidaySettingsText.textContent = `已選 ${selectedCount} / ${totalCount} 個假日進行排休`;
+                elements.holidaySettingsText.textContent = `已選 ${activeHolidayDates.size} / ${availableHolidays.length} 個假日進行排休`;
                 elements.holidaySettingsBtn.disabled = false;
             }
         };
@@ -619,37 +620,29 @@
             const startWeek = elements.startWeekInput.value;
             const numWeeks = elements.numWeeksInput.value;
             if (!startWeek || !numWeeks || parseInt(numWeeks) < 1) {
-                elements.holidayList.innerHTML = '<p class="text-sm text-gray-500">請先選擇有效的日期範圍...</p>';
+                availableHolidays = [];
+                activeHolidayDates = new Set();
                 updateHolidayButtonText();
                 return;
             };
 
-            elements.holidayList.innerHTML = '<p class="text-sm text-gray-500">正在查詢假日...</p>';
+            elements.holidaySettingsText.textContent = '正在查詢假日...';
+            elements.holidaySettingsBtn.disabled = true;
 
             try {
-                const response = await fetch(`${API_BASE_URL}/holidays-in-range?startWeek=${startWeek}&numWeeks=${numWeeks}`);
-                if (!response.ok) throw new Error('無法取得假日資料');
-                const holidays = await response.json();
-
-                if (holidays.length === 0) {
-                    elements.holidayList.innerHTML = '<p class="text-sm text-gray-500">所選範圍內無國定假日。</p>';
+                const holidays = await api.get(`holidays-in-range?startWeek=${startWeek}&numWeeks=${numWeeks}`);
+                if(holidays) {
+                    availableHolidays = holidays;
+                    activeHolidayDates = new Set(holidays.map(h => h.date));
                 } else {
-                    elements.holidayList.innerHTML = holidays.map(holiday => `
-                        <label class="flex items-center space-x-2 text-sm cursor-pointer">
-                            <input type="checkbox" class="form-checkbox rounded holiday-checkbox" value="${holiday.date}" checked>
-                            <span>${holiday.name} (${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)})</span>
-                        </label>
-                    `).join('');
-                    
-                    elements.holidayList.querySelectorAll('.holiday-checkbox').forEach(checkbox => {
-                        checkbox.addEventListener('change', updateHolidayButtonText);
-                    });
+                     availableHolidays = [];
+                     activeHolidayDates = new Set();
                 }
-                updateHolidayButtonText();
-
             } catch (error) {
                 console.error(error);
-                elements.holidayList.innerHTML = '<p class="text-sm text-red-500">查詢假日失敗！</p>';
+                availableHolidays = [];
+                activeHolidayDates = new Set();
+            } finally {
                 updateHolidayButtonText();
             }
         };
@@ -914,8 +907,6 @@
         
         const closeAllPopups = () => {
             elements.weekPickerContainer.classList.add('hidden');
-            elements.holidayListContainer.classList.add('hidden');
-            elements.holidaySettingsBtn.setAttribute('aria-expanded', 'false');
         };
 
         elements.startWeekDisplay.addEventListener('click', (e) => {
@@ -929,18 +920,36 @@
         
         elements.holidaySettingsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            const isHidden = elements.holidayListContainer.classList.contains('hidden');
-            closeAllPopups();
-            if (isHidden) {
-                 elements.holidayListContainer.classList.remove('hidden');
-                 elements.holidaySettingsBtn.setAttribute('aria-expanded', 'true');
+            elements.modalHolidayList.innerHTML = '';
+            if (availableHolidays.length > 0) {
+                 elements.modalHolidayList.innerHTML = availableHolidays.map(holiday => `
+                    <label class="flex items-center space-x-2 text-sm cursor-pointer">
+                        <input type="checkbox" class="form-checkbox rounded modal-holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
+                        <span>${holiday.name} (${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)})</span>
+                    </label>
+                `).join('');
+            } else {
+                elements.modalHolidayList.innerHTML = '<p class="text-sm text-gray-500">目前選擇的範圍內無國定假日。</p>';
             }
+            elements.holidayModal.classList.remove('hidden');
         });
+        
+        elements.modalHolidayCloseBtn.addEventListener('click', () => elements.holidayModal.classList.add('hidden'));
+
+        elements.modalHolidaySaveBtn.addEventListener('click', () => {
+            const newActiveHolidayDates = new Set();
+            elements.modalHolidayList.querySelectorAll('.modal-holiday-checkbox:checked').forEach(cb => {
+                newActiveHolidayDates.add(cb.value);
+            });
+            activeHolidayDates = newActiveHolidayDates;
+            updateHolidayButtonText();
+            elements.holidayModal.classList.add('hidden');
+        });
+
 
         document.addEventListener('click', closeAllPopups);
         
         elements.weekPickerContainer.addEventListener('click', e => e.stopPropagation());
-        elements.holidayListContainer.addEventListener('click', e => e.stopPropagation());
 
 
         async function generateFullSchedule() {
@@ -953,7 +962,7 @@
                 return alert('請選擇開始週！');
             }
 
-            const activeHolidays = Array.from(elements.holidayList.querySelectorAll('.holiday-checkbox:checked')).map(cb => cb.value);
+            const activeHolidays = Array.from(activeHolidayDates);
 
             elements.generateBtn.disabled = true;
             elements.generateBtnText.classList.add('hidden');
@@ -1185,34 +1194,4 @@
 </script>
 </body>
 </html>
-"
-我要把
-.accordion-item {
-             overflow: visible; /* CRITICAL FIX: Allow popups to display outside */
-        }
-.accordion-content {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
-            padding: 0 1rem;
-        }
-.accordion-item.active .accordion-content {
-            padding: 1rem 1rem;
-            max-height: 1000px; /* Adjust as needed */
-            overflow: visible;
-            transition: max-height 0.5s ease-in, padding 0.3s ease-in;
-        }
-
-改成
-.accordion-content {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
-            padding: 0 1rem;
-        }
-.accordion-item.active .accordion-content {
-            padding: 1rem 1rem;
-            max-height: 1000px; /* Adjust as needed */
-            transition: max-height 0.5s ease-in, padding 0.3s ease-in;
-        }
 
