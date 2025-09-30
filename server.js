@@ -26,6 +26,7 @@ const CONFIG_ID = 'main_config';
 let client;
 let db;
 let configCollection;
+let holidaysCollection;
 let isDbConnected = false;
 
 if (MONGODB_URI) {
@@ -81,24 +82,21 @@ const ensureConfigDocument = async () => {
 
 const getWeekInfo = (weekString, weekIndex) => {
     const [year, weekNum] = weekString.split('-W').map(Number);
-    const simpleDate = new Date(year, 0, 1 + (weekNum - 1) * 7);
-    const dayOfWeek = simpleDate.getDay();
-    const isoWeekStart = simpleDate;
-    if (dayOfWeek <= 4) {
-        isoWeekStart.setDate(simpleDate.getDate() - simpleDate.getDay() + 1);
-    } else {
-        isoWeekStart.setDate(simpleDate.getDate() + 8 - simpleDate.getDay());
-    }
-    const baseDate = new Date(isoWeekStart);
-    baseDate.setDate(baseDate.getDate() + weekIndex * 7);
+    const simpleDate = new Date(Date.UTC(year, 0, 1 + (weekNum - 1) * 7));
+    const dayOfWeek = simpleDate.getUTCDay() || 7;
+    simpleDate.setUTCDate(simpleDate.getUTCDate() + 1 - dayOfWeek);
+    
+    const baseDate = new Date(simpleDate);
+    baseDate.setUTCDate(baseDate.getUTCDate() + weekIndex * 7);
+
     const weekDates = [];
     const weekDayDates = [];
     for (let i = 0; i < 5; i++) {
         const date = new Date(baseDate);
-        date.setDate(date.getDate() + i);
-        const currentYear = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
+        date.setUTCDate(date.getUTCDate() + i);
+        const currentYear = date.getUTCFullYear();
+        const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(date.getUTCDate()).padStart(2, '0');
         const formattedDate = `${currentYear}${month}${day}`;
         weekDates.push(formattedDate);
         weekDayDates.push(`${month}/${day}`);
@@ -108,39 +106,26 @@ const getWeekInfo = (weekString, weekIndex) => {
 
 const getHolidaysForYear = async (year) => {
     if (holidaysCache.has(year)) {
+        debugDb(`從快取為 ${year} 年讀取假日資料。`);
         return holidaysCache.get(year);
     }
-    const filePath = path.join(__dirname, 'holidays', `${year}.json`);
+    
+    if (!isDbConnected) return new Map();
+
+    debugDb(`從資料庫讀取 ${year} 年的假日資料...`);
     try {
-        const data = await require('fs').promises.readFile(filePath, 'utf-8');
-        const holidayData = JSON.parse(data);
+        const yearStr = String(year);
+        const holidays = await holidaysCollection.find({ _id: { $regex: `^${yearStr}` }, isHoliday: true }).toArray();
         const holidayMap = new Map();
-        holidayData.forEach(h => {
-            if (h.isHoliday) {
-                holidayMap.set(h.date, h.description || h.name || '國定假日');
-            }
+        holidays.forEach(h => {
+            holidayMap.set(h._id, h.name);
         });
         holidaysCache.set(year, holidayMap);
+        debugDb(`已快取 ${year} 年的 ${holidayMap.size} 個假日項目。`);
         return holidayMap;
     } catch (error) {
-        if (error.code !== 'ENOENT') {
-            debugServer(`讀取或解析假日檔案 ${filePath} 失敗:`, error.message);
-        }
+        debugDb(`讀取 ${year} 年假日資料失敗:`, error);
         return new Map();
-    }
-};
-
-const preloadHolidays = async () => {
-    const holidayDir = path.join(__dirname, 'holidays');
-    try {
-        const files = await require('fs').promises.readdir(holidayDir);
-        const jsonFiles = files.filter(file => file.endsWith('.json'));
-        await Promise.all(jsonFiles.map(file => {
-            const year = path.basename(file, '.json');
-            return getHolidaysForYear(year);
-        }));
-    } catch (error) {
-        debugServer('預載假日檔案時發生錯誤:', error);
     }
 };
 
@@ -187,43 +172,71 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
 // --- API 路由 ---
 app.get('/api/status', (req, res) => res.json({ server: 'running', database: isDbConnected ? 'connected' : 'disconnected' }));
 
+// --- Holiday API Routes ---
+app.get('/api/holidays/:year', async (req, res) => {
+    if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
+    try {
+        const year = req.params.year;
+        const holidays = await holidaysCollection.find({ _id: { $regex: `^${year}` }, isHoliday: true }).toArray();
+        res.json(holidays.map(h => ({ date: h._id, name: h.name })));
+    } catch(error) {
+        debugDb('讀取年度假日失敗:', error);
+        res.status(500).json({ message: '讀取年度假日失敗' });
+    }
+});
+
+app.put('/api/holidays', async (req, res) => {
+    if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
+    try {
+        const { date, name, isHoliday } = req.body;
+        if (!date) return res.status(400).json({ message: '日期為必填欄位' });
+        
+        const year = parseInt(date.substring(0, 4));
+        holidaysCache.delete(year);
+
+        if (isHoliday) {
+            await holidaysCollection.updateOne({ _id: date }, { $set: { name, isHoliday: true } }, { upsert: true });
+        } else {
+            await holidaysCollection.deleteOne({ _id: date });
+        }
+        res.json({ message: '假日設定已更新' });
+    } catch (error) {
+        debugDb('更新假日設定失敗:', error);
+        res.status(500).json({ message: '更新假日設定失敗' });
+    }
+});
+
 app.get('/api/holidays-in-range', async (req, res) => {
     const { startWeek, numWeeks } = req.query;
     if (!startWeek || !numWeeks) {
         return res.status(400).json({ message: "缺少 startWeek 或 numWeeks 參數" });
     }
-
     try {
         const allDatesInRange = [];
         const numWeeksInt = parseInt(numWeeks, 10);
-
         for (let i = 0; i < numWeeksInt; i++) {
             const { weekDates } = getWeekInfo(startWeek, i);
             allDatesInRange.push(...weekDates);
         }
-        
         const years = [...new Set(allDatesInRange.map(d => parseInt(d.substring(0, 4))))];
         const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
-        
         const combinedHolidays = new Map();
         allHolidayMaps.forEach(holidayMap => {
             for (const [date, name] of holidayMap.entries()) {
                 combinedHolidays.set(date, name);
             }
         });
-
         const holidaysInRange = allDatesInRange
             .filter(date => combinedHolidays.has(date))
             .map(date => ({ date, name: combinedHolidays.get(date) }));
-            
         res.json(holidaysInRange);
-
     } catch (error) {
         debugSchedule('查詢區間假日失敗:', error);
         res.status(500).json({ message: '查詢假日資料時發生錯誤' });
     }
 });
 
+// --- Profile and Schedule API Routes ---
 app.get('/api/profiles', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
@@ -399,7 +412,6 @@ app.get('/', (req, res) => {
 // --- 伺服器啟動函式 ---
 const startServer = async () => {
     if (!client) {
-        await preloadHolidays();
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行 (資料庫模式已禁用)`);
         });
@@ -412,12 +424,13 @@ const startServer = async () => {
         debugDb("成功 Ping 到您的部署。您已成功連線至 MongoDB！");
         db = client.db(DB_NAME);
         configCollection = db.collection('profiles'); 
+        holidaysCollection = db.collection('holidays');
         isDbConnected = true;
         
         if (isDbConnected) {
             await ensureConfigDocument();
         }
-        await preloadHolidays();
+        
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行`);
         });
@@ -425,7 +438,6 @@ const startServer = async () => {
         console.error("無法連線到 MongoDB 或啟動伺服器:", err);
         isDbConnected = false;
         debugServer('伺服器啟動失敗: %O', err);
-        await preloadHolidays();
         app.listen(PORT, () => {
             debugServer(`伺服器正在 http://localhost:${PORT} 上運行 (資料庫連線失敗)`);
         });
