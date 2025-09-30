@@ -81,14 +81,19 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
         /* Accordion Styles */
+        .accordion-item {
+             overflow: visible; /* CRITICAL FIX: Allow popups to display outside */
+        }
         .accordion-content {
             max-height: 0;
+            overflow: hidden;
             transition: max-height 0.3s ease-out, padding 0.3s ease-out;
             padding: 0 1rem;
         }
         .accordion-item.active .accordion-content {
             padding: 1rem 1rem;
             max-height: 1000px; /* Adjust as needed */
+            overflow: visible;
             transition: max-height 0.5s ease-in, padding 0.3s ease-in;
         }
         .accordion-arrow {
@@ -178,7 +183,7 @@
             <div class="lg:col-span-1 space-y-4">
                 <div id="accordion-container">
                     <!-- Accordion Item 1: Profile Management -->
-                    <div class="accordion-item card rounded-lg shadow-md overflow-hidden">
+                    <div class="accordion-item card rounded-lg shadow-md">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>設定檔管理</span>
                             <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
@@ -199,7 +204,7 @@
                         </div>
                     </div>
                      <!-- Accordion Item 2: Task Settings -->
-                    <div class="accordion-item card rounded-lg shadow-md overflow-hidden mt-4">
+                    <div class="accordion-item card rounded-lg shadow-md mt-4">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>1. 勤務設定</span>
                             <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
@@ -214,7 +219,7 @@
                         </div>
                     </div>
                     <!-- Accordion Item 3: Personnel Settings -->
-                     <div class="accordion-item card rounded-lg shadow-md overflow-hidden mt-4">
+                     <div class="accordion-item card rounded-lg shadow-md mt-4">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>2. 人員設定</span>
                             <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
@@ -228,7 +233,7 @@
                         </div>
                     </div>
                      <!-- Accordion Item 4: Generate Schedule -->
-                    <div class="accordion-item card rounded-lg shadow-md overflow-hidden mt-4 active">
+                    <div class="accordion-item card rounded-lg shadow-md mt-4 active">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>3. 產生班表</span>
                              <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
@@ -242,7 +247,7 @@
                                             <span id="start-week-text"></span>
                                             <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path></svg>
                                         </button>
-                                        <div id="week-picker-container" class="absolute z-10 mt-1 card rounded-lg shadow-xl p-3 hidden w-full md:w-80">
+                                        <div id="week-picker-container" class="absolute z-20 mt-1 card rounded-lg shadow-xl p-3 hidden w-full md:w-80">
                                             <div id="week-picker-header" class="flex justify-between items-center mb-2">
                                                 <button id="week-picker-prev" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&lt;</button>
                                                 <span id="week-picker-month-year" class="font-bold"></span>
@@ -264,7 +269,7 @@
                                         <span id="holiday-settings-text">編輯假日選項</span>
                                         <svg class="w-5 h-5 text-gray-400" id="holiday-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                                     </button>
-                                    <div id="holiday-list-container" class="absolute z-10 mt-1 card rounded-lg shadow-xl p-3 hidden w-full">
+                                    <div id="holiday-list-container" class="absolute z-20 mt-1 card rounded-lg shadow-xl p-3 hidden w-full">
                                         <div id="holiday-list" class="max-h-48 overflow-y-auto space-y-2">
                                             <p class="text-sm text-gray-500">請先選擇日期範圍...</p>
                                         </div>
@@ -1180,4 +1185,34 @@
 </script>
 </body>
 </html>
+"
+我要把
+.accordion-item {
+             overflow: visible; /* CRITICAL FIX: Allow popups to display outside */
+        }
+.accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            padding: 0 1rem;
+        }
+.accordion-item.active .accordion-content {
+            padding: 1rem 1rem;
+            max-height: 1000px; /* Adjust as needed */
+            overflow: visible;
+            transition: max-height 0.5s ease-in, padding 0.3s ease-in;
+        }
+
+改成
+.accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            padding: 0 1rem;
+        }
+.accordion-item.active .accordion-content {
+            padding: 1rem 1rem;
+            max-height: 1000px; /* Adjust as needed */
+            transition: max-height 0.5s ease-in, padding 0.3s ease-in;
+        }
 
