@@ -99,30 +99,32 @@
             transform: rotate(90deg);
         }
         
-        /* Custom Week Picker Styles */
-        .week-picker-day {
-            transition: background-color 0.2s, color 0.2s;
+        /* Calendar Styles */
+        .calendar-grid { grid-template-rows: auto repeat(6, 1fr); }
+        .calendar-day {
+            transition: background-color 0.2s;
+            aspect-ratio: 1/1;
         }
-        .week-picker-day:hover {
-            background-color: #dbeafe; /* blue-100 */
+        .calendar-day:not(.other-month):hover {
+            background-color: #eff6ff; /* blue-50 */
         }
-        .dark .week-picker-day:hover {
+        .dark .calendar-day:not(.other-month):hover {
             background-color: #374151; /* gray-700 */
         }
-        .week-picker-day.selected {
-            background-color: var(--primary-color) !important;
-            color: white;
+        .calendar-day.is-holiday {
+            background-color: #fecaca; /* red-200 */
+            color: #b91c1c; /* red-700 */
+            font-weight: bold;
         }
-        .week-picker-day.today {
-            border: 1px solid var(--primary-color);
+        .dark .calendar-day.is-holiday {
+            background-color: #7f1d1d; /* red-900 */
+            color: #fca5a5; /* red-400 */
         }
-        .week-picker-day.other-month {
-            color: #9ca3af; /* gray-400 */
-        }
-        .dark .week-picker-day.other-month {
-            color: #6b7280; /* gray-500 */
+        .calendar-day.is-today {
+            box-shadow: inset 0 0 0 2px var(--primary-color);
         }
 
+        /* Schedule Table Styles */
         .schedule-table {
             border-collapse: separate;
             border-spacing: 0;
@@ -133,28 +135,18 @@
             box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
         }
         .dark .schedule-table { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.2); }
-        .schedule-table th {
-            padding: 0.75rem 1rem;
-            text-align: center;
-            font-weight: 600;
-            border-bottom: 1px solid var(--border-light);
-        }
-        .dark .schedule-table th { 
-            border-bottom-color: #4b5563;
-        }
-        .schedule-table td {
+        .schedule-table th, .schedule-table td {
             padding: 0.75rem 1rem;
             text-align: center;
             border-bottom: 1px solid var(--border-light);
             vertical-align: top;
         }
-        .dark .schedule-table td { border-bottom-color: var(--border-dark); }
+        .dark .schedule-table th, .dark .schedule-table td { border-bottom-color: var(--border-dark); }
+        .schedule-table th { font-weight: 600; }
+        .dark .schedule-table th { border-bottom-color: #4b5563; }
         .schedule-table tbody tr:last-child td { border-bottom: none; }
-        .schedule-table tbody tr:nth-child(even) { background-color: #fafafa; }
-        .dark .schedule-table tbody tr:nth-child(even) { background-color: rgba(255, 255, 255, 0.03); }
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
-        
     </style>
 </head>
 <body class="theme-light">
@@ -169,10 +161,8 @@
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Left Column: Settings Accordion -->
             <div class="lg:col-span-1 space-y-4">
                 <div id="accordion-container">
-                    <!-- Accordion Item 1: Profile Management -->
                     <div class="accordion-item card rounded-lg shadow-md">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>設定檔管理</span>
@@ -193,8 +183,7 @@
                             <input type="file" id="profile-file-input" class="hidden" accept=".json">
                         </div>
                     </div>
-                     <!-- Accordion Item 2: Task Settings -->
-                    <div class="accordion-item card rounded-lg shadow-md mt-4">
+                     <div class="accordion-item card rounded-lg shadow-md mt-4">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>1. 勤務設定</span>
                             <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
@@ -208,7 +197,6 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Accordion Item 3: Personnel Settings -->
                      <div class="accordion-item card rounded-lg shadow-md mt-4">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>2. 人員設定</span>
@@ -222,37 +210,24 @@
                             </div>
                         </div>
                     </div>
-                     <!-- Accordion Item 4: Generate Schedule -->
+                    
                     <div class="accordion-item card rounded-lg shadow-md mt-4 active">
                         <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
                             <span>3. 產生班表</span>
                              <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                         </button>
                         <div class="accordion-content">
-                            <div class="space-y-4">
+                             <div class="space-y-4">
                                 <div>
-                                    <label for="start-week-display" class="block font-medium text-sm text-muted mb-1">選擇開始週</label>
+                                    <label class="block font-medium text-sm text-muted mb-1">選擇開始週</label>
                                     <div class="relative">
-                                        <button type="button" id="start-week-display" class="form-input w-full p-2 rounded-md text-left flex justify-between items-center">
-                                            <span id="start-week-text"></span>
-                                            <svg class="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"></path></svg>
-                                        </button>
-                                        <div id="week-picker-container" class="absolute z-20 mt-1 card rounded-lg shadow-xl p-3 hidden w-full md:w-80">
-                                            <div id="week-picker-header" class="flex justify-between items-center mb-2">
-                                                <button id="week-picker-prev" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&lt;</button>
-                                                <span id="week-picker-month-year" class="font-bold"></span>
-                                                <button id="week-picker-next" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&gt;</button>
-                                            </div>
-                                            <div id="week-picker-grid" class="grid grid-cols-7 gap-1 text-center text-sm"></div>
-                                        </div>
+                                        <input type="week" id="start-week" class="form-input w-full p-2 rounded-md">
                                     </div>
-                                    <input type="week" id="start-week" class="hidden">
                                 </div>
                                 <div>
                                     <label for="num-weeks" class="block font-medium text-sm text-muted mb-1">產生週數</label>
                                     <input type="number" id="num-weeks" value="1" min="1" max="10" class="form-input w-full p-2 rounded-md">
                                 </div>
-                                <!-- Holiday Exclusion Section -->
                                 <div>
                                     <label class="block font-medium text-sm text-muted mb-1">假日排休設定</label>
                                     <button type="button" id="holiday-settings-btn" class="form-input w-full p-2 rounded-md text-left flex justify-between items-center" aria-expanded="false">
@@ -268,11 +243,15 @@
                         </div>
                     </div>
                 </div>
+                <div class="card rounded-lg shadow-md">
+                     <button id="holiday-management-btn" class="w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                        <span>假日管理中心</span>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </button>
+                </div>
             </div>
 
-            <!-- Right Column: Generation and Output -->
             <div class="lg:col-span-2 space-y-6">
-                <!-- Schedule Output -->
                 <div id="output-container" class="card p-4 rounded-lg shadow-md hidden" style="transition: opacity 0.3s;">
                     <div class="flex flex-wrap justify-between items-center mb-4">
                         <h2 class="text-2xl font-bold">班表結果</h2>
@@ -286,12 +265,9 @@
                     <div id="schedule-output" class="overflow-x-auto"></div>
                 </div>
 
-                <!-- Saved Schedules -->
                 <div class="card p-4 rounded-lg shadow-md">
                     <h2 class="text-xl font-bold mb-3">已儲存的班表</h2>
-                    <ul id="saved-schedules-list" class="list-disc pl-5 space-y-1 text-blue-600 dark:text-blue-400">
-                        <!-- Saved schedules will be populated here -->
-                    </ul>
+                    <ul id="saved-schedules-list" class="list-disc pl-5 space-y-1 text-blue-600 dark:text-blue-400"></ul>
                 </div>
             </div>
         </div>
@@ -304,7 +280,6 @@
         </footer>
     </div>
 
-    <!-- Modal for personnel advanced settings -->
     <div id="personnel-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
         <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
             <h3 class="text-2xl font-bold mb-4">進階設定: <span id="modal-personnel-name"></span></h3>
@@ -322,23 +297,39 @@
             </div>
         </div>
     </div>
-
-    <!-- Modal for holiday settings -->
-    <div id="holiday-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+     <div id="holiday-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
         <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
             <h3 class="text-2xl font-bold mb-4">假日排休設定</h3>
-            <div id="modal-holiday-list" class="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-600 p-3 rounded-md mb-6">
-                <!-- Holiday checkboxes will be populated here -->
-            </div>
+            <div id="modal-holiday-list" class="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-600 p-3 rounded-md mb-6"></div>
             <div class="flex justify-end gap-3">
                 <button id="modal-holiday-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
                 <button id="modal-holiday-save-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">確定</button>
             </div>
         </div>
     </div>
+    
+    <div id="holiday-management-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50 p-4">
+        <div class="card p-4 sm:p-6 rounded-lg shadow-xl w-full max-w-2xl mx-auto flex flex-col">
+            <div class="flex justify-between items-center mb-4 pb-4 border-b dark:border-gray-600">
+                <div class="flex items-center gap-4">
+                     <button id="calendar-prev-year" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&lt;&lt;</button>
+                     <button id="calendar-prev-month" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&lt;</button>
+                </div>
+                <h3 id="calendar-month-year" class="text-xl font-bold text-center"></h3>
+                 <div class="flex items-center gap-4">
+                    <button id="calendar-next-month" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&gt;</button>
+                    <button id="calendar-next-year" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600">&gt;&gt;</button>
+                </div>
+            </div>
+            <div id="calendar-grid" class="grid grid-cols-7 gap-1 text-center text-sm calendar-grid flex-grow">
+            </div>
+            <div class="mt-6 flex justify-end">
+                 <button id="calendar-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
+            </div>
+        </div>
+    </div>
 
 <script>
-    // --- Global State & Configuration ---
     const API_BASE_URL = `${window.location.origin}/api`; 
     let currentTheme = 'light';
     let appState = {
@@ -353,23 +344,13 @@
     
     let availableHolidays = [];
     let activeHolidayDates = new Set();
-    
-    const applyTheme = (theme) => {
-        const themeIconLight = document.getElementById('theme-icon-light');
-        const themeIconDark = document.getElementById('theme-icon-dark');
-        if (theme === 'dark') {
-            document.documentElement.classList.add('dark');
-            document.body.classList.replace('theme-light', 'theme-dark');
-            themeIconLight?.classList.add('hidden');
-            themeIconDark?.classList.remove('hidden');
-        } else {
-            document.documentElement.classList.remove('dark');
-            document.body.classList.replace('theme-dark', 'theme-light');
-            themeIconLight?.classList.remove('hidden');
-            themeIconDark?.classList.add('hidden');
-        }
+    let calendarState = {
+        currentDate: new Date(),
+        holidays: new Map() 
     };
-
+    let generatedData = null; 
+    let currentEditingPersonnelIndex = -1;
+    
     document.addEventListener('DOMContentLoaded', () => {
         const elements = {
             profileSelect: document.getElementById('profile-select'),
@@ -391,13 +372,6 @@
             generateBtn: document.getElementById('generate-schedule'),
             generateBtnText: document.getElementById('generate-btn-text'),
             generateSpinner: document.getElementById('generate-spinner'),
-            startWeekDisplay: document.getElementById('start-week-display'),
-            startWeekText: document.getElementById('start-week-text'),
-            weekPickerContainer: document.getElementById('week-picker-container'),
-            weekPickerPrevBtn: document.getElementById('week-picker-prev'),
-            weekPickerNextBtn: document.getElementById('week-picker-next'),
-            weekPickerMonthYear: document.getElementById('week-picker-month-year'),
-            weekPickerGrid: document.getElementById('week-picker-grid'),
             outputContainer: document.getElementById('output-container'),
             scheduleOutput: document.getElementById('schedule-output'),
             copyBtn: document.getElementById('copy-schedule'),
@@ -422,12 +396,15 @@
             modalHolidayList: document.getElementById('modal-holiday-list'),
             modalHolidayCloseBtn: document.getElementById('modal-holiday-close-btn'),
             modalHolidaySaveBtn: document.getElementById('modal-holiday-save-btn'),
-        };
-
-        let generatedData = null; 
-        let weekPickerState = {
-            currentDate: new Date(),
-            selectedDate: new Date(),
+            holidayManagementBtn: document.getElementById('holiday-management-btn'),
+            holidayManagementModal: document.getElementById('holiday-management-modal'),
+            calendarMonthYear: document.getElementById('calendar-month-year'),
+            calendarGrid: document.getElementById('calendar-grid'),
+            calendarPrevMonth: document.getElementById('calendar-prev-month'),
+            calendarNextMonth: document.getElementById('calendar-next-month'),
+            calendarPrevYear: document.getElementById('calendar-prev-year'),
+            calendarNextYear: document.getElementById('calendar-next-year'),
+            calendarCloseBtn: document.getElementById('calendar-close-btn'),
         };
         
         const api = {
@@ -497,6 +474,22 @@
             }
         };
 
+        const applyTheme = (theme) => {
+             const themeIconLight = document.getElementById('theme-icon-light');
+             const themeIconDark = document.getElementById('theme-icon-dark');
+             if (theme === 'dark') {
+                 document.documentElement.classList.add('dark');
+                 document.body.classList.replace('theme-light', 'theme-dark');
+                 themeIconLight?.classList.add('hidden');
+                 themeIconDark?.classList.remove('hidden');
+             } else {
+                 document.documentElement.classList.remove('dark');
+                 document.body.classList.replace('theme-dark', 'theme-light');
+                 themeIconLight?.classList.remove('hidden');
+                 themeIconDark?.classList.add('hidden');
+             }
+        };
+
         const checkConnectionStatus = async () => {
             try {
                 const response = await fetch(`${API_BASE_URL}/status`);
@@ -513,15 +506,12 @@
                 elements.statusText.textContent = '連線狀態：伺服器無回應';
             }
         };
-
         const getActiveProfile = () => appState.profiles[appState.activeProfile];
-        
         const saveSettings = async () => {
             const activeProfile = getActiveProfile();
             if (!activeProfile) return;
             await api.put(`profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
         };
-        
         const renderTasks = () => {
             elements.taskList.innerHTML = '';
             const tasks = getActiveProfile()?.settings?.tasks || [];
@@ -536,7 +526,6 @@
                 elements.taskList.appendChild(div);
             });
         };
-        
         const renderPersonnel = () => {
              elements.personnelList.innerHTML = '';
             const personnel = getActiveProfile()?.settings?.personnel || [];
@@ -552,7 +541,6 @@
                 elements.personnelList.appendChild(div);
             });
         };
-        
         const renderProfileSelector = () => {
             elements.profileSelect.innerHTML = '';
             Object.keys(appState.profiles).forEach(name => {
@@ -562,7 +550,6 @@
                 elements.profileSelect.appendChild(option);
             });
         };
-        
         const renderSavedSchedules = () => {
             elements.savedSchedulesList.innerHTML = '<li class="text-gray-500">無 (尚未儲存任何班表)</li>';
             const schedules = getActiveProfile()?.schedules;
@@ -580,22 +567,12 @@
                 });
             }
         };
-        
         const renderAll = () => {
             renderProfileSelector();
             renderTasks();
             renderPersonnel();
             renderSavedSchedules();
         };
-
-        const getISOWeek = (date) => {
-            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-            const dayNum = d.getUTCDay() || 7;
-            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-            return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-        }
-        
         const debounce = (func, delay) => {
             let timeoutId;
             return (...args) => {
@@ -649,55 +626,6 @@
 
         const debouncedUpdateHolidays = debounce(updateHolidaySelectionUI, 400);
 
-        const renderWeekPicker = () => {
-            const year = weekPickerState.currentDate.getFullYear();
-            const month = weekPickerState.currentDate.getMonth();
-            elements.weekPickerMonthYear.textContent = `${year}年 ${month + 1}月`;
-            elements.weekPickerGrid.innerHTML = '';
-            ['一', '二', '三', '四', '五', '六', '日'].forEach(day => {
-                const dayEl = document.createElement('div');
-                dayEl.className = 'font-bold text-xs text-muted';
-                dayEl.textContent = day;
-                elements.weekPickerGrid.appendChild(dayEl);
-            });
-            const firstDayOfMonth = new Date(year, month, 1);
-            let dayOfWeek = firstDayOfMonth.getDay();
-            dayOfWeek = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-            for (let i = 0; i < dayOfWeek; i++) {
-                elements.weekPickerGrid.appendChild(document.createElement('div'));
-            }
-            const today = new Date();
-            const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
-            const selectedMonday = new Date(weekPickerState.selectedDate);
-            selectedMonday.setDate(selectedMonday.getDate() - (selectedMonday.getDay() === 0 ? 6 : selectedMonday.getDay() - 1));
-            const selectedMondayStr = `${selectedMonday.getFullYear()}-${selectedMonday.getMonth()}-${selectedMonday.getDate()}`;
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            for (let i = 1; i <= daysInMonth; i++) {
-                const dayEl = document.createElement('div');
-                dayEl.textContent = i;
-                const currentDate = new Date(year, month, i);
-                const currentMonday = new Date(currentDate);
-                currentMonday.setDate(currentMonday.getDate() - (currentMonday.getDay() === 0 ? 6 : currentMonday.getDay() - 1));
-                const currentMondayStr = `${currentMonday.getFullYear()}-${currentMonday.getMonth()}-${currentMonday.getDate()}`;
-                let classes = 'week-picker-day cursor-pointer p-1 rounded-full';
-                if (`${year}-${month}-${i}` === todayStr) classes += ' today';
-                if (currentMondayStr === selectedMondayStr) classes += ' selected';
-                dayEl.className = classes;
-                dayEl.dataset.date = currentDate.toISOString();
-                elements.weekPickerGrid.appendChild(dayEl);
-            }
-        };
-        
-        const updateStartWeekValue = (date) => {
-            weekPickerState.selectedDate = new Date(date);
-            const year = weekPickerState.selectedDate.getFullYear();
-            const week = getISOWeek(weekPickerState.selectedDate);
-            const weekString = `${year}-W${String(week).padStart(2, '0')}`;
-            elements.startWeekInput.value = weekString;
-            elements.startWeekText.textContent = weekString;
-            debouncedUpdateHolidays();
-        };
-
         const initApp = async () => {
             await checkConnectionStatus();
             const data = await api.get('profiles');
@@ -706,13 +634,94 @@
                 appState.profiles = data.profiles;
                 renderAll();
             }
-            // Initial UI setup
             applyTheme(currentTheme);
-            updateStartWeekValue(new Date());
+            const today = new Date();
+            const year = today.getFullYear();
+            const d = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            elements.startWeekInput.value = `${year}-W${String(weekNo).padStart(2, '0')}`;
+            debouncedUpdateHolidays();
             setInitialAccordionState();
             setInterval(checkConnectionStatus, 30000);
         };
+        
+        const renderCalendar = async () => {
+            const year = calendarState.currentDate.getFullYear();
+            const month = calendarState.currentDate.getMonth();
 
+            if (!calendarState.holidays.has(year)) {
+                const holidaysFromServer = await api.get(`holidays/${year}`);
+                const holidayMap = new Map();
+                if(holidaysFromServer) {
+                    holidaysFromServer.forEach(h => holidayMap.set(h.date, h.name));
+                }
+                calendarState.holidays.set(year, holidayMap);
+            }
+            const yearHolidays = calendarState.holidays.get(year);
+
+            elements.calendarMonthYear.textContent = `${year}年 ${month + 1}月`;
+            elements.calendarGrid.innerHTML = '';
+
+            ['日', '一', '二', '三', '四', '五', '六'].forEach(day => {
+                const dayEl = document.createElement('div');
+                dayEl.className = 'font-bold text-xs text-muted p-2';
+                dayEl.textContent = day;
+                elements.calendarGrid.appendChild(dayEl);
+            });
+
+            const firstDayOfMonth = new Date(year, month, 1);
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const startDayOfWeek = firstDayOfMonth.getDay();
+            
+            for (let i = 0; i < startDayOfWeek; i++) {
+                elements.calendarGrid.appendChild(document.createElement('div'));
+            }
+
+            const today = new Date();
+            const todayStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayEl = document.createElement('div');
+                const date = new Date(year, month, i);
+                const dateStr = `${year}${String(month + 1).padStart(2, '0')}${String(i).padStart(2, '0')}`;
+                
+                dayEl.innerHTML = `<span class="flex items-center justify-center w-full h-full">${i}</span>`;
+                let classes = 'calendar-day flex items-center justify-center cursor-pointer rounded-full';
+
+                if (dateStr === todayStr) classes += ' is-today';
+                if (yearHolidays.has(dateStr)) classes += ' is-holiday';
+
+                dayEl.className = classes;
+                dayEl.dataset.date = dateStr;
+                dayEl.dataset.name = yearHolidays.get(dateStr) || '';
+                elements.calendarGrid.appendChild(dayEl);
+            }
+        };
+
+        const handleDayClick = async (e) => {
+            const dayEl = e.target.closest('.calendar-day');
+            if (!dayEl) return;
+
+            const { date, name } = dayEl.dataset;
+            const formattedDate = `${date.substring(0,4)}-${date.substring(4,6)}-${date.substring(6,8)}`;
+            
+            const newName = prompt(`請輸入 ${formattedDate} 的假日名稱 (留白則取消假日):`, name);
+
+            if (newName === null) return;
+
+            const isHoliday = newName.trim() !== '';
+            
+            const result = await api.put('holidays', { date, name: newName.trim(), isHoliday });
+            if (result) {
+                calendarState.holidays.delete(parseInt(date.substring(0, 4)));
+                await renderCalendar();
+                await debouncedUpdateHolidays();
+            }
+        };
+        
         const handleSettingsChange = async (updateFunction) => {
             updateFunction();
             renderAll();
@@ -723,7 +732,158 @@
                 elements.outputContainer.style.opacity = '1';
             }
         };
+
+        const openPersonnelModal = (index) => {
+            currentEditingPersonnelIndex = index;
+            const personnel = getActiveProfile().settings.personnel[index];
+            elements.modalPersonnelName.textContent = personnel.name;
+            const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
+            elements.offDaysContainer.innerHTML = weekDays.map((day, dayIndex) => `
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" class="form-checkbox rounded" value="${dayIndex}" ${personnel.offDays?.includes(dayIndex) ? 'checked' : ''}>
+                    <span>${day}</span>
+                </label>
+            `).join('');
+            const tasks = getActiveProfile().settings.tasks;
+            elements.preferredTaskSelect.innerHTML = '<option value="">無偏好</option>' + tasks.map(task => 
+                `<option value="${task.name}" ${personnel.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
+            ).join('');
+            elements.personnelModal.classList.remove('hidden');
+        };
+        const closeModal = () => {
+            elements.personnelModal.classList.add('hidden');
+            currentEditingPersonnelIndex = -1;
+        };
+
+        async function generateFullSchedule() {
+            const settings = getActiveProfile().settings;
+            if (!settings.personnel?.length || !settings.tasks?.length) {
+                return alert('請先設定勤務與人員！');
+            }
+            const startWeek = elements.startWeekInput.value;
+            if (!startWeek) {
+                return alert('請選擇開始週！');
+            }
+
+            const activeHolidays = Array.from(activeHolidayDates);
+
+            elements.generateBtn.disabled = true;
+            elements.generateBtnText.classList.add('hidden');
+            elements.generateSpinner.classList.remove('hidden');
+            
+            try {
+                const scheduleData = await api.post('generate-schedule', {
+                    settings,
+                    startWeek,
+                    numWeeks: parseInt(elements.numWeeksInput.value, 10),
+                    activeHolidays
+                });
+                if (scheduleData) {
+                    generatedData = scheduleData;
+                    displaySchedule(scheduleData);
+                } else {
+                    elements.outputContainer.classList.add('hidden');
+                }
+            } finally {
+                elements.generateBtn.disabled = false;
+                elements.generateBtnText.classList.remove('hidden');
+                elements.generateSpinner.classList.add('hidden');
+            }
+        }
         
+        function displaySchedule(dataToDisplay) {
+            let html = '';
+            dataToDisplay.forEach((data, index) => {
+                const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
+                const weekDayNames = ['一', '二', '三', '四', '五'];
+                const headerStyle = `style="background-color: ${color.header}; color: white;"`;
+                html += `
+                    <div class="mb-8" id="schedule-week-${index}">
+                        <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
+                        <table class="schedule-table">
+                            <thead>
+                                <tr>
+                                    <th ${headerStyle}>勤務地點</th>
+                                    ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tasks.map((task, taskIndex) => `
+                                    <tr>
+                                        <td class="font-medium align-middle">${task.name}</td>
+                                        ${weekDayDates.map((_, dayIndex) => {
+                                            if (!scheduleDays[dayIndex].shouldSchedule) {
+                                                return `<td class="holiday-cell align-middle">${scheduleDays[dayIndex].description}</td>`;
+                                            } else {
+                                                return `<td class="align-middle">${schedule[dayIndex][taskIndex].join('<br>')}</td>`;
+                                            }
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            });
+            elements.scheduleOutput.innerHTML = html;
+            elements.outputContainer.classList.remove('hidden');
+        }
+
+        async function exportToPdf() {
+            if (!generatedData) return;
+            const { jsPDF } = window.jspdf;
+            const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
+            const style = document.createElement('style');
+            style.innerHTML = `
+                .pdf-export-container { display: inline-block; padding: 20px; background: white; max-width: 800px; }
+                .pdf-export-container .mb-8 { margin-bottom: 16px !important; }
+                .pdf-export-container h3 { font-size: 16px !important; margin-bottom: 8px !important; }
+                .pdf-export-container table { font-size: 12px !important; width: 100% !important; }
+                .pdf-export-container th, .pdf-export-container td { padding: 8px !important; }
+            `;
+            document.head.appendChild(style);
+            const container = document.createElement('div');
+            container.className = 'pdf-export-container';
+            allScheduleElements.forEach(el => container.appendChild(el.cloneNode(true)));
+            container.style.position = 'absolute';
+            container.style.left = '-9999px';
+            document.body.appendChild(container);
+
+            try {
+                const canvas = await html2canvas(container, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' });
+                document.body.removeChild(container);
+                document.head.removeChild(style);
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfPageWidth = pdf.internal.pageSize.getWidth();
+                const pdfPageHeight = pdf.internal.pageSize.getHeight();
+                const imgProps = pdf.getImageProperties(imgData);
+                const imgWidth = imgProps.width;
+                const imgHeight = imgProps.height;
+                const margin = 10;
+                const availableWidth = pdfPageWidth - (margin * 2);
+                const scale = availableWidth / imgWidth;
+                const pdfImageWidth = imgWidth * scale;
+                const pdfImageHeight = imgHeight * scale;
+                const xPosition = (pdfPageWidth - pdfImageWidth) / 2;
+                let heightLeft = pdfImageHeight;
+                let position = 0;
+                pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
+                heightLeft -= (pdfPageHeight - margin);
+                while (heightLeft > 0) {
+                    position -= (pdfPageHeight - (margin * 2));
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
+                    heightLeft -= pdfPageHeight;
+                }
+                pdf.save('班表.pdf');
+            } catch (err) {
+                console.error("html2canvas failed:", err);
+                if (document.body.contains(container)) document.body.removeChild(container);
+                if (document.head.contains(style)) document.head.removeChild(style);
+            }
+        }
+
         elements.addTaskBtn.addEventListener('click', () => {
             const name = elements.newTaskNameInput.value.trim();
             const count = parseInt(elements.newTaskCountInput.value, 10) || 1;
@@ -774,28 +934,6 @@
             }
         });
         
-        let currentEditingPersonnelIndex = -1;
-        const openPersonnelModal = (index) => {
-            currentEditingPersonnelIndex = index;
-            const personnel = getActiveProfile().settings.personnel[index];
-            elements.modalPersonnelName.textContent = personnel.name;
-            const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
-            elements.offDaysContainer.innerHTML = weekDays.map((day, dayIndex) => `
-                <label class="flex items-center space-x-2">
-                    <input type="checkbox" class="form-checkbox rounded" value="${dayIndex}" ${personnel.offDays?.includes(dayIndex) ? 'checked' : ''}>
-                    <span>${day}</span>
-                </label>
-            `).join('');
-            const tasks = getActiveProfile().settings.tasks;
-            elements.preferredTaskSelect.innerHTML = '<option value="">無偏好</option>' + tasks.map(task => 
-                `<option value="${task.name}" ${personnel.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
-            ).join('');
-            elements.personnelModal.classList.remove('hidden');
-        };
-        const closeModal = () => {
-            elements.personnelModal.classList.add('hidden');
-            currentEditingPersonnelIndex = -1;
-        };
         elements.modalCloseBtn.addEventListener('click', closeModal);
         elements.modalSaveBtn.addEventListener('click', () => {
             if (currentEditingPersonnelIndex > -1) {
@@ -887,146 +1025,7 @@
             }
         });
 
-        elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
-        
-        elements.weekPickerPrevBtn.addEventListener('click', () => {
-            weekPickerState.currentDate.setMonth(weekPickerState.currentDate.getMonth() - 1);
-            renderWeekPicker();
-        });
-        elements.weekPickerNextBtn.addEventListener('click', () => {
-            weekPickerState.currentDate.setMonth(weekPickerState.currentDate.getMonth() + 1);
-            renderWeekPicker();
-        });
-        elements.weekPickerGrid.addEventListener('click', (e) => {
-            if (e.target.classList.contains('week-picker-day')) {
-                updateStartWeekValue(e.target.dataset.date);
-                closeAllPopups();
-                renderWeekPicker();
-            }
-        });
-        
-        const closeAllPopups = () => {
-            elements.weekPickerContainer.classList.add('hidden');
-        };
-
-        elements.startWeekDisplay.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isHidden = elements.weekPickerContainer.classList.contains('hidden');
-            closeAllPopups(); 
-            if (isHidden) {
-                 elements.weekPickerContainer.classList.remove('hidden');
-            }
-        });
-        
-        elements.holidaySettingsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            elements.modalHolidayList.innerHTML = '';
-            if (availableHolidays.length > 0) {
-                 elements.modalHolidayList.innerHTML = availableHolidays.map(holiday => `
-                    <label class="flex items-center space-x-2 text-sm cursor-pointer">
-                        <input type="checkbox" class="form-checkbox rounded modal-holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
-                        <span>${holiday.name} (${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)})</span>
-                    </label>
-                `).join('');
-            } else {
-                elements.modalHolidayList.innerHTML = '<p class="text-sm text-gray-500">目前選擇的範圍內無國定假日。</p>';
-            }
-            elements.holidayModal.classList.remove('hidden');
-        });
-        
-        elements.modalHolidayCloseBtn.addEventListener('click', () => elements.holidayModal.classList.add('hidden'));
-
-        elements.modalHolidaySaveBtn.addEventListener('click', () => {
-            const newActiveHolidayDates = new Set();
-            elements.modalHolidayList.querySelectorAll('.modal-holiday-checkbox:checked').forEach(cb => {
-                newActiveHolidayDates.add(cb.value);
-            });
-            activeHolidayDates = newActiveHolidayDates;
-            updateHolidayButtonText();
-            elements.holidayModal.classList.add('hidden');
-        });
-
-
-        document.addEventListener('click', closeAllPopups);
-        
-        elements.weekPickerContainer.addEventListener('click', e => e.stopPropagation());
-
-
-        async function generateFullSchedule() {
-            const settings = getActiveProfile().settings;
-            if (!settings.personnel?.length || !settings.tasks?.length) {
-                return alert('請先設定勤務與人員！');
-            }
-            const startWeek = elements.startWeekInput.value;
-            if (!startWeek) {
-                return alert('請選擇開始週！');
-            }
-
-            const activeHolidays = Array.from(activeHolidayDates);
-
-            elements.generateBtn.disabled = true;
-            elements.generateBtnText.classList.add('hidden');
-            elements.generateSpinner.classList.remove('hidden');
-            
-            try {
-                const scheduleData = await api.post('generate-schedule', {
-                    settings,
-                    startWeek,
-                    numWeeks: parseInt(elements.numWeeksInput.value, 10),
-                    activeHolidays
-                });
-                if (scheduleData) {
-                    generatedData = scheduleData;
-                    displaySchedule(scheduleData);
-                } else {
-                    elements.outputContainer.classList.add('hidden');
-                }
-            } finally {
-                elements.generateBtn.disabled = false;
-                elements.generateBtnText.classList.remove('hidden');
-                elements.generateSpinner.classList.add('hidden');
-            }
-        }
         elements.generateBtn.addEventListener('click', generateFullSchedule);
-
-        function displaySchedule(dataToDisplay) {
-            let html = '';
-            dataToDisplay.forEach((data, index) => {
-                const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
-                const weekDayNames = ['一', '二', '三', '四', '五'];
-                const headerStyle = `style="background-color: ${color.header}; color: white;"`;
-                html += `
-                    <div class="mb-8" id="schedule-week-${index}">
-                        <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
-                        <table class="schedule-table">
-                            <thead>
-                                <tr>
-                                    <th ${headerStyle}>勤務地點</th>
-                                    ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${tasks.map((task, taskIndex) => `
-                                    <tr>
-                                        <td class="font-medium align-middle">${task.name}</td>
-                                        ${weekDayDates.map((_, dayIndex) => {
-                                            if (!scheduleDays[dayIndex].shouldSchedule) {
-                                                return `<td class="holiday-cell align-middle">${scheduleDays[dayIndex].description}</td>`;
-                                            } else {
-                                                return `<td class="align-middle">${schedule[dayIndex][taskIndex].join('<br>')}</td>`;
-                                            }
-                                        }).join('')}
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            });
-            elements.scheduleOutput.innerHTML = html;
-            elements.outputContainer.classList.remove('hidden');
-        }
-
         elements.copyBtn.addEventListener('click', () => {
             if (!generatedData) return;
             let textContent = '';
@@ -1074,60 +1073,6 @@
             XLSX.writeFile(wb, "班表.xlsx");
         });
 
-        async function exportToPdf() {
-            if (!generatedData) return;
-            const { jsPDF } = window.jspdf;
-            const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
-            const style = document.createElement('style');
-            style.innerHTML = `
-                .pdf-export-container { display: inline-block; padding: 20px; background: white; max-width: 800px; }
-                .pdf-export-container .mb-8 { margin-bottom: 16px !important; }
-                .pdf-export-container h3 { font-size: 16px !important; margin-bottom: 8px !important; }
-                .pdf-export-container table { font-size: 12px !important; width: 100% !important; }
-                .pdf-export-container th, .pdf-export-container td { padding: 8px !important; }
-            `;
-            document.head.appendChild(style);
-            const container = document.createElement('div');
-            container.className = 'pdf-export-container';
-            allScheduleElements.forEach(el => container.appendChild(el.cloneNode(true)));
-            container.style.position = 'absolute';
-            container.style.left = '-9999px';
-            document.body.appendChild(container);
-
-            try {
-                const canvas = await html2canvas(container, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' });
-                document.body.removeChild(container);
-                document.head.removeChild(style);
-                const imgData = canvas.toDataURL('image/png');
-                const pdf = new jsPDF('p', 'mm', 'a4');
-                const pdfPageWidth = pdf.internal.pageSize.getWidth();
-                const pdfPageHeight = pdf.internal.pageSize.getHeight();
-                const imgProps = pdf.getImageProperties(imgData);
-                const imgWidth = imgProps.width;
-                const imgHeight = imgProps.height;
-                const margin = 10;
-                const availableWidth = pdfPageWidth - (margin * 2);
-                const scale = availableWidth / imgWidth;
-                const pdfImageWidth = imgWidth * scale;
-                const pdfImageHeight = imgHeight * scale;
-                const xPosition = (pdfPageWidth - pdfImageWidth) / 2;
-                let heightLeft = pdfImageHeight;
-                let position = 0;
-                pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
-                heightLeft -= (pdfPageHeight - margin);
-                while (heightLeft > 0) {
-                    position -= (pdfPageHeight - (margin * 2));
-                    pdf.addPage();
-                    pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
-                    heightLeft -= pdfPageHeight;
-                }
-                pdf.save('班表.pdf');
-            } catch (err) {
-                console.error("html2canvas failed:", err);
-                if (document.body.contains(container)) document.body.removeChild(container);
-                if (document.head.contains(style)) document.head.removeChild(style);
-            }
-        }
         elements.exportPdfBtn.addEventListener('click', exportToPdf);
 
         elements.saveScheduleBtn.addEventListener('click', async () => {
@@ -1163,29 +1108,6 @@
                          renderSavedSchedules();
                      }
                  }
-            }
-        });
-        
-        elements.themeToggle.addEventListener('click', () => {
-            const isDark = document.documentElement.classList.contains('dark');
-            currentTheme = isDark ? 'light' : 'dark';
-            applyTheme(currentTheme);
-        });
-
-        const setInitialAccordionState = () => {
-            const accordions = document.querySelectorAll('.accordion-item');
-            if (window.innerWidth >= 1024) { 
-                accordions.forEach(item => item.classList.add('active'));
-            } else {
-                 accordions[3]?.classList.add('active'); // "產生班表" is default open on mobile
-            }
-        };
-
-        elements.accordionContainer.addEventListener('click', (e) => {
-            const header = e.target.closest('.accordion-header');
-            if (header) {
-                const accordionItem = header.parentElement;
-                accordionItem.classList.toggle('active');
             }
         });
 
