@@ -1095,6 +1095,29 @@
             renderCalendar();
             elements.holidayManagementModal.classList.remove('hidden');
         });
+        
+        elements.calendarCloseBtn.addEventListener('click', () => {
+            elements.holidayManagementModal.classList.add('hidden');
+        });
+
+        elements.calendarPrevMonth.addEventListener('click', () => {
+            calendarState.currentDate.setMonth(calendarState.currentDate.getMonth() - 1);
+            renderCalendar();
+        });
+        elements.calendarNextMonth.addEventListener('click', () => {
+            calendarState.currentDate.setMonth(calendarState.currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+        elements.calendarPrevYear.addEventListener('click', () => {
+            calendarState.currentDate.setFullYear(calendarState.currentDate.getFullYear() - 1);
+            renderCalendar();
+        });
+        elements.calendarNextYear.addEventListener('click', () => {
+            calendarState.currentDate.setFullYear(calendarState.currentDate.getFullYear() + 1);
+            renderCalendar();
+        });
+
+        elements.calendarGrid.addEventListener('click', handleDayClick);
 
         elements.accordionContainer.addEventListener('click', (e) => {
             const header = e.target.closest('.accordion-header');
@@ -1115,3 +1138,4 @@
 </script>
 </body>
 </html>
+
