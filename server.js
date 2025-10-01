@@ -148,21 +148,26 @@ const seedHolidays = async () => {
         const documents = [];
 
         for (const file of jsonFiles) {
-            const filePath = path.join(holidayDir, file);
-            const data = await fs.readFile(filePath, 'utf-8');
-            const holidayData = JSON.parse(data);
-
-            holidayData.forEach(h => {
-                if (h.isHoliday && h.date) {
-                    documents.push({
-                        _id: `default-${h.date}`,
-                        profile: 'default',
-                        date: h.date,
-                        name: h.name || h.description || '國定假日',
-                        isHoliday: true,
-                    });
-                }
-            });
+            try {
+                const filePath = path.join(holidayDir, file);
+                const data = await fs.readFile(filePath, 'utf-8');
+                const holidayData = JSON.parse(data);
+    
+                holidayData.forEach(h => {
+                    if (h.isHoliday && h.date) {
+                        documents.push({
+                            _id: `default-${h.date}`,
+                            profile: 'default',
+                            date: h.date,
+                            name: h.name || h.description || '國定假日',
+                            isHoliday: true,
+                        });
+                    }
+                });
+            } catch (error) {
+                debugDb(`讀取檔案 ${file} 失敗:`, error);
+                continue; // 跳過這個檔案,繼續處理其他檔案
+            }
         }
         
         if (documents.length > 0) {
