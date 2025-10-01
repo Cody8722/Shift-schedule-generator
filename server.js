@@ -169,6 +169,43 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
     return weeklySchedule;
 };
 
+const generateScheduleHtml = (fullScheduleData) => {
+    let html = '';
+    fullScheduleData.forEach((data, index) => {
+        const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
+        const weekDayNames = ['一', '二', '三', '四', '五'];
+        const headerStyle = `style="background-color: ${color.header}; color: white;"`;
+        html += `
+            <div class="mb-8" id="schedule-week-${index}">
+                <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
+                <table class="schedule-table">
+                    <thead>
+                        <tr>
+                            <th ${headerStyle}>勤務地點</th>
+                            ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tasks.map((task, taskIndex) => `
+                            <tr>
+                                <td class="font-medium align-middle">${task.name}</td>
+                                ${weekDayDates.map((_, dayIndex) => {
+                                    if (!scheduleDays[dayIndex].shouldSchedule) {
+                                        return `<td class="holiday-cell align-middle">${scheduleDays[dayIndex].description}</td>`;
+                                    } else {
+                                        return `<td class="align-middle">${schedule[dayIndex][taskIndex].join('<br>')}</td>`;
+                                    }
+                                }).join('')}
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    });
+    return html;
+};
+
 // --- API 路由 ---
 app.get('/api/status', (req, res) => res.json({ server: 'running', database: isDbConnected ? 'connected' : 'disconnected' }));
 
@@ -398,7 +435,10 @@ app.post('/api/generate-schedule', async (req, res) => {
             const weeklySchedule = generateWeeklySchedule(settings, scheduleDays);
             fullScheduleData.push({ schedule: weeklySchedule, tasks: settings.tasks, dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`, weekDayDates, scheduleDays, color: colors[i % colors.length] });
         }
-        res.json(fullScheduleData);
+        
+        const scheduleHtml = generateScheduleHtml(fullScheduleData);
+
+        res.json({ data: fullScheduleData, html: scheduleHtml });
     } catch (error) {
         debugSchedule('產生班表時發生錯誤:', error);
         res.status(500).json({ message: '產生班表時發生未預期的錯誤' });
