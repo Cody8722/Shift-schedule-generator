@@ -207,8 +207,6 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
                     weeklySchedule[dayIndex][taskIndex].push(person.name);
                     shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
                     dailyAvailablePersonnel = dailyAvailablePersonnel.filter(p => p.name !== person.name);
-                } else {
-                     weeklySchedule[dayIndex][taskIndex].push('人力不足');
                 }
             }
         }
