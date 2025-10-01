@@ -117,12 +117,10 @@ const getHolidaysForYear = async (year, profile) => {
     debugDb(`從資料庫為設定檔 ${profile} 讀取 ${year} 年的假日資料...`);
     try {
         const yearStr = String(year);
-        const holidays = await holidaysCollection.find({ profile, date: { $regex: `^${yearStr}` } }).toArray();
+        const holidays = await holidaysCollection.find({ profile, date: { $regex: `^${yearStr}` }, isHoliday: true }).toArray();
         const holidayMap = new Map();
         holidays.forEach(h => {
-            if (h.isHoliday) {
-                holidayMap.set(h.date, h.name);
-            }
+            holidayMap.set(h.date, h.name);
         });
         holidaysCache.set(cacheKey, holidayMap);
         debugDb(`已快取設定檔 ${profile} 的 ${year} 年 ${holidayMap.size} 個假日項目。`);
@@ -272,7 +270,7 @@ app.get('/api/holidays/:year', async (req, res) => {
     try {
         const { year } = req.params;
         const config = await configCollection.findOne({ _id: CONFIG_ID });
-        const holidays = await holidaysCollection.find({ profile: config.activeProfile, date: { $regex: `^${year}` } }).toArray();
+        const holidays = await holidaysCollection.find({ profile: config.activeProfile, date: { $regex: `^${year}` }, isHoliday: true }).toArray();
         res.json(holidays.map(h => ({ date: h.date, name: h.name })));
     } catch(error) {
         debugDb('讀取年度假日失敗:', error);
@@ -598,3 +596,4 @@ process.on('SIGINT', async () => {
     }
     process.exit(0);
 });
+
