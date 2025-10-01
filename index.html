@@ -772,15 +772,15 @@
             elements.generateSpinner.classList.remove('hidden');
             
             try {
-                const scheduleData = await api.post('generate-schedule', {
+                const response = await api.post('generate-schedule', {
                     settings,
                     startWeek,
                     numWeeks: parseInt(elements.numWeeksInput.value, 10),
                     activeHolidays
                 });
-                if (scheduleData) {
-                    generatedData = scheduleData;
-                    displaySchedule(scheduleData);
+                if (response) {
+                    generatedData = response.data;
+                    displaySchedule(response.html);
                 } else {
                     elements.outputContainer.classList.add('hidden');
                 }
@@ -791,41 +791,8 @@
             }
         }
         
-        function displaySchedule(dataToDisplay) {
-            let html = '';
-            dataToDisplay.forEach((data, index) => {
-                const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
-                const weekDayNames = ['一', '二', '三', '四', '五'];
-                const headerStyle = `style="background-color: ${color.header}; color: white;"`;
-                html += `
-                    <div class="mb-8" id="schedule-week-${index}">
-                        <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
-                        <table class="schedule-table">
-                            <thead>
-                                <tr>
-                                    <th ${headerStyle}>勤務地點</th>
-                                    ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${tasks.map((task, taskIndex) => `
-                                    <tr>
-                                        <td class="font-medium align-middle">${task.name}</td>
-                                        ${weekDayDates.map((_, dayIndex) => {
-                                            if (!scheduleDays[dayIndex].shouldSchedule) {
-                                                return `<td class="holiday-cell align-middle">${scheduleDays[dayIndex].description}</td>`;
-                                            } else {
-                                                return `<td class="align-middle">${schedule[dayIndex][taskIndex].join('<br>')}</td>`;
-                                            }
-                                        }).join('')}
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            });
-            elements.scheduleOutput.innerHTML = html;
+        function displaySchedule(scheduleHtml) {
+            elements.scheduleOutput.innerHTML = scheduleHtml;
             elements.outputContainer.classList.remove('hidden');
         }
 
@@ -883,7 +850,7 @@
                 if (document.head.contains(style)) document.head.removeChild(style);
             }
         }
-        
+
         elements.addTaskBtn.addEventListener('click', () => {
             const name = elements.newTaskNameInput.value.trim();
             const count = parseInt(elements.newTaskCountInput.value, 10) || 1;
@@ -1097,7 +1064,10 @@
                 const scheduleData = await api.get(`schedules/${name}`);
                 if (scheduleData) {
                     generatedData = scheduleData;
-                    displaySchedule(scheduleData);
+                    const response = await api.post('render-schedule', scheduleData);
+                    if(response && response.html) {
+                        displaySchedule(response.html);
+                    }
                 }
             } else if (btn) {
                  const name = btn.dataset.name;
