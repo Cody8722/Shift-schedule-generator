@@ -445,6 +445,20 @@ app.post('/api/generate-schedule', async (req, res) => {
     }
 });
 
+app.post('/api/render-schedule', (req, res) => {
+    try {
+        const fullScheduleData = req.body;
+        if (!Array.isArray(fullScheduleData)) {
+            return res.status(400).json({ message: '無效的班表資料格式' });
+        }
+        const scheduleHtml = generateScheduleHtml(fullScheduleData);
+        res.json({ html: scheduleHtml });
+    } catch (error) {
+        debugSchedule('渲染已儲存班表時發生錯誤:', error);
+        res.status(500).json({ message: '渲染班表時發生未預期的錯誤' });
+    }
+});
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
