@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs').promises; // 引入 fs 模組
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const rateLimit = require('express-rate-limit');
 const debug = require('debug');
@@ -128,6 +129,52 @@ const getHolidaysForYear = async (year) => {
         return new Map();
     }
 };
+
+const seedHolidays = async () => {
+    try {
+        const count = await holidaysCollection.countDocuments();
+        if (count > 0) {
+            debugDb('假日資料庫已有資料，無需植入。');
+            return;
+        }
+
+        debugDb('假日資料庫為空，開始從 JSON 檔案植入初始資料...');
+        const holidayDir = path.join(__dirname, 'holidays');
+        const files = await fs.readdir(holidayDir);
+        const jsonFiles = files.filter(file => file.endsWith('.json'));
+
+        let totalHolidaysInserted = 0;
+
+        for (const file of jsonFiles) {
+            const filePath = path.join(holidayDir, file);
+            const data = await fs.readFile(filePath, 'utf-8');
+            const holidayData = JSON.parse(data);
+
+            const documents = holidayData
+                .filter(h => h.isHoliday && h.date)
+                .map(h => ({
+                    _id: h.date,
+                    name: h.name || h.description || '國定假日',
+                    isHoliday: true,
+                }));
+
+            if (documents.length > 0) {
+                // Use ordered: false to continue inserting even if some documents fail (e.g., duplicate keys)
+                await holidaysCollection.insertMany(documents, { ordered: false }).catch(err => {
+                    if (err.code !== 11000) { // Ignore duplicate key errors
+                        throw err;
+                    }
+                });
+                totalHolidaysInserted += documents.length;
+                debugDb(`已從 ${file} 植入 ${documents.length} 筆假日資料。`);
+            }
+        }
+        debugDb(`共植入 ${totalHolidaysInserted} 筆初始假日資料。`);
+    } catch (error) {
+        debugServer('植入初始假日資料時發生錯誤:', error);
+    }
+};
+
 
 const generateWeeklySchedule = (settings, scheduleDays) => {
     const { personnel, tasks } = settings;
@@ -483,6 +530,7 @@ const startServer = async () => {
         
         if (isDbConnected) {
             await ensureConfigDocument();
+            await seedHolidays();
         }
         
         app.listen(PORT, () => {
