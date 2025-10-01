@@ -105,40 +105,41 @@ const getWeekInfo = (weekString, weekIndex) => {
     return { weekDates, weekDayDates };
 };
 
-const getHolidaysForYear = async (year) => {
-    if (holidaysCache.has(year)) {
-        debugDb(`從快取為 ${year} 年讀取假日資料。`);
-        return holidaysCache.get(year);
+const getHolidaysForYear = async (year, profile) => {
+    const cacheKey = `${profile}-${year}`;
+    if (holidaysCache.has(cacheKey)) {
+        debugDb(`從快取為設定檔 ${profile} 的 ${year} 年讀取假日資料。`);
+        return holidaysCache.get(cacheKey);
     }
     
     if (!isDbConnected) return new Map();
 
-    debugDb(`從資料庫讀取 ${year} 年的假日資料...`);
+    debugDb(`從資料庫為設定檔 ${profile} 讀取 ${year} 年的假日資料...`);
     try {
         const yearStr = String(year);
-        const holidays = await holidaysCollection.find({ _id: { $regex: `^${yearStr}` }, isHoliday: true }).toArray();
+        const holidays = await holidaysCollection.find({ profile, date: { $regex: `^${yearStr}` }, isHoliday: true }).toArray();
         const holidayMap = new Map();
         holidays.forEach(h => {
-            holidayMap.set(h._id, h.name);
+            holidayMap.set(h.date, h.name);
         });
-        holidaysCache.set(year, holidayMap);
-        debugDb(`已快取 ${year} 年的 ${holidayMap.size} 個假日項目。`);
+        holidaysCache.set(cacheKey, holidayMap);
+        debugDb(`已快取設定檔 ${profile} 的 ${year} 年 ${holidayMap.size} 個假日項目。`);
         return holidayMap;
     } catch (error) {
-        debugDb(`讀取 ${year} 年假日資料失敗:`, error);
+        debugDb(`讀取設定檔 ${profile} 的 ${year} 年假日資料失敗:`, error);
         return new Map();
     }
 };
 
 const seedHolidays = async () => {
     try {
-        const count = await holidaysCollection.countDocuments();
+        const count = await holidaysCollection.countDocuments({ profile: 'default' });
         if (count > 0) {
-            debugDb('假日資料庫已有資料，無需植入。');
+            debugDb('預設假日資料庫已有資料，無需植入。');
             return;
         }
 
-        debugDb('假日資料庫為空，開始從 JSON 檔案植入初始資料...');
+        debugDb('預設假日資料庫為空，開始從 JSON 檔案植入初始資料...');
         const holidayDir = path.join(__dirname, 'holidays');
         const files = await fs.readdir(holidayDir);
         const jsonFiles = files.filter(file => file.endsWith('.json'));
@@ -153,23 +154,23 @@ const seedHolidays = async () => {
             const documents = holidayData
                 .filter(h => h.isHoliday && h.date)
                 .map(h => ({
-                    _id: h.date,
+                    profile: 'default',
+                    date: h.date,
                     name: h.name || h.description || '國定假日',
                     isHoliday: true,
                 }));
 
             if (documents.length > 0) {
-                // Use ordered: false to continue inserting even if some documents fail (e.g., duplicate keys)
                 await holidaysCollection.insertMany(documents, { ordered: false }).catch(err => {
-                    if (err.code !== 11000) { // Ignore duplicate key errors
+                    if (err.code !== 11000) { 
                         throw err;
                     }
                 });
                 totalHolidaysInserted += documents.length;
-                debugDb(`已從 ${file} 植入 ${documents.length} 筆假日資料。`);
+                debugDb(`已為 "default" 設定檔從 ${file} 植入 ${documents.length} 筆假日資料。`);
             }
         }
-        debugDb(`共植入 ${totalHolidaysInserted} 筆初始假日資料。`);
+        debugDb(`共為 "default" 設定檔植入 ${totalHolidaysInserted} 筆初始假日資料。`);
     } catch (error) {
         debugServer('植入初始假日資料時發生錯誤:', error);
     }
@@ -258,9 +259,10 @@ app.get('/api/status', (req, res) => res.json({ server: 'running', database: isD
 app.get('/api/holidays/:year', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
-        const year = req.params.year;
-        const holidays = await holidaysCollection.find({ _id: { $regex: `^${year}` }, isHoliday: true }).toArray();
-        res.json(holidays.map(h => ({ date: h._id, name: h.name })));
+        const { year } = req.params;
+        const config = await configCollection.findOne({ _id: CONFIG_ID });
+        const holidays = await holidaysCollection.find({ profile: config.activeProfile, date: { $regex: `^${year}` }, isHoliday: true }).toArray();
+        res.json(holidays.map(h => ({ date: h.date, name: h.name })));
     } catch(error) {
         debugDb('讀取年度假日失敗:', error);
         res.status(500).json({ message: '讀取年度假日失敗' });
@@ -272,14 +274,19 @@ app.put('/api/holidays', async (req, res) => {
     try {
         const { date, name, isHoliday } = req.body;
         if (!date) return res.status(400).json({ message: '日期為必填欄位' });
+        const config = await configCollection.findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
         
         const year = parseInt(date.substring(0, 4));
-        holidaysCache.delete(year);
+        holidaysCache.delete(`${activeProfile}-${year}`);
+
+        const filter = { profile: activeProfile, date: date };
 
         if (isHoliday) {
-            await holidaysCollection.updateOne({ _id: date }, { $set: { name, isHoliday: true } }, { upsert: true });
+            const update = { $set: { name, isHoliday: true, profile: activeProfile, date: date } };
+            await holidaysCollection.updateOne(filter, update, { upsert: true });
         } else {
-            await holidaysCollection.deleteOne({ _id: date });
+            await holidaysCollection.deleteOne(filter);
         }
         res.json({ message: '假日設定已更新' });
     } catch (error) {
@@ -294,6 +301,9 @@ app.get('/api/holidays-in-range', async (req, res) => {
         return res.status(400).json({ message: "缺少 startWeek 或 numWeeks 參數" });
     }
     try {
+        const config = await configCollection.findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+
         const allDatesInRange = [];
         const numWeeksInt = parseInt(numWeeks, 10);
         for (let i = 0; i < numWeeksInt; i++) {
@@ -301,13 +311,15 @@ app.get('/api/holidays-in-range', async (req, res) => {
             allDatesInRange.push(...weekDates);
         }
         const years = [...new Set(allDatesInRange.map(d => parseInt(d.substring(0, 4))))];
-        const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
+        const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year, activeProfile)));
+        
         const combinedHolidays = new Map();
         allHolidayMaps.forEach(holidayMap => {
             for (const [date, name] of holidayMap.entries()) {
                 combinedHolidays.set(date, name);
             }
         });
+
         const holidaysInRange = allDatesInRange
             .filter(date => combinedHolidays.has(date))
             .map(date => ({ date, name: combinedHolidays.get(date) }));
@@ -350,6 +362,20 @@ app.post('/api/profiles', async (req, res) => {
         const update = { $set: { [`profiles.${name}`]: { settings: { tasks: [], personnel: [] }, schedules: {} } } };
         const result = await configCollection.updateOne({ _id: CONFIG_ID, [`profiles.${name}`]: { $exists: false } }, update);
         if (result.modifiedCount === 0) throw new Error('設定檔已存在');
+
+        // 複製 default 設定檔的假日資料
+        const defaultHolidays = await holidaysCollection.find({ profile: 'default' }).toArray();
+        if (defaultHolidays.length > 0) {
+            const newProfileHolidays = defaultHolidays.map(h => ({
+                ...h,
+                profile: name,
+                _id: `${name}-${h.date}` // 確保 _id 的唯一性
+            }));
+            await holidaysCollection.insertMany(newProfileHolidays, { ordered: false }).catch(err => {
+                if (err.code !== 11000) throw err;
+            });
+        }
+
         res.status(201).json({ message: '設定檔已新增' });
     } catch (error) {
         debugDb('新增設定檔失敗:', error);
@@ -384,8 +410,9 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
         if (config.activeProfile === oldName) {
             update.$set = { activeProfile: newName };
         }
-        const result = await configCollection.updateOne({ _id: CONFIG_ID }, update);
-        if (result.modifiedCount === 0) throw new Error('重新命名失敗');
+        await configCollection.updateOne({ _id: CONFIG_ID }, update);
+        await holidaysCollection.updateMany({ profile: oldName }, { $set: { profile: newName } });
+
         res.json({ message: '設定檔已重新命名' });
     } catch (error) {
         debugDb('重新命名設定檔失敗:', error);
@@ -406,6 +433,8 @@ app.delete('/api/profiles/:name', async (req, res) => {
             update.$set = { activeProfile: newActiveProfile };
         }
         await configCollection.updateOne({ _id: CONFIG_ID }, update);
+        await holidaysCollection.deleteMany({ profile: nameToDelete });
+
         res.json({ message: '設定檔已刪除' });
     } catch (error) {
         debugDb('刪除設定檔失敗:', error);
@@ -460,12 +489,15 @@ app.delete('/api/schedules/:name', async (req, res) => {
 app.post('/api/generate-schedule', async (req, res) => {
     try {
         const { settings, startWeek, numWeeks, activeHolidays } = req.body;
+        const config = await configCollection.findOne({ _id: CONFIG_ID });
+        const activeProfile = config.activeProfile;
+
         const fullScheduleData = [];
         const colors = [ { header: '#0284c7', row: '#f0f9ff' }, { header: '#15803d', row: '#f0fdf4' }, { header: '#be185d', row: '#fdf2f8' }, { header: '#86198f', row: '#faf5ff' } ];
         for (let i = 0; i < numWeeks; i++) {
             const { weekDates, weekDayDates } = getWeekInfo(startWeek, i);
             const years = [...new Set(weekDates.map(d => parseInt(d.substring(0, 4))))];
-            const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
+            const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year, activeProfile)));
             const originalHolidaysMap = new Map();
             allHolidayMaps.forEach(holidayMap => {
                 for (const [date, name] of holidayMap.entries()) {
