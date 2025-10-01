@@ -330,7 +330,7 @@
     </div>
 
 <script>
-    const API_BASE_URL = `${window.location.origin}/api`; 
+    const API_BASE_URL = `api`; 
     let currentTheme = 'light';
     let appState = {
         activeProfile: 'default',
@@ -1089,6 +1089,12 @@
                  accordions[3]?.classList.add('active');
             }
         };
+        
+        elements.holidayManagementBtn.addEventListener('click', () => {
+            calendarState.currentDate = new Date();
+            renderCalendar();
+            elements.holidayManagementModal.classList.remove('hidden');
+        });
 
         elements.accordionContainer.addEventListener('click', (e) => {
             const header = e.target.closest('.accordion-header');
