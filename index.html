@@ -965,6 +965,53 @@
             applyTheme(currentTheme);
         });
 
+        // 假日設定按鈕 - 開啟 modal
+        elements.holidaySettingsBtn.addEventListener('click', () => {
+            if (availableHolidays.length === 0) return;
+
+            // 渲染假日列表
+            elements.modalHolidayList.innerHTML = availableHolidays.map(holiday => `
+                <label class="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                    <input type="checkbox" class="form-checkbox rounded holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
+                    <span class="flex-grow">${holiday.name}</span>
+                    <span class="text-sm text-gray-500">(${holiday.date.substring(4,6)}/${holiday.date.substring(6,8)})</span>
+                </label>
+            `).join('');
+
+            // 顯示 modal
+            elements.holidayModal.classList.remove('hidden');
+        });
+
+        // 假日 modal 關閉按鈕
+        elements.modalHolidayCloseBtn.addEventListener('click', () => {
+            elements.holidayModal.classList.add('hidden');
+        });
+
+        // 假日 modal 儲存按鈕
+        elements.modalHolidaySaveBtn.addEventListener('click', () => {
+            // 讀取所有已勾選的假日
+            const checkedBoxes = elements.modalHolidayList.querySelectorAll('.holiday-checkbox:checked');
+            activeHolidayDates = new Set(Array.from(checkedBoxes).map(cb => cb.value));
+
+            // 更新按鈕文字
+            updateHolidayButtonText();
+
+            // 關閉 modal
+            elements.holidayModal.classList.add('hidden');
+
+            // 如果已經生成過班表，自動重新生成
+            if (generatedData) {
+                elements.outputContainer.style.opacity = '0.5';
+                generateFullSchedule().then(() => {
+                    elements.outputContainer.style.opacity = '1';
+                });
+            }
+        });
+
+        // 監聽週次和週數變化，自動更新假日列表
+        elements.startWeekInput.addEventListener('change', debouncedUpdateHolidays);
+        elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
+
         initApp();
     });
 </script>
