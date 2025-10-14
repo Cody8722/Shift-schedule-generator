@@ -141,13 +141,28 @@ const seedHolidays = async () => {
 
         debugDb('假日資料庫為空，開始從 JSON 檔案植入初始資料...');
         const holidayDir = path.join(__dirname, 'holidays');
+
+        // 檢查 holidays 目錄是否存在
+        try {
+            await fs.access(holidayDir);
+        } catch (err) {
+            debugServer('警告: holidays 目錄不存在，跳過假日資料植入。');
+            return;
+        }
+
         const files = await fs.readdir(holidayDir);
         const jsonFiles = files.filter(file => file.endsWith('.json'));
+
+        if (jsonFiles.length === 0) {
+            debugServer('警告: holidays 目錄中沒有找到 JSON 檔案。');
+            return;
+        }
 
         const documents = [];
 
         for (const file of jsonFiles) {
             const filePath = path.join(holidayDir, file);
+            debugDb(`讀取假日檔案: ${filePath}`);
             const data = await fs.readFile(filePath, 'utf-8');
             const holidayData = JSON.parse(data);
 
@@ -155,27 +170,31 @@ const seedHolidays = async () => {
                 if (h.isHoliday && h.date) {
                     documents.push({
                         _id: h.date,
-                        name: h.name || h.description || '國定假日',
+                        name: h.description || h.name || '國定假日',
                         isHoliday: true,
                     });
                 }
             });
         }
-        
+
         if (documents.length > 0) {
             try {
                 const result = await holidaysCollection.insertMany(documents, { ordered: false });
                 debugDb(`共植入 ${result.insertedCount} 筆初始假日資料。`);
             } catch (err) {
                 if (err.code === 11000) { // Handle duplicate key error gracefully
-                    debugDb(`部分假日資料已存在，略過重複部分。共新增 ${err.result.nInserted} 筆資料。`);
+                    const insertedCount = err.result?.nInserted || err.insertedCount || 0;
+                    debugDb(`部分假日資料已存在，略過重複部分。共新增 ${insertedCount} 筆資料。`);
                 } else {
                     throw err; // Re-throw other errors
                 }
             }
+        } else {
+            debugServer('警告: 沒有找到有效的假日資料。');
         }
     } catch (error) {
         debugServer('植入初始假日資料時發生錯誤:', error);
+        debugServer('錯誤詳情:', error.stack);
     }
 };
 
@@ -256,7 +275,26 @@ const generateScheduleHtml = (fullScheduleData) => {
 };
 
 // --- API 路由 ---
-app.get('/api/status', (req, res) => res.json({ server: 'running', database: isDbConnected ? 'connected' : 'disconnected' }));
+app.get('/api/status', async (req, res) => {
+    const status = {
+        server: 'running',
+        database: isDbConnected ? 'connected' : 'disconnected'
+    };
+
+    if (isDbConnected) {
+        try {
+            const holidayCount = await holidaysCollection.countDocuments();
+            const profileCount = await configCollection.countDocuments();
+            status.holidaysCount = holidayCount;
+            status.profilesCount = profileCount;
+            status.cacheSize = holidaysCache.size;
+        } catch (error) {
+            status.dbError = error.message;
+        }
+    }
+
+    res.json(status);
+});
 
 // --- Holiday API Routes ---
 app.get('/api/holidays/:year', async (req, res) => {
@@ -268,6 +306,33 @@ app.get('/api/holidays/:year', async (req, res) => {
     } catch(error) {
         debugDb('讀取年度假日失敗:', error);
         res.status(500).json({ message: '讀取年度假日失敗' });
+    }
+});
+
+app.post('/api/holidays/reseed', async (req, res) => {
+    if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
+    try {
+        debugDb('手動觸發假日資料重新植入...');
+
+        // 清空現有假日資料
+        const deleteResult = await holidaysCollection.deleteMany({});
+        debugDb(`已刪除 ${deleteResult.deletedCount} 筆舊假日資料。`);
+
+        // 清空快取
+        holidaysCache.clear();
+
+        // 重新植入
+        await seedHolidays();
+
+        // 確認植入結果
+        const count = await holidaysCollection.countDocuments();
+        res.json({
+            message: '假日資料重新植入完成',
+            count: count
+        });
+    } catch(error) {
+        debugDb('重新植入假日資料失敗:', error);
+        res.status(500).json({ message: '重新植入假日資料失敗', error: error.message });
     }
 });
 
@@ -300,6 +365,12 @@ app.get('/api/holidays-in-range', async (req, res) => {
     if (!startWeek || !numWeeks) {
         return res.status(400).json({ message: "缺少 startWeek 或 numWeeks 參數" });
     }
+
+    // 禁用快取，確保每次都取得最新資料
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     try {
         const allDatesInRange = [];
         const numWeeksInt = parseInt(numWeeks, 10);
@@ -309,7 +380,7 @@ app.get('/api/holidays-in-range', async (req, res) => {
         }
         const years = [...new Set(allDatesInRange.map(d => parseInt(d.substring(0, 4))))];
         const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
-        
+
         const combinedHolidays = new Map();
         allHolidayMaps.forEach(holidayMap => {
             for (const [date, name] of holidayMap.entries()) {
