@@ -1,0 +1,67 @@
+[
+    {
+        "date": "20270101",
+        "isHoliday": true,
+        "description": "開國紀念日"
+    },
+    {
+        "date": "20270215",
+        "isHoliday": true,
+        "description": "彈性放假"
+    },
+    {
+        "date": "20270216",
+        "isHoliday": true,
+        "description": "農曆除夕"
+    },
+    {
+        "date": "20270217",
+        "isHoliday": true,
+        "description": "春節"
+    },
+    {
+        "date": "20270218",
+        "isHoliday": true,
+        "description": "春節"
+    },
+    {
+        "date": "20270219",
+        "isHoliday": true,
+        "description": "春節"
+    },
+    {
+        "date": "20270228",
+        "isHoliday": true,
+        "description": "和平紀念日"
+    },
+    {
+        "date": "20270404",
+        "isHoliday": true,
+        "description": "兒童節"
+    },
+    {
+        "date": "20270405",
+        "isHoliday": true,
+        "description": "清明節"
+    },
+    {
+        "date": "20270614",
+        "isHoliday": true,
+        "description": "端午節"
+    },
+    {
+        "date": "20270921",
+        "isHoliday": true,
+        "description": "中秋節"
+    },
+    {
+        "date": "20271010",
+        "isHoliday": true,
+        "description": "國慶日"
+    },
+    {
+        "date": "20271011",
+        "isHoliday": true,
+        "description": "國慶日補假"
+    }
+]

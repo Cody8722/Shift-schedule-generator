@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班表產生器 (雲端資料庫版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-light: #f9fafb;
+            --text-light: #000000;
+            --card-bg-light: #ffffff;
+            --muted-text-light: #6b7280;
+            --border-light: #e5e7eb;
+            --input-bg-light: #f3f4f6;
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+
+            --bg-dark: #111827;
+            --text-dark: #ffffff;
+            --card-bg-dark: #1f2937;
+            --muted-text-dark: #9ca3af;
+            --border-dark: #374151;
+            --input-bg-dark: #374151;
+        }
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .theme-light {
+            background-color: var(--bg-light);
+            color: var(--text-light);
+        }
+        .theme-dark {
+            background-color: var(--bg-dark);
+            color: var(--text-dark);
+        }
+        .card {
+            background-color: var(--card-bg-light);
+            border: 1px solid var(--border-light);
+        }
+        .dark .card {
+            background-color: var(--card-bg-dark);
+            border-color: var(--border-dark);
+        }
+        .form-input {
+            background-color: var(--input-bg-light);
+            border: 1px solid var(--border-light);
+        }
+        .dark .form-input {
+            background-color: var(--input-bg-dark);
+            border-color: var(--border-dark);
+            color: var(--text-dark);
+        }
+        .text-muted { color: var(--muted-text-light); }
+        .dark .text-muted { color: var(--muted-text-dark); }
+        .btn-primary { background-color: var(--primary-color); }
+        .btn-primary:hover { background-color: var(--primary-hover); }
+        .btn-danger { background-color: var(--danger-color); }
+        .btn-danger:hover { background-color: var(--danger-hover); }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border-left-color: #fff;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Accordion Styles */
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            padding: 0 1rem;
+        }
+        .accordion-item.active .accordion-content {
+            padding: 1rem 1rem;
+            max-height: 1000px; /* Adjust as needed */
+            transition: max-height 0.5s ease-in, padding 0.3s ease-in;
+        }
+        .accordion-arrow {
+            transition: transform 0.3s ease-out;
+        }
+        .accordion-item.active .accordion-arrow {
+            transform: rotate(90deg);
+        }
+        
+        /* Schedule Table Styles */
+        .schedule-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            border: 1px solid var(--border-light);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .dark .schedule-table { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.2); }
+        .schedule-table th, .schedule-table td {
+            padding: 0.75rem 1rem;
+            text-align: center;
+            border-bottom: 1px solid var(--border-light);
+            vertical-align: top;
+        }
+        .dark .schedule-table th, .dark .schedule-table td { border-bottom-color: var(--border-dark); }
+        .schedule-table th { font-weight: 600; }
+        .dark .schedule-table th { border-bottom-color: #4b5563; }
+        .schedule-table tbody tr:last-child td { border-bottom: none; }
+        .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
+        .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
+    </style>
+</head>
+<body class="theme-light">
+    <!-- 統一導航列 -->
+    <nav class="bg-indigo-600 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex-shrink-0">
+                    <span class="text-xl font-bold">🛠️ 工具集</span>
+                </div>
+                <div class="flex space-x-2 sm:space-x-4">
+                    <a href="https://shift-schedule-generators.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium bg-indigo-800" title="班表工具">📅 <span class="hidden sm:inline">班表工具</span></a>
+                    <a href="https://zip.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-indigo-700 transition" title="壓縮工具">📦 <span class="hidden sm:inline">壓縮工具</span></a>
+                    <a href="https://mongo-updater-project.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-indigo-700 transition" title="中控台">🔧 <span class="hidden sm:inline">中控台</span></a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-blue-600 dark:text-blue-400">智慧班表產生器 Pro</h1>
+            <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+                <svg id="theme-icon-light" class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.95a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414l-.707.707zm-2.12-10.607a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z"></path></svg>
+                <svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1 space-y-4">
+                <div id="accordion-container">
+                    <div class="accordion-item card rounded-lg shadow-md">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>設定檔管理</span>
+                            <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                             <div class="flex items-center gap-2 mb-4">
+                                <label for="profile-select" class="font-medium shrink-0">目前設定檔:</label>
+                                <select id="profile-select" class="form-input rounded-md p-2 w-full"></select>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <button id="new-profile-btn" class="flex items-center justify-center gap-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">新增</button>
+                                <button id="rename-profile-btn" class="flex items-center justify-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">命名</button>
+                                <button id="delete-profile-btn" class="flex items-center justify-center gap-1 btn-danger text-white font-bold py-2 px-3 rounded-md transition text-sm">刪除</button>
+                                <button id="import-profile-btn" class="flex items-center justify-center gap-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">匯入</button>
+                                <button id="export-profile-btn" class="flex items-center justify-center gap-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">匯出</button>
+                            </div>
+                            <input type="file" id="profile-file-input" class="hidden" accept=".json">
+                        </div>
+                    </div>
+                     <div class="accordion-item card rounded-lg shadow-md mt-4">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>1. 勤務設定</span>
+                            <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                            <div class="space-y-2 mb-3" id="task-list"></div>
+                            <div class="flex gap-2">
+                                <input type="text" id="new-task-name" class="form-input flex-grow p-2 rounded-md" placeholder="勤務名稱">
+                                <input type="number" id="new-task-count" class="form-input w-24 p-2 rounded-md" placeholder="人數" value="1" min="1">
+                                <button id="add-task-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold p-2 rounded-md flex-shrink-0">＋</button>
+                            </div>
+                        </div>
+                    </div>
+                     <div class="accordion-item card rounded-lg shadow-md mt-4">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>2. 人員設定</span>
+                            <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                            <div class="space-y-2 mb-3" id="personnel-list"></div>
+                             <div class="flex gap-2">
+                                <input type="text" id="new-personnel-name" class="form-input flex-grow p-2 rounded-md" placeholder="人員姓名">
+                                <button id="add-personnel-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold p-2 rounded-md flex-shrink-0">＋</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="accordion-item card rounded-lg shadow-md mt-4 active">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>3. 產生班表</span>
+                             <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                             <div class="space-y-4">
+                                <div>
+                                    <label class="block font-medium text-sm text-muted mb-1">選擇開始週</label>
+                                    <div class="relative">
+                                        <input type="week" id="start-week" class="form-input w-full p-2 rounded-md">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label for="num-weeks" class="block font-medium text-sm text-muted mb-1">產生週數</label>
+                                    <input type="number" id="num-weeks" value="1" min="1" max="10" class="form-input w-full p-2 rounded-md">
+                                </div>
+                                <div>
+                                    <label class="block font-medium text-sm text-muted mb-1">假日排休設定</label>
+                                    <button type="button" id="holiday-settings-btn" class="form-input w-full p-2 rounded-md text-left flex justify-between items-center" aria-expanded="false">
+                                        <span id="holiday-settings-text">編輯假日選項</span>
+                                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <button id="generate-schedule" class="mt-4 w-full text-lg bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md transition shadow-lg flex items-center justify-center gap-2">
+                                <span id="generate-btn-text">產生智慧班表</span>
+                                <div id="generate-spinner" class="spinner hidden"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 space-y-6">
+                <div id="output-container" class="card p-4 rounded-lg shadow-md hidden" style="transition: opacity 0.3s;">
+                    <div class="flex flex-wrap justify-between items-center mb-4">
+                        <h2 class="text-2xl font-bold">班表結果</h2>
+                        <div class="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                            <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
+                            <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製</button>
+                            <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">Excel</button>
+                            <button id="export-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition">PDF</button>
+                        </div>
+                    </div>
+                    <div id="schedule-output" class="overflow-x-auto"></div>
+                </div>
+
+                <div class="card p-4 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-3">已儲存的班表</h2>
+                    <ul id="saved-schedules-list" class="list-disc pl-5 space-y-1 text-blue-600 dark:text-blue-400"></ul>
+                </div>
+            </div>
+        </div>
+        <footer class="text-center mt-8 text-sm text-muted">
+             <div id="status-container" class="flex items-center justify-center gap-2 mb-2" title="正在檢查連線狀態...">
+                <div id="status-indicator" class="w-3 h-3 rounded-full bg-gray-400 transition-colors"></div>
+                <p id="status-text" class="text-xs">正在檢查連線...</p>
+            </div>
+            <p>班表產生器 Pro &copy; 2024. All Rights Reserved.</p>
+        </footer>
+    </div>
+
+    <div id="personnel-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
+            <h3 class="text-2xl font-bold mb-4">進階設定: <span id="modal-personnel-name"></span></h3>
+            <div class="mb-4">
+                <label class="block font-medium mb-2">固定排休 (星期幾)</label>
+                <div id="off-days-container" class="flex flex-wrap gap-2"></div>
+            </div>
+            <div class="mb-6">
+                <label for="preferred-task-select" class="block font-medium mb-2">偏好勤務地點</label>
+                <select id="preferred-task-select" class="form-input w-full p-2 rounded-md"></select>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button id="modal-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
+                <button id="modal-save-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">儲存</button>
+            </div>
+        </div>
+    </div>
+     <div id="holiday-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
+            <h3 class="text-2xl font-bold mb-4">假日排休設定</h3>
+            <div id="modal-holiday-list" class="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-600 p-3 rounded-md mb-6"></div>
+            <div class="flex justify-end gap-3">
+                <button id="modal-holiday-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
+                <button id="modal-holiday-save-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">確定</button>
+            </div>
+        </div>
+    </div>
+    
+<script>
+    const API_BASE_URL = `api`; 
+    let currentTheme = 'light';
+    let appState = {
+        activeProfile: 'default',
+        profiles: {
+            'default': {
+                settings: { tasks: [], personnel: [] },
+                schedules: {}
+            }
+        },
+    };
+    
+    let availableHolidays = [];
+    let activeHolidayDates = new Set();
+    let generatedData = null; 
+    let currentEditingPersonnelIndex = -1;
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        const elements = {
+            profileSelect: document.getElementById('profile-select'),
+            newProfileBtn: document.getElementById('new-profile-btn'),
+            renameProfileBtn: document.getElementById('rename-profile-btn'),
+            deleteProfileBtn: document.getElementById('delete-profile-btn'),
+            importProfileBtn: document.getElementById('import-profile-btn'),
+            exportProfileBtn: document.getElementById('export-profile-btn'),
+            profileFileInput: document.getElementById('profile-file-input'),
+            taskList: document.getElementById('task-list'),
+            newTaskNameInput: document.getElementById('new-task-name'),
+            newTaskCountInput: document.getElementById('new-task-count'),
+            addTaskBtn: document.getElementById('add-task-btn'),
+            personnelList: document.getElementById('personnel-list'),
+            newPersonnelNameInput: document.getElementById('new-personnel-name'),
+            addPersonnelBtn: document.getElementById('add-personnel-btn'),
+            startWeekInput: document.getElementById('start-week'),
+            numWeeksInput: document.getElementById('num-weeks'),
+            generateBtn: document.getElementById('generate-schedule'),
+            generateBtnText: document.getElementById('generate-btn-text'),
+            generateSpinner: document.getElementById('generate-spinner'),
+            outputContainer: document.getElementById('output-container'),
+            scheduleOutput: document.getElementById('schedule-output'),
+            copyBtn: document.getElementById('copy-schedule'),
+            exportExcelBtn: document.getElementById('export-excel'),
+            exportPdfBtn: document.getElementById('export-pdf'),
+            saveScheduleBtn: document.getElementById('save-schedule-btn'),
+            savedSchedulesList: document.getElementById('saved-schedules-list'),
+            themeToggle: document.getElementById('theme-toggle'),
+            statusContainer: document.getElementById('status-container'),
+            statusIndicator: document.getElementById('status-indicator'),
+            statusText: document.getElementById('status-text'),
+            personnelModal: document.getElementById('personnel-modal'),
+            modalPersonnelName: document.getElementById('modal-personnel-name'),
+            offDaysContainer: document.getElementById('off-days-container'),
+            preferredTaskSelect: document.getElementById('preferred-task-select'),
+            modalCloseBtn: document.getElementById('modal-close-btn'),
+            modalSaveBtn: document.getElementById('modal-save-btn'),
+            accordionContainer: document.getElementById('accordion-container'),
+            holidaySettingsBtn: document.getElementById('holiday-settings-btn'),
+            holidaySettingsText: document.getElementById('holiday-settings-text'),
+            holidayModal: document.getElementById('holiday-modal'),
+            modalHolidayList: document.getElementById('modal-holiday-list'),
+            modalHolidayCloseBtn: document.getElementById('modal-holiday-close-btn'),
+            modalHolidaySaveBtn: document.getElementById('modal-holiday-save-btn'),
+        };
+        
+        const api = {
+            get: async (endpoint) => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`);
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({ message: response.statusText }));
+                        throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    console.error(`Fetch error for ${endpoint}:`, error);
+                    alert(`無法讀取資料: ${error.message}`);
+                    return null;
+                }
+            },
+            post: async (endpoint, body) => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                    if (!response.ok) {
+                         const errData = await response.json().catch(() => ({ message: response.statusText }));
+                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    console.error(`POST error for ${endpoint}:`, error);
+                    alert(`操作失敗: ${error.message}`);
+                    return null;
+                }
+            },
+            put: async (endpoint, body) => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                     if (!response.ok) {
+                         const errData = await response.json().catch(() => ({ message: response.statusText }));
+                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    console.error(`PUT error for ${endpoint}:`, error);
+                    alert(`操作失敗: ${error.message}`);
+                    return null;
+                }
+            },
+            delete: async (endpoint) => {
+                 try {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, { method: 'DELETE' });
+                     if (!response.ok) {
+                         const errData = await response.json().catch(() => ({ message: response.statusText }));
+                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
+                    }
+                    return await response.json();
+                } catch (error) {
+                    console.error(`DELETE error for ${endpoint}:`, error);
+                    alert(`操作失敗: ${error.message}`);
+                    return null;
+                }
+            }
+        };
+
+        const applyTheme = (theme) => {
+             const themeIconLight = document.getElementById('theme-icon-light');
+             const themeIconDark = document.getElementById('theme-icon-dark');
+             if (theme === 'dark') {
+                 document.documentElement.classList.add('dark');
+                 document.body.classList.replace('theme-light', 'theme-dark');
+                 themeIconLight?.classList.add('hidden');
+                 themeIconDark?.classList.remove('hidden');
+             } else {
+                 document.documentElement.classList.remove('dark');
+                 document.body.classList.replace('theme-dark', 'theme-light');
+                 themeIconLight?.classList.remove('hidden');
+                 themeIconDark?.classList.add('hidden');
+             }
+        };
+
+        const checkConnectionStatus = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/status`);
+                const data = await response.json();
+                if (response.ok && data.database === 'connected') {
+                    elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500 transition-colors';
+                    elements.statusText.textContent = '連線狀態：良好';
+                } else {
+                    elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-yellow-400 transition-colors';
+                    elements.statusText.textContent = '連線狀態：資料庫異常';
+                }
+            } catch (e) {
+                elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500 transition-colors';
+                elements.statusText.textContent = '連線狀態：伺服器無回應';
+            }
+        };
+        const getActiveProfile = () => appState.profiles[appState.activeProfile];
+        const saveSettings = async () => {
+            const activeProfile = getActiveProfile();
+            if (!activeProfile) return;
+            await api.put(`profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
+        };
+        const renderTasks = () => {
+            elements.taskList.innerHTML = '';
+            const tasks = getActiveProfile()?.settings?.tasks || [];
+            tasks.forEach((task, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2';
+                div.innerHTML = `
+                    <input type="text" value="${task.name}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${task.count}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count">
+                    <button class="remove-task text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
+                `;
+                elements.taskList.appendChild(div);
+            });
+        };
+        const renderPersonnel = () => {
+             elements.personnelList.innerHTML = '';
+            const personnel = getActiveProfile()?.settings?.personnel || [];
+            personnel.forEach((person, index) => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2';
+                div.innerHTML = `
+                    <input type="text" value="${person.name}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${person.maxShifts || 5}" class="form-input w-24 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
+                    <button class="advanced-settings-btn text-blue-500 hover:text-blue-700 p-1" data-index="${index}">⚙️</button>
+                    <button class="remove-personnel text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
+                `;
+                elements.personnelList.appendChild(div);
+            });
+        };
+        const renderProfileSelector = () => {
+            elements.profileSelect.innerHTML = '';
+            Object.keys(appState.profiles).forEach(name => {
+                const option = document.createElement('option');
+                option.value = option.textContent = name;
+                if (name === appState.activeProfile) option.selected = true;
+                elements.profileSelect.appendChild(option);
+            });
+        };
+        const renderSavedSchedules = () => {
+            elements.savedSchedulesList.innerHTML = '<li class="text-gray-500">無 (尚未儲存任何班表)</li>';
+            const schedules = getActiveProfile()?.schedules;
+            const scheduleNames = schedules ? Object.keys(schedules) : [];
+            if (scheduleNames.length > 0) {
+                elements.savedSchedulesList.innerHTML = '';
+                scheduleNames.forEach(name => {
+                    const li = document.createElement('li');
+                    li.className = 'flex justify-between items-center';
+                    li.innerHTML = `
+                        <a href="#" class="load-schedule-link hover:underline" data-name="${name}">${name}</a>
+                        <button class="delete-schedule-btn text-red-500 hover:text-red-700 text-xs p-1" data-name="${name}">刪除</button>
+                    `;
+                    elements.savedSchedulesList.appendChild(li);
+                });
+            }
+        };
+        const renderAll = () => {
+            renderProfileSelector();
+            renderTasks();
+            renderPersonnel();
+            renderSavedSchedules();
+        };
+        const debounce = (func, delay) => {
+            let timeoutId;
+            return (...args) => {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => {
+                    func.apply(this, args);
+                }, delay);
+            };
+        };
+        
+        const updateHolidayButtonText = () => {
+            if (availableHolidays.length === 0) {
+                elements.holidaySettingsText.textContent = '範圍內無國定假日';
+                elements.holidaySettingsBtn.disabled = true;
+            } else {
+                elements.holidaySettingsText.textContent = `已選 ${activeHolidayDates.size} / ${availableHolidays.length} 個假日進行排休`;
+                elements.holidaySettingsBtn.disabled = false;
+            }
+        };
+        
+        const updateHolidaySelectionUI = async () => {
+            const startWeek = elements.startWeekInput.value;
+            const numWeeks = elements.numWeeksInput.value;
+            if (!startWeek || !numWeeks || parseInt(numWeeks) < 1) {
+                availableHolidays = [];
+                activeHolidayDates = new Set();
+                updateHolidayButtonText();
+                return;
+            };
+
+            elements.holidaySettingsText.textContent = '正在查詢假日...';
+            elements.holidaySettingsBtn.disabled = true;
+
+            try {
+                const holidays = await api.get(`holidays-in-range?startWeek=${startWeek}&numWeeks=${numWeeks}`);
+                if(holidays) {
+                    availableHolidays = holidays;
+                    activeHolidayDates = new Set(holidays.map(h => h.date));
+                } else {
+                     availableHolidays = [];
+                     activeHolidayDates = new Set();
+                }
+            } catch (error) {
+                console.error(error);
+                availableHolidays = [];
+                activeHolidayDates = new Set();
+            } finally {
+                updateHolidayButtonText();
+            }
+        };
+
+        const debouncedUpdateHolidays = debounce(updateHolidaySelectionUI, 400);
+
+        const initApp = async () => {
+            await checkConnectionStatus();
+            const data = await api.get('profiles');
+            if (data && data.profiles) {
+                appState.activeProfile = data.activeProfile;
+                appState.profiles = data.profiles;
+                renderAll();
+            }
+            applyTheme(currentTheme);
+            const today = new Date();
+            const year = today.getFullYear();
+            const d = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            elements.startWeekInput.value = `${year}-W${String(weekNo).padStart(2, '0')}`;
+            debouncedUpdateHolidays();
+            setInitialAccordionState();
+            setInterval(checkConnectionStatus, 30000);
+        };
+        
+        const handleSettingsChange = async (updateFunction) => {
+            updateFunction();
+            renderAll();
+            await saveSettings();
+            if (generatedData) {
+                elements.outputContainer.style.opacity = '0.5';
+                await generateFullSchedule();
+                elements.outputContainer.style.opacity = '1';
+            }
+        };
+
+        const openPersonnelModal = (index) => {
+            currentEditingPersonnelIndex = index;
+            const personnel = getActiveProfile().settings.personnel[index];
+            elements.modalPersonnelName.textContent = personnel.name;
+            const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
+            elements.offDaysContainer.innerHTML = weekDays.map((day, dayIndex) => `
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" class="form-checkbox rounded" value="${dayIndex}" ${personnel.offDays?.includes(dayIndex) ? 'checked' : ''}>
+                    <span>${day}</span>
+                </label>
+            `).join('');
+            const tasks = getActiveProfile().settings.tasks;
+            elements.preferredTaskSelect.innerHTML = '<option value="">無偏好</option>' + tasks.map(task => 
+                `<option value="${task.name}" ${personnel.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
+            ).join('');
+            elements.personnelModal.classList.remove('hidden');
+        };
+        const closeModal = () => {
+            elements.personnelModal.classList.add('hidden');
+            currentEditingPersonnelIndex = -1;
+        };
+
+        async function generateFullSchedule() {
+            const settings = getActiveProfile().settings;
+            if (!settings.personnel?.length || !settings.tasks?.length) {
+                return alert('請先設定勤務與人員！');
+            }
+            const startWeek = elements.startWeekInput.value;
+            if (!startWeek) {
+                return alert('請選擇開始週！');
+            }
+
+            const activeHolidays = Array.from(activeHolidayDates);
+
+            elements.generateBtn.disabled = true;
+            elements.generateBtnText.classList.add('hidden');
+            elements.generateSpinner.classList.remove('hidden');
+            
+            try {
+                const response = await api.post('generate-schedule', {
+                    settings,
+                    startWeek,
+                    numWeeks: parseInt(elements.numWeeksInput.value, 10),
+                    activeHolidays
+                });
+                if (response) {
+                    generatedData = response.data;
+                    displaySchedule(response.html);
+                } else {
+                    elements.outputContainer.classList.add('hidden');
+                }
+            } finally {
+                elements.generateBtn.disabled = false;
+                elements.generateBtnText.classList.remove('hidden');
+                elements.generateSpinner.classList.add('hidden');
+            }
+        }
+        
+        function displaySchedule(scheduleHtml) {
+            elements.scheduleOutput.innerHTML = scheduleHtml;
+            elements.outputContainer.classList.remove('hidden');
+        }
+
+        async function exportToPdf() {
+            if (!generatedData) return;
+            const { jsPDF } = window.jspdf;
+            const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
+            const style = document.createElement('style');
+            style.innerHTML = `
+                .pdf-export-container { display: inline-block; padding: 20px; background: white; max-width: 800px; }
+                .pdf-export-container .mb-8 { margin-bottom: 16px !important; }
+                .pdf-export-container h3 { font-size: 16px !important; margin-bottom: 8px !important; }
+                .pdf-export-container table { font-size: 12px !important; width: 100% !important; }
+                .pdf-export-container th, .pdf-export-container td { padding: 8px !important; }
+            `;
+            document.head.appendChild(style);
+            const container = document.createElement('div');
+            container.className = 'pdf-export-container';
+            allScheduleElements.forEach(el => container.appendChild(el.cloneNode(true)));
+            container.style.position = 'absolute';
+            container.style.left = '-9999px';
+            document.body.appendChild(container);
+
+            try {
+                const canvas = await html2canvas(container, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' });
+                document.body.removeChild(container);
+                document.head.removeChild(style);
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfPageWidth = pdf.internal.pageSize.getWidth();
+                const pdfPageHeight = pdf.internal.pageSize.getHeight();
+                const imgProps = pdf.getImageProperties(imgData);
+                const imgWidth = imgProps.width;
+                const imgHeight = imgProps.height;
+                const margin = 10;
+                const availableWidth = pdfPageWidth - (margin * 2);
+                const scale = availableWidth / imgWidth;
+                const pdfImageWidth = imgWidth * scale;
+                const pdfImageHeight = imgHeight * scale;
+                const xPosition = (pdfPageWidth - pdfImageWidth) / 2;
+                let heightLeft = pdfImageHeight;
+                let position = 0;
+                pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
+                heightLeft -= (pdfPageHeight - margin);
+                while (heightLeft > 0) {
+                    position -= (pdfPageHeight - (margin * 2));
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
+                    heightLeft -= pdfPageHeight;
+                }
+                pdf.save('班表.pdf');
+            } catch (err) {
+                console.error("html2canvas failed:", err);
+                if (document.body.contains(container)) document.body.removeChild(container);
+                if (document.head.contains(style)) document.head.removeChild(style);
+            }
+        }
+
+        elements.addTaskBtn.addEventListener('click', () => {
+            const name = elements.newTaskNameInput.value.trim();
+            const count = parseInt(elements.newTaskCountInput.value, 10) || 1;
+            if (name) {
+                handleSettingsChange(() => getActiveProfile().settings.tasks.push({ name, count }));
+                elements.newTaskNameInput.value = '';
+                elements.newTaskCountInput.value = '1';
+            }
+        });
+
+        elements.taskList.addEventListener('change', (e) => {
+            if (e.target.matches('input')) {
+                const { index, field } = e.target.dataset;
+                let value = e.target.type === 'number' ? parseInt(e.target.value, 10) : e.target.value.trim();
+                if (e.target.type === 'number' && (isNaN(value) || value < 1)) value = 1;
+                handleSettingsChange(() => getActiveProfile().settings.tasks[index][field] = value);
+            }
+        });
+
+        elements.taskList.addEventListener('click', (e) => {
+            if (e.target.matches('.remove-task')) {
+                handleSettingsChange(() => getActiveProfile().settings.tasks.splice(e.target.dataset.index, 1));
+            }
+        });
+        
+        elements.addPersonnelBtn.addEventListener('click', () => {
+            const name = elements.newPersonnelNameInput.value.trim();
+            if (name) {
+                handleSettingsChange(() => getActiveProfile().settings.personnel.push({ name, maxShifts: 5, offDays: [], preferredTask: '' }));
+                elements.newPersonnelNameInput.value = '';
+            }
+        });
+
+        elements.personnelList.addEventListener('change', (e) => {
+            if (e.target.matches('input')) {
+                const { index, field } = e.target.dataset;
+                let value = e.target.type === 'number' ? parseInt(e.target.value, 10) : e.target.value.trim();
+                if (e.target.type === 'number' && (isNaN(value) || value < 1)) value = 1;
+                handleSettingsChange(() => getActiveProfile().settings.personnel[index][field] = value);
+            }
+        });
+
+        elements.personnelList.addEventListener('click', (e) => {
+            if (e.target.matches('.remove-personnel')) {
+                handleSettingsChange(() => getActiveProfile().settings.personnel.splice(e.target.dataset.index, 1));
+            } else if (e.target.matches('.advanced-settings-btn')) {
+                openPersonnelModal(e.target.dataset.index);
+            }
+        });
+        
+        elements.modalCloseBtn.addEventListener('click', closeModal);
+        elements.modalSaveBtn.addEventListener('click', () => {
+            if (currentEditingPersonnelIndex > -1) {
+                handleSettingsChange(() => {
+                    const person = getActiveProfile().settings.personnel[currentEditingPersonnelIndex];
+                    person.offDays = Array.from(elements.offDaysContainer.querySelectorAll('input:checked')).map(cb => parseInt(cb.value));
+                    person.preferredTask = elements.preferredTaskSelect.value;
+                });
+                closeModal();
+            }
+        });
+
+        elements.profileSelect.addEventListener('change', async (e) => {
+            const newProfileName = e.target.value;
+            const result = await api.put('profiles/active', { name: newProfileName });
+            if (result) {
+                appState.activeProfile = newProfileName;
+                renderAll();
+                generatedData = null; 
+                elements.outputContainer.classList.add('hidden');
+            }
+        });
+
+        elements.newProfileBtn.addEventListener('click', async () => {
+            const name = prompt('請輸入新的設定檔名稱:');
+            if (name && name.trim()) {
+                if (appState.profiles[name.trim()]) return alert('該名稱已存在！');
+                const result = await api.post('profiles', { name: name.trim() });
+                if (result) await initApp();
+            }
+        });
+
+        elements.renameProfileBtn.addEventListener('click', async () => {
+            const oldName = appState.activeProfile;
+            const newName = prompt(`請為「${oldName}」輸入新名稱:`, oldName);
+            if (newName && newName.trim() && newName.trim() !== oldName) {
+                if (appState.profiles[newName.trim()]) return alert('該名稱已存在！');
+                const result = await api.put(`profiles/${oldName}/rename`, { newName: newName.trim() });
+                 if (result) await initApp();
+            }
+        });
+
+        elements.deleteProfileBtn.addEventListener('click', async () => {
+            const nameToDelete = appState.activeProfile;
+            if (Object.keys(appState.profiles).length <= 1) return alert('至少需保留一個設定檔！');
+            if (confirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`)) {
+                const result = await api.delete(`profiles/${nameToDelete}`);
+                if (result) await initApp();
+            }
+        });
+
+        elements.exportProfileBtn.addEventListener('click', () => {
+            const settings = getActiveProfile()?.settings;
+            if(!settings) return;
+            const dataToExport = { settings, schedules: getActiveProfile()?.schedules || {} };
+            const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${appState.activeProfile}_profile.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        elements.importProfileBtn.addEventListener('click', () => elements.profileFileInput.click());
+
+        elements.profileFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const importedData = JSON.parse(event.target.result);
+                        if (!importedData.settings || !importedData.settings.tasks || !importedData.settings.personnel) {
+                            throw new Error("檔案缺少必要的 settings 欄位");
+                        }
+                        if (confirm('這將會覆蓋您目前的設定與已儲存班表，確定要匯入嗎？')) {
+                            const activeProfile = getActiveProfile();
+                            activeProfile.settings = importedData.settings;
+                            activeProfile.schedules = importedData.schedules || {};
+                            await saveSettings();
+                            renderAll();
+                        }
+                    } catch (err) {
+                        alert(`檔案格式錯誤: ${err.message}`);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        elements.generateBtn.addEventListener('click', generateFullSchedule);
+        elements.copyBtn.addEventListener('click', () => {
+            if (!generatedData) return;
+            let textContent = '';
+            generatedData.forEach((data, index) => {
+                const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
+                textContent += `第 ${index + 1} 週班表 (${dateRange})\n`;
+                const header = ['勤務地點', '星期一', '星期二', '星期三', '星期四', '星期五'].join('\t');
+                textContent += header + '\n';
+                tasks.forEach((task, taskIndex) => {
+                    let row = `${task.name}\t`;
+                    row += weekDayDates.map((_, dayIndex) => {
+                        if (!scheduleDays[dayIndex].shouldSchedule) return scheduleDays[dayIndex].description;
+                        return schedule[dayIndex][taskIndex].join(', ');
+                    }).join('\t');
+                    textContent += row + '\n';
+                });
+                textContent += '\n';
+            });
+            navigator.clipboard.writeText(textContent).then(() => alert('班表已複製！')).catch(() => alert('複製失敗！'));
+        });
+
+        elements.exportExcelBtn.addEventListener('click', () => {
+            if (!generatedData) return;
+            const wb = XLSX.utils.book_new();
+            generatedData.forEach((data, index) => {
+                const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
+                const header = ['勤務地點', ...weekDayDates.map((date, i) => `星期${['一','二','三','四','五'][i]}\n(${date})`)];
+                const ws_data = [header];
+                tasks.forEach((task, taskIndex) => {
+                    const row = [task.name];
+                    weekDayDates.forEach((_, dayIndex) => {
+                        if (!scheduleDays[dayIndex].shouldSchedule) {
+                            row.push(scheduleDays[dayIndex].description);
+                        } else {
+                            row.push(schedule[dayIndex][taskIndex].join('\n'));
+                        }
+                    });
+                    ws_data.push(row);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(ws_data);
+                ws['!cols'] = [{wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}];
+                Object.keys(ws).forEach(cell => { if (ws[cell].v) ws[cell].s = { alignment: { wrapText: true, vertical: 'top' } }; });
+                XLSX.utils.book_append_sheet(wb, ws, `第${index+1}週`);
+            });
+            XLSX.writeFile(wb, "班表.xlsx");
+        });
+
+        elements.exportPdfBtn.addEventListener('click', exportToPdf);
+
+        elements.saveScheduleBtn.addEventListener('click', async () => {
+            if (!generatedData) return alert('請先產生班表！');
+            const name = prompt('請為此班表命名 (例如: 2024-W35):');
+            if (name && name.trim()) {
+                const result = await api.post('schedules', { name: name.trim(), data: generatedData });
+                if (result) {
+                    getActiveProfile().schedules[name.trim()] = generatedData;
+                    renderSavedSchedules();
+                    alert('班表已儲存！');
+                }
+            }
+        });
+
+        elements.savedSchedulesList.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const link = e.target.closest('.load-schedule-link');
+            const btn = e.target.closest('.delete-schedule-btn');
+            if (link) {
+                const name = link.dataset.name;
+                const scheduleData = await api.get(`schedules/${name}`);
+                if (scheduleData) {
+                    generatedData = scheduleData;
+                    const response = await api.post('render-schedule', scheduleData);
+                    if(response && response.html) {
+                        displaySchedule(response.html);
+                    }
+                }
+            } else if (btn) {
+                 const name = btn.dataset.name;
+                 if (confirm(`確定要刪除班表「${name}」嗎？`)) {
+                     const result = await api.delete(`schedules/${name}`);
+                     if (result) {
+                         delete getActiveProfile().schedules[name];
+                         renderSavedSchedules();
+                     }
+                 }
+            }
+        });
+
+        const setInitialAccordionState = () => {
+            const accordions = document.querySelectorAll('.accordion-item');
+            if (window.innerWidth >= 1024) { 
+                accordions.forEach(item => item.classList.add('active'));
+            } else {
+                 accordions[3]?.classList.add('active');
+            }
+        };
+
+        elements.accordionContainer.addEventListener('click', (e) => {
+            const header = e.target.closest('.accordion-header');
+            if (header) {
+                const accordionItem = header.parentElement;
+                accordionItem.classList.toggle('active');
+            }
+        });
+
+        elements.themeToggle.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            currentTheme = isDark ? 'light' : 'dark';
+            applyTheme(currentTheme);
+        });
+
+        // 假日設定按鈕 - 開啟 modal
+        elements.holidaySettingsBtn.addEventListener('click', () => {
+            if (availableHolidays.length === 0) return;
+
+            // 渲染假日列表
+            elements.modalHolidayList.innerHTML = availableHolidays.map(holiday => `
+                <label class="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
+                    <input type="checkbox" class="form-checkbox rounded holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
+                    <span class="flex-grow">${holiday.name}</span>
+                    <span class="text-sm text-gray-500">(${holiday.date.substring(4,6)}/${holiday.date.substring(6,8)})</span>
+                </label>
+            `).join('');
+
+            // 顯示 modal
+            elements.holidayModal.classList.remove('hidden');
+        });
+
+        // 假日 modal 關閉按鈕
+        elements.modalHolidayCloseBtn.addEventListener('click', () => {
+            elements.holidayModal.classList.add('hidden');
+        });
+
+        // 假日 modal 儲存按鈕
+        elements.modalHolidaySaveBtn.addEventListener('click', () => {
+            // 讀取所有已勾選的假日
+            const checkedBoxes = elements.modalHolidayList.querySelectorAll('.holiday-checkbox:checked');
+            activeHolidayDates = new Set(Array.from(checkedBoxes).map(cb => cb.value));
+
+            // 更新按鈕文字
+            updateHolidayButtonText();
+
+            // 關閉 modal
+            elements.holidayModal.classList.add('hidden');
+
+            // 如果已經生成過班表，自動重新生成
+            if (generatedData) {
+                elements.outputContainer.style.opacity = '0.5';
+                generateFullSchedule().then(() => {
+                    elements.outputContainer.style.opacity = '1';
+                });
+            }
+        });
+
+        // 監聽週次和週數變化，自動更新假日列表
+        elements.startWeekInput.addEventListener('change', debouncedUpdateHolidays);
+        elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
+
+        initApp();
+    });
+</script>
+</body>
+</html>
+
