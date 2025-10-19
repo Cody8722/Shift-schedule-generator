@@ -101,18 +101,8 @@ jobs:
             echo "⚠ No Dockerfile found, skipping Docker build"
           fi
 
-  deploy:
-    name: Deploy to Zeabur
-    needs: [lint-and-test, docker-build]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to Zeabur
-        uses: zeabur/deploy-action@v1
-        with:
-          api-key: ${{ secrets.ZEABUR_API_KEY }}
-          service-id: ${{ secrets.ZEABUR_SERVICE_ID }}
+      - name: Deployment Info
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          echo "✓ CI/CD checks passed"
+          echo "→ Zeabur will automatically deploy via Git connection"
