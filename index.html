@@ -677,15 +677,35 @@
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
             const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
+
+            // 創建樣式，使內容更緊湊以適合單頁
             const style = document.createElement('style');
             style.innerHTML = `
-                .pdf-export-container { display: inline-block; padding: 20px; background: white; max-width: 800px; }
-                .pdf-export-container .mb-8 { margin-bottom: 16px !important; }
-                .pdf-export-container h3 { font-size: 16px !important; margin-bottom: 8px !important; }
-                .pdf-export-container table { font-size: 12px !important; width: 100% !important; }
-                .pdf-export-container th, .pdf-export-container td { padding: 8px !important; }
+                .pdf-export-container {
+                    display: inline-block;
+                    padding: 10px;
+                    background: white;
+                    max-width: 1000px;
+                }
+                .pdf-export-container .mb-8 { margin-bottom: 8px !important; }
+                .pdf-export-container h3 {
+                    font-size: 14px !important;
+                    margin-bottom: 4px !important;
+                    font-weight: bold;
+                }
+                .pdf-export-container table {
+                    font-size: 10px !important;
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                }
+                .pdf-export-container th, .pdf-export-container td {
+                    padding: 4px !important;
+                    line-height: 1.2 !important;
+                }
+                .pdf-export-container th { font-size: 11px !important; }
             `;
             document.head.appendChild(style);
+
             const container = document.createElement('div');
             container.className = 'pdf-export-container';
             allScheduleElements.forEach(el => container.appendChild(el.cloneNode(true)));
@@ -694,9 +714,17 @@
             document.body.appendChild(container);
 
             try {
-                const canvas = await html2canvas(container, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' });
+                // 使用較高的 scale 以獲得更好的清晰度
+                const canvas = await html2canvas(container, {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff'
+                });
+
                 document.body.removeChild(container);
                 document.head.removeChild(style);
+
                 const imgData = canvas.toDataURL('image/png');
                 const pdf = new jsPDF('p', 'mm', 'a4');
                 const pdfPageWidth = pdf.internal.pageSize.getWidth();
@@ -704,25 +732,32 @@
                 const imgProps = pdf.getImageProperties(imgData);
                 const imgWidth = imgProps.width;
                 const imgHeight = imgProps.height;
+
+                // 設定邊距
                 const margin = 10;
                 const availableWidth = pdfPageWidth - (margin * 2);
-                const scale = availableWidth / imgWidth;
+                const availableHeight = pdfPageHeight - (margin * 2);
+
+                // 計算縮放比例，確保寬度和高度都適合一頁
+                const scaleWidth = availableWidth / imgWidth;
+                const scaleHeight = availableHeight / imgHeight;
+
+                // 選擇較小的縮放比例，確保整個圖片都適合頁面
+                const scale = Math.min(scaleWidth, scaleHeight);
+
                 const pdfImageWidth = imgWidth * scale;
                 const pdfImageHeight = imgHeight * scale;
+
+                // 將圖片置中
                 const xPosition = (pdfPageWidth - pdfImageWidth) / 2;
-                let heightLeft = pdfImageHeight;
-                let position = 0;
-                pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
-                heightLeft -= (pdfPageHeight - margin);
-                while (heightLeft > 0) {
-                    position -= (pdfPageHeight - (margin * 2));
-                    pdf.addPage();
-                    pdf.addImage(imgData, 'PNG', xPosition, position + margin, pdfImageWidth, pdfImageHeight);
-                    heightLeft -= pdfPageHeight;
-                }
+                const yPosition = (pdfPageHeight - pdfImageHeight) / 2;
+
+                // 將整個圖片放在一頁內
+                pdf.addImage(imgData, 'PNG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
                 pdf.save('班表.pdf');
             } catch (err) {
                 console.error("html2canvas failed:", err);
+                alert('PDF 導出失敗，請稍後再試');
                 if (document.body.contains(container)) document.body.removeChild(container);
                 if (document.head.contains(style)) document.head.removeChild(style);
             }

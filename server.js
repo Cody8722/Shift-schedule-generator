@@ -442,19 +442,45 @@ app.put('/api/profiles/:name', async (req, res) => {
     try {
         const { name } = req.params;
         const { settings } = req.body;
-        const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $set: { [`profiles.${name}.settings`]: settings } });
-        if (result.modifiedCount === 0) throw new Error('找不到設定檔或無需更新');
-        res.json({ message: `設定檔 ${name} 已更新` });
+
+        // 解碼 URL 編碼的名稱（處理中文等特殊字元）
+        const decodedName = decodeURIComponent(name);
+
+        // 驗證設定檔是否存在
+        const config = await configCollection.findOne({ _id: CONFIG_ID });
+        if (!config || !config.profiles || !config.profiles[decodedName]) {
+            debugDb(`設定檔 "${decodedName}" 不存在`);
+            return res.status(404).json({ message: `找不到設定檔: ${decodedName}` });
+        }
+
+        // 更新設定
+        const result = await configCollection.updateOne(
+            { _id: CONFIG_ID },
+            { $set: { [`profiles.${decodedName}.settings`]: settings } }
+        );
+
+        if (result.modifiedCount === 0) {
+            debugDb(`設定檔 "${decodedName}" 無需更新（資料相同）`);
+        } else {
+            debugDb(`設定檔 "${decodedName}" 已成功更新`);
+        }
+
+        res.json({ message: `設定檔 ${decodedName} 已更新` });
     } catch (error) {
         debugDb('更新設定檔失敗:', error);
-        res.status(500).json({ message: '更新設定檔時發生錯誤' });
+        debugDb('錯誤詳情:', error.stack);
+        res.status(500).json({
+            message: '更新設定檔時發生錯誤',
+            error: error.message,
+            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
 app.put('/api/profiles/:name/rename', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
-        const oldName = req.params.name;
+        const oldName = decodeURIComponent(req.params.name);
         const { newName } = req.body;
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         if (!config.profiles[oldName] || config.profiles[newName]) {
@@ -465,17 +491,19 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
             update.$set = { activeProfile: newName };
         }
         await configCollection.updateOne({ _id: CONFIG_ID }, update);
+        debugDb(`設定檔已重新命名: "${oldName}" → "${newName}"`);
         res.json({ message: '設定檔已重新命名' });
     } catch (error) {
         debugDb('重新命名設定檔失敗:', error);
-        res.status(500).json({ message: '重新命名設定檔時發生錯誤' });
+        debugDb('錯誤詳情:', error.stack);
+        res.status(500).json({ message: '重新命名設定檔時發生錯誤', error: error.message });
     }
 });
 
 app.delete('/api/profiles/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
-        const nameToDelete = req.params.name;
+        const nameToDelete = decodeURIComponent(req.params.name);
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const profileKeys = Object.keys(config.profiles);
         if (profileKeys.length <= 1) return res.status(400).json({ message: '無法刪除最後一個設定檔' });
@@ -485,10 +513,12 @@ app.delete('/api/profiles/:name', async (req, res) => {
             update.$set = { activeProfile: newActiveProfile };
         }
         await configCollection.updateOne({ _id: CONFIG_ID }, update);
+        debugDb(`設定檔已刪除: "${nameToDelete}"`);
         res.json({ message: '設定檔已刪除' });
     } catch (error) {
         debugDb('刪除設定檔失敗:', error);
-        res.status(500).json({ message: '刪除設定檔時發生錯誤' });
+        debugDb('錯誤詳情:', error.stack);
+        res.status(500).json({ message: '刪除設定檔時發生錯誤', error: error.message });
     }
 });
 
@@ -510,29 +540,32 @@ app.post('/api/schedules', async (req, res) => {
 app.get('/api/schedules/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
-        const { name } = req.params;
+        const name = decodeURIComponent(req.params.name);
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const scheduleData = config.profiles[config.activeProfile]?.schedules?.[name];
         if (!scheduleData) return res.status(404).json({ message: '找不到班表' });
         res.json(scheduleData);
     } catch (error) {
         debugDb('取得班表失敗:', error);
-        res.status(500).json({ message: '取得班表時發生錯誤' });
+        debugDb('錯誤詳情:', error.stack);
+        res.status(500).json({ message: '取得班表時發生錯誤', error: error.message });
     }
 });
 
 app.delete('/api/schedules/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
-        const { name } = req.params;
+        const name = decodeURIComponent(req.params.name);
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const activeProfile = config.activeProfile;
         const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } });
         if (result.modifiedCount === 0) throw new Error('刪除班表失敗');
+        debugDb(`班表已刪除: "${name}"`);
         res.json({ message: '班表已刪除' });
     } catch (error) {
         debugDb('刪除班表失敗:', error);
-        res.status(500).json({ message: '刪除班表時發生錯誤' });
+        debugDb('錯誤詳情:', error.stack);
+        res.status(500).json({ message: '刪除班表時發生錯誤', error: error.message });
     }
 });
 
