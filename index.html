@@ -677,32 +677,63 @@
             if (!generatedData) return;
             const { jsPDF } = window.jspdf;
             const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
+            const numWeeks = generatedData.length;
 
-            // 創建樣式，使內容更緊湊以適合單頁
+            // 根據週數決定使用橫向或直向，以及字體大小
+            const isLandscape = numWeeks >= 2;
+            const orientation = isLandscape ? 'l' : 'p'; // landscape or portrait
+
+            // 創建樣式，根據週數調整字體大小
+            let fontSize, headerFontSize, titleFontSize, padding;
+            if (numWeeks === 1) {
+                fontSize = 14;
+                headerFontSize = 15;
+                titleFontSize = 18;
+                padding = 8;
+            } else if (numWeeks === 2) {
+                fontSize = 12;
+                headerFontSize = 13;
+                titleFontSize = 16;
+                padding = 6;
+            } else if (numWeeks <= 4) {
+                fontSize = 11;
+                headerFontSize = 12;
+                titleFontSize = 14;
+                padding = 5;
+            } else {
+                fontSize = 9;
+                headerFontSize = 10;
+                titleFontSize = 12;
+                padding = 4;
+            }
+
             const style = document.createElement('style');
             style.innerHTML = `
                 .pdf-export-container {
                     display: inline-block;
-                    padding: 10px;
+                    padding: ${padding}px;
                     background: white;
-                    max-width: 1000px;
+                    max-width: ${isLandscape ? '1400px' : '1000px'};
                 }
-                .pdf-export-container .mb-8 { margin-bottom: 8px !important; }
+                .pdf-export-container .mb-8 { margin-bottom: ${padding}px !important; }
                 .pdf-export-container h3 {
-                    font-size: 14px !important;
-                    margin-bottom: 4px !important;
+                    font-size: ${titleFontSize}px !important;
+                    margin-bottom: ${padding / 2}px !important;
                     font-weight: bold;
                 }
                 .pdf-export-container table {
-                    font-size: 10px !important;
+                    font-size: ${fontSize}px !important;
                     width: 100% !important;
                     border-collapse: collapse !important;
                 }
                 .pdf-export-container th, .pdf-export-container td {
-                    padding: 4px !important;
-                    line-height: 1.2 !important;
+                    padding: ${padding}px !important;
+                    line-height: 1.3 !important;
                 }
-                .pdf-export-container th { font-size: 11px !important; }
+                .pdf-export-container th {
+                    font-size: ${headerFontSize}px !important;
+                    font-weight: bold !important;
+                }
             `;
             document.head.appendChild(style);
 
@@ -726,7 +757,7 @@
                 document.head.removeChild(style);
 
                 const imgData = canvas.toDataURL('image/png');
-                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdf = new jsPDF(orientation, 'mm', 'a4');
                 const pdfPageWidth = pdf.internal.pageSize.getWidth();
                 const pdfPageHeight = pdf.internal.pageSize.getHeight();
                 const imgProps = pdf.getImageProperties(imgData);
@@ -734,11 +765,11 @@
                 const imgHeight = imgProps.height;
 
                 // 設定邊距
-                const margin = 10;
+                const margin = 8;
                 const availableWidth = pdfPageWidth - (margin * 2);
                 const availableHeight = pdfPageHeight - (margin * 2);
 
-                // 計算縮放比例，確保寬度和高度都適合一頁
+                // 計算縮放比例，優先使用寬度
                 const scaleWidth = availableWidth / imgWidth;
                 const scaleHeight = availableHeight / imgHeight;
 
@@ -750,7 +781,7 @@
 
                 // 將圖片置中
                 const xPosition = (pdfPageWidth - pdfImageWidth) / 2;
-                const yPosition = (pdfPageHeight - pdfImageHeight) / 2;
+                const yPosition = margin;
 
                 // 將整個圖片放在一頁內
                 pdf.addImage(imgData, 'PNG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
