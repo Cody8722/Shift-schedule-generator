@@ -10,3 +10,4 @@ database_backup_*.json
 --- 重要！忽略環境變數檔案 ---
 這個檔案包含您的資料庫密碼，絕對不能上傳到 GitHub
 .env
+nul
