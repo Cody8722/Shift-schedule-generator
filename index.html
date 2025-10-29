@@ -710,10 +710,11 @@
             const style = document.createElement('style');
             style.innerHTML = `
                 .pdf-export-container {
-                    display: inline-block;
+                    display: block;
                     padding: ${padding}px;
                     background: white;
-                    max-width: ${isLandscape ? '1600px' : '1200px'};
+                    width: ${isLandscape ? '1800px' : '1000px'} !important;
+                    min-width: ${isLandscape ? '1800px' : '1000px'} !important;
                 }
                 .pdf-export-container .mb-8 { margin-bottom: ${padding}px !important; }
                 .pdf-export-container h3 {
@@ -725,10 +726,12 @@
                     font-size: ${fontSize}px !important;
                     width: 100% !important;
                     border-collapse: collapse !important;
+                    table-layout: fixed !important;
                 }
                 .pdf-export-container th, .pdf-export-container td {
                     padding: ${padding}px !important;
                     line-height: 1.4 !important;
+                    word-wrap: break-word !important;
                 }
                 .pdf-export-container th {
                     font-size: ${headerFontSize}px !important;
@@ -765,23 +768,25 @@
                 const imgHeight = imgProps.height;
 
                 // 設定邊距
-                const margin = 8;
+                const margin = 5;
                 const availableWidth = pdfPageWidth - (margin * 2);
                 const availableHeight = pdfPageHeight - (margin * 2);
 
-                // 計算縮放比例，優先使用寬度
-                const scaleWidth = availableWidth / imgWidth;
-                const scaleHeight = availableHeight / imgHeight;
+                // 優先使用寬度填滿整個頁面
+                let scale = availableWidth / imgWidth;
+                let pdfImageWidth = availableWidth;
+                let pdfImageHeight = (imgHeight * scale);
 
-                // 選擇較小的縮放比例，確保整個圖片都適合頁面
-                const scale = Math.min(scaleWidth, scaleHeight);
-
-                const pdfImageWidth = imgWidth * scale;
-                const pdfImageHeight = imgHeight * scale;
+                // 如果高度超出，則改用高度來縮放
+                if (pdfImageHeight > availableHeight) {
+                    scale = availableHeight / imgHeight;
+                    pdfImageHeight = availableHeight;
+                    pdfImageWidth = imgWidth * scale;
+                }
 
                 // 將圖片置中
-                const xPosition = (pdfPageWidth - pdfImageWidth) / 2;
-                const yPosition = margin;
+                const xPosition = margin;
+                const yPosition = (pdfPageHeight - pdfImageHeight) / 2;
 
                 // 將整個圖片放在一頁內
                 pdf.addImage(imgData, 'PNG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
