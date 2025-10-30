@@ -671,6 +671,711 @@
         function displaySchedule(scheduleHtml) {
             elements.scheduleOutput.innerHTML = scheduleHtml;
             elements.outputContainer.classList.remove('hidden');
+            // 啟用編輯模式
+            enableEditMode();
+        }
+
+        // === 可編輯班表系統 ===
+        let isEditMode = false;
+        let editingData = null; // 編輯中的暫存資料
+        let hasUnsavedChanges = false;
+
+        function enableEditMode() {
+            if (!generatedData) return;
+
+            // 深拷貝數據用於編輯
+            editingData = JSON.parse(JSON.stringify(generatedData));
+            hasUnsavedChanges = false;
+
+            // 重新渲染為可編輯模式
+            renderEditableSchedule();
+
+            // 顯示編輯控制按鈕
+            showEditControls();
+        }
+
+        function renderEditableSchedule() {
+            if (!editingData) return;
+
+            const container = elements.scheduleOutput;
+            container.innerHTML = '';
+
+            // 確保父容器沒有 overflow 限制，這樣 sticky 才能正常工作
+            container.classList.remove('overflow-x-auto', 'overflow-auto', 'overflow-y-auto');
+            container.style.overflow = 'visible';
+
+            // 同時檢查並處理 output-container（父層）
+            const outputContainer = document.getElementById('output-container');
+            if (outputContainer) {
+                outputContainer.style.overflow = 'visible';
+            }
+
+            // 創建編輯工具欄
+            const toolbar = createEditToolbar();
+            container.appendChild(toolbar);
+
+            // 創建人員側邊欄（用於拖拽）
+            const sidebar = createPersonnelSidebar();
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex gap-4 items-start';
+            wrapper.style.position = 'static'; // 使用 static 避免建立新的定位上下文
+            wrapper.appendChild(sidebar);
+
+            // 創建班表容器
+            const scheduleContainer = document.createElement('div');
+            scheduleContainer.className = 'flex-1';
+            scheduleContainer.style.overflowX = 'auto'; // 只讓班表橫向滾動
+
+            editingData.forEach((weekData, weekIndex) => {
+                const weekElement = createEditableWeek(weekData, weekIndex);
+                scheduleContainer.appendChild(weekElement);
+            });
+
+            wrapper.appendChild(scheduleContainer);
+            container.appendChild(wrapper);
+
+            console.log('✅ schedule-output overflow:', window.getComputedStyle(container).overflow);
+            console.log('✅ output-container overflow:', outputContainer ? window.getComputedStyle(outputContainer).overflow : 'N/A');
+        }
+
+        function createEditToolbar() {
+            const toolbar = document.createElement('div');
+            toolbar.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-center justify-between';
+            toolbar.innerHTML = `
+                <div class="flex items-center gap-4">
+                    <span class="text-blue-700 font-medium">✏️ 編輯模式</span>
+                    <span id="edit-status" class="text-sm text-gray-600"></span>
+                </div>
+                <div class="flex gap-2">
+                    <button id="save-edits-btn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400" disabled>
+                        💾 儲存修改
+                    </button>
+                    <button id="cancel-edits-btn" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+                        ❌ 取消編輯
+                    </button>
+                    <button id="exit-edit-mode-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        👁️ 預覽模式
+                    </button>
+                </div>
+            `;
+
+            // 綁定事件
+            setTimeout(() => {
+                document.getElementById('save-edits-btn').addEventListener('click', saveEdits);
+                document.getElementById('cancel-edits-btn').addEventListener('click', cancelEdits);
+                document.getElementById('exit-edit-mode-btn').addEventListener('click', exitEditMode);
+            }, 0);
+
+            return toolbar;
+        }
+
+        function createPersonnelSidebar() {
+            const sidebar = document.createElement('div');
+            sidebar.className = 'w-64 bg-gray-50 border border-gray-200 rounded-lg p-4';
+
+            // 使用 sticky 定位，讓側邊欄在滾動時保持在視窗中可見
+            sidebar.style.position = 'sticky';
+            sidebar.style.top = '20px'; // 距離視窗頂部 20px
+            sidebar.style.alignSelf = 'flex-start'; // 確保在 flex 容器中正確對齊
+            sidebar.style.maxHeight = 'calc(100vh - 40px)'; // 最大高度為視窗高度減去上下間距
+            sidebar.style.overflowY = 'auto'; // 如果內容過多，側邊欄本身可以滾動
+
+            sidebar.innerHTML = '<h3 class="font-bold mb-3 text-gray-700">👥 可用人員</h3>';
+
+            const personnelList = document.createElement('div');
+            personnelList.className = 'space-y-2';
+            personnelList.style.paddingRight = '8px'; // 避免滾動條遮住內容
+
+            const personnel = getActiveProfile().settings.personnel || [];
+
+            // Debug: 顯示人員數量和定位
+            console.log(`📋 側邊欄載入 ${personnel.length} 位人員`);
+            console.log('📌 側邊欄定位:', sidebar.style.position, 'top:', sidebar.style.top);
+
+            personnel.forEach(person => {
+                const personElement = document.createElement('div');
+                personElement.className = 'bg-white border border-gray-300 rounded px-3 py-2 cursor-move hover:bg-blue-50 hover:border-blue-400 transition-colors';
+                personElement.draggable = true;
+                personElement.textContent = person.name;
+                personElement.dataset.personName = person.name;
+
+                // 拖拽事件
+                personElement.addEventListener('dragstart', handlePersonDragStart);
+                personElement.addEventListener('dragend', handlePersonDragEnd);
+
+                personnelList.appendChild(personElement);
+            });
+
+            sidebar.appendChild(personnelList);
+            return sidebar;
+        }
+
+        function createEditableWeek(weekData, weekIndex) {
+            const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = weekData;
+            const weekDayNames = ['一', '二', '三', '四', '五'];
+
+            const weekDiv = document.createElement('div');
+            weekDiv.className = 'mb-8';
+            weekDiv.id = `schedule-week-${weekIndex}`;
+
+            // 標題
+            const title = document.createElement('h3');
+            title.className = 'text-xl font-bold mb-2';
+            title.textContent = `第 ${weekIndex + 1} 週班表 (${dateRange})`;
+            weekDiv.appendChild(title);
+
+            // 創建表格
+            const table = document.createElement('table');
+            table.className = 'schedule-table w-full border-collapse';
+
+            // 表頭
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+
+            const thTask = document.createElement('th');
+            thTask.style.backgroundColor = color.header;
+            thTask.style.color = 'white';
+            thTask.textContent = '勤務地點';
+            headerRow.appendChild(thTask);
+
+            weekDayDates.forEach((date, dayIndex) => {
+                const th = document.createElement('th');
+                th.style.backgroundColor = color.header;
+                th.style.color = 'white';
+                th.innerHTML = `星期${weekDayNames[dayIndex]}<br>(${date})`;
+                headerRow.appendChild(th);
+            });
+
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // 表格內容
+            const tbody = document.createElement('tbody');
+
+            tasks.forEach((task, taskIndex) => {
+                const row = document.createElement('tr');
+
+                // 勤務名稱
+                const tdTask = document.createElement('td');
+                tdTask.className = 'font-medium align-middle bg-gray-50';
+                tdTask.textContent = task.name;
+                row.appendChild(tdTask);
+
+                // 每天的格子
+                weekDayDates.forEach((date, dayIndex) => {
+                    const td = document.createElement('td');
+                    td.className = 'align-middle p-2 border border-gray-300 min-h-[60px]';
+
+                    if (!scheduleDays[dayIndex].shouldSchedule) {
+                        // 假日
+                        td.classList.add('holiday-cell');
+                        td.textContent = scheduleDays[dayIndex].description;
+                    } else {
+                        // 可編輯的工作日
+                        td.classList.add('editable-cell', 'hover:bg-blue-50', 'cursor-pointer');
+                        td.dataset.weekIndex = weekIndex;
+                        td.dataset.dayIndex = dayIndex;
+                        td.dataset.taskIndex = taskIndex;
+
+                        // 渲染人員
+                        const personnelList = schedule[dayIndex][taskIndex];
+                        renderCellPersonnel(td, personnelList);
+
+                        // 拖放事件
+                        td.addEventListener('dragover', handleCellDragOver);
+                        td.addEventListener('drop', handleCellDrop);
+                        td.addEventListener('dragleave', handleCellDragLeave);
+
+                        // 點擊顯示下拉選單
+                        td.addEventListener('click', (e) => {
+                            if (!e.target.closest('.person-tag')) {
+                                showPersonnelDropdown(td, weekIndex, dayIndex, taskIndex);
+                            }
+                        });
+                    }
+
+                    row.appendChild(td);
+                });
+
+                tbody.appendChild(row);
+            });
+
+            table.appendChild(tbody);
+            weekDiv.appendChild(table);
+
+            return weekDiv;
+        }
+
+        function renderCellPersonnel(cell, personnelList) {
+            cell.innerHTML = '';
+
+            // 獲取人數限制
+            const weekIndex = parseInt(cell.dataset.weekIndex);
+            const taskIndex = parseInt(cell.dataset.taskIndex);
+            const taskRequiredCount = editingData[weekIndex].tasks[taskIndex].count;
+            const currentCount = personnelList.length;
+
+            // 創建容器
+            const container = document.createElement('div');
+            container.className = 'flex flex-col gap-1';
+
+            // 人數指示器
+            const countIndicator = document.createElement('div');
+            countIndicator.className = 'text-xs font-semibold';
+            if (currentCount < taskRequiredCount) {
+                countIndicator.className += ' text-orange-600';
+                countIndicator.textContent = `👤 ${currentCount}/${taskRequiredCount} (缺 ${taskRequiredCount - currentCount})`;
+            } else if (currentCount === taskRequiredCount) {
+                countIndicator.className += ' text-green-600';
+                countIndicator.textContent = `👤 ${currentCount}/${taskRequiredCount} ✓`;
+            } else {
+                countIndicator.className += ' text-red-600';
+                countIndicator.textContent = `👤 ${currentCount}/${taskRequiredCount} (超額)`;
+            }
+            container.appendChild(countIndicator);
+
+            // 人員標籤容器
+            const personnelContainer = document.createElement('div');
+            personnelContainer.className = 'flex flex-wrap gap-1';
+
+            personnelList.forEach((personName, index) => {
+                const tag = document.createElement('span');
+                tag.className = 'person-tag inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm cursor-move';
+                tag.draggable = true;
+                tag.innerHTML = `
+                    ${personName}
+                    <button class="remove-person ml-1 text-red-600 hover:text-red-800 font-bold">×</button>
+                `;
+                tag.dataset.personName = personName;
+                tag.dataset.personIndex = index;
+
+                // 拖拽事件
+                tag.addEventListener('dragstart', handleTagDragStart);
+                tag.addEventListener('dragend', handlePersonDragEnd);
+
+                // 移除按鈕事件
+                tag.querySelector('.remove-person').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const weekIndex = parseInt(cell.dataset.weekIndex);
+                    const dayIndex = parseInt(cell.dataset.dayIndex);
+                    const taskIndex = parseInt(cell.dataset.taskIndex);
+                    removePersonFromCell(weekIndex, dayIndex, taskIndex, index);
+                });
+
+                personnelContainer.appendChild(tag);
+            });
+
+            container.appendChild(personnelContainer);
+
+            // 空格子提示
+            if (personnelList.length === 0) {
+                const placeholder = document.createElement('span');
+                placeholder.className = 'text-gray-400 text-sm';
+                placeholder.textContent = '點擊選擇或拖拽人員';
+                personnelContainer.appendChild(placeholder);
+            }
+
+            cell.appendChild(container);
+        }
+
+        // === 拖拽處理函數 ===
+        let draggedPerson = null;
+        let draggedFromCell = null;
+
+        // 檢查是否可以將人員添加到指定格子
+        function canAddPersonToCell(weekIndex, dayIndex, taskIndex, personName, ignoreSameCell = false) {
+            const personnelList = editingData[weekIndex].schedule[dayIndex][taskIndex];
+            const tasks = editingData[weekIndex].tasks;
+
+            // 檢查是否已在此勤務中
+            if (personnelList.includes(personName)) {
+                return { canAdd: false, reason: '已在此勤務' };
+            }
+
+            // 檢查人數限制（是否已滿）
+            const taskRequiredCount = tasks[taskIndex].count;
+            const currentCount = personnelList.length;
+
+            // 判斷是否從同一格子拖拽（不算新增人員）
+            let isDraggingFromSameCell = false;
+            if (draggedFromCell) {
+                const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex);
+                const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex);
+                const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex);
+                isDraggingFromSameCell = (fromWeekIndex === weekIndex && fromDayIndex === dayIndex && fromTaskIndex === taskIndex);
+            }
+
+            // 如果不是從同一格子拖拽，且人數已滿，則不允許
+            if (!isDraggingFromSameCell && currentCount >= taskRequiredCount) {
+                return { canAdd: false, reason: `人數已滿 (${currentCount}/${taskRequiredCount})` };
+            }
+
+            // 檢查固定排休日
+            const personnel = getActiveProfile().settings.personnel || [];
+            const person = personnel.find(p => p.name === personName);
+            if (person && person.offDays && person.offDays.includes(dayIndex)) {
+                const weekDayNames = ['一', '二', '三', '四', '五'];
+                return { canAdd: false, reason: `星期${weekDayNames[dayIndex]}固定排休` };
+            }
+
+            // 檢查同一天是否已在其他勤務中
+            const allTasksThisDay = editingData[weekIndex].schedule[dayIndex];
+
+            for (let i = 0; i < allTasksThisDay.length; i++) {
+                if (i !== taskIndex && allTasksThisDay[i].includes(personName)) {
+                    // 如果是從同一天的其他格子拖拽過來，允許移動
+                    if (ignoreSameCell && draggedFromCell) {
+                        const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex);
+                        const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex);
+                        const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex);
+
+                        if (fromWeekIndex === weekIndex && fromDayIndex === dayIndex && fromTaskIndex === i) {
+                            continue; // 忽略原始位置
+                        }
+                    }
+
+                    const conflictTaskName = tasks[i].name;
+                    return { canAdd: false, reason: `已在「${conflictTaskName}」` };
+                }
+            }
+
+            return { canAdd: true, reason: '' };
+        }
+
+        // 高亮所有可用/不可用的格子
+        function highlightAvailableCells(personName) {
+            document.querySelectorAll('.editable-cell').forEach(cell => {
+                const weekIndex = parseInt(cell.dataset.weekIndex);
+                const dayIndex = parseInt(cell.dataset.dayIndex);
+                const taskIndex = parseInt(cell.dataset.taskIndex);
+
+                const result = canAddPersonToCell(weekIndex, dayIndex, taskIndex, personName, true);
+
+                // 移除舊的樣式
+                cell.classList.remove('bg-green-100', 'border-green-400', 'bg-red-100', 'border-red-400', 'drop-allowed', 'drop-forbidden');
+
+                if (result.canAdd) {
+                    // 可以放置：綠色邊框
+                    cell.classList.add('drop-allowed');
+                    cell.style.border = '2px dashed #4ade80'; // 綠色
+                    cell.style.backgroundColor = 'rgba(74, 222, 128, 0.1)'; // 淡綠色背景
+                } else {
+                    // 不可放置：紅色邊框 + 禁用游標
+                    cell.classList.add('drop-forbidden');
+                    cell.style.border = '2px dashed #ef4444'; // 紅色
+                    cell.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; // 淡紅色背景
+                    cell.style.cursor = 'not-allowed';
+
+                    // 添加提示文字
+                    if (!cell.querySelector('.drop-hint')) {
+                        const hint = document.createElement('div');
+                        hint.className = 'drop-hint text-xs text-red-600 mt-1 font-semibold';
+                        hint.textContent = `🚫 ${result.reason}`;
+                        cell.appendChild(hint);
+                    }
+                }
+            });
+        }
+
+        // 清除所有高亮
+        function clearAllHighlights() {
+            document.querySelectorAll('.editable-cell').forEach(cell => {
+                cell.classList.remove('bg-green-100', 'border-green-400', 'bg-red-100', 'border-red-400', 'drop-allowed', 'drop-forbidden');
+                cell.style.border = '';
+                cell.style.backgroundColor = '';
+                cell.style.cursor = '';
+
+                // 移除提示文字
+                const hint = cell.querySelector('.drop-hint');
+                if (hint) hint.remove();
+            });
+        }
+
+        function handlePersonDragStart(e) {
+            draggedPerson = e.target.dataset.personName;
+            draggedFromCell = null; // 從側邊欄拖拽
+            e.target.classList.add('opacity-50');
+
+            // 高亮所有可用格子
+            highlightAvailableCells(draggedPerson);
+        }
+
+        function handlePersonDragEnd(e) {
+            e.target.classList.remove('opacity-50');
+            clearAllHighlights();
+        }
+
+        function handleTagDragStart(e) {
+            draggedPerson = e.target.dataset.personName;
+            draggedFromCell = e.target.closest('.editable-cell');
+            e.target.classList.add('opacity-50');
+
+            // 高亮所有可用格子
+            highlightAvailableCells(draggedPerson);
+        }
+
+        function handleCellDragOver(e) {
+            const cell = e.currentTarget;
+
+            // 檢查是否可以放置
+            if (cell.classList.contains('drop-forbidden')) {
+                e.dataTransfer.dropEffect = 'none';
+                return; // 不允許 drop
+            }
+
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+
+            // 添加 hover 效果（更明顯的綠色背景）
+            if (cell.classList.contains('drop-allowed')) {
+                cell.style.backgroundColor = 'rgba(74, 222, 128, 0.3)'; // 更深的綠色
+                cell.style.transform = 'scale(1.02)';
+                cell.style.transition = 'all 0.15s ease';
+            }
+        }
+
+        function handleCellDragLeave(e) {
+            const cell = e.currentTarget;
+            // 恢復原本的淡綠色背景
+            if (cell.classList.contains('drop-allowed')) {
+                cell.style.backgroundColor = 'rgba(74, 222, 128, 0.1)';
+                cell.style.transform = '';
+            }
+        }
+
+        function handleCellDrop(e) {
+            e.preventDefault();
+
+            // 清除所有高亮
+            clearAllHighlights();
+
+            const cell = e.currentTarget;
+            const weekIndex = parseInt(cell.dataset.weekIndex);
+            const dayIndex = parseInt(cell.dataset.dayIndex);
+            const taskIndex = parseInt(cell.dataset.taskIndex);
+
+            // 檢查是否可以放置（雙重驗證）
+            const canAdd = canAddPersonToCell(weekIndex, dayIndex, taskIndex, draggedPerson, true);
+            if (!canAdd.canAdd) {
+                draggedPerson = null;
+                draggedFromCell = null;
+                return; // 不允許放置
+            }
+
+            // 檢查是否從其他格子拖拽
+            if (draggedFromCell) {
+                const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex);
+                const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex);
+                const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex);
+
+                // 移除原位置
+                const personIndex = editingData[fromWeekIndex].schedule[fromDayIndex][fromTaskIndex].indexOf(draggedPerson);
+                if (personIndex > -1) {
+                    editingData[fromWeekIndex].schedule[fromDayIndex][fromTaskIndex].splice(personIndex, 1);
+                    // 重新渲染原格子
+                    renderCellPersonnel(draggedFromCell, editingData[fromWeekIndex].schedule[fromDayIndex][fromTaskIndex]);
+                }
+            }
+
+            // 添加到新位置
+            addPersonToCell(weekIndex, dayIndex, taskIndex, draggedPerson);
+
+            draggedPerson = null;
+            draggedFromCell = null;
+        }
+
+        function addPersonToCell(weekIndex, dayIndex, taskIndex, personName) {
+            const personnelList = editingData[weekIndex].schedule[dayIndex][taskIndex];
+
+            // 檢查是否已在此勤務中
+            if (personnelList.includes(personName)) {
+                alert(`❌ ${personName} 已在此勤務中`);
+                return;
+            }
+
+            // 檢查同一天是否已在其他勤務中
+            const allTasksThisDay = editingData[weekIndex].schedule[dayIndex];
+            const tasks = editingData[weekIndex].tasks;
+
+            for (let i = 0; i < allTasksThisDay.length; i++) {
+                if (i !== taskIndex && allTasksThisDay[i].includes(personName)) {
+                    const conflictTaskName = tasks[i].name;
+                    const currentTaskName = tasks[taskIndex].name;
+                    alert(`❌ 排班衝突！\n\n${personName} 在當天已被分配到「${conflictTaskName}」勤務，\n無法同時分配到「${currentTaskName}」勤務。`);
+                    return;
+                }
+            }
+
+            // 添加人員
+            personnelList.push(personName);
+
+            // 重新渲染格子
+            const cell = document.querySelector(
+                `[data-week-index="${weekIndex}"][data-day-index="${dayIndex}"][data-task-index="${taskIndex}"]`
+            );
+            renderCellPersonnel(cell, personnelList);
+
+            markAsModified();
+        }
+
+        function removePersonFromCell(weekIndex, dayIndex, taskIndex, personIndex) {
+            editingData[weekIndex].schedule[dayIndex][taskIndex].splice(personIndex, 1);
+
+            // 重新渲染格子
+            const cell = document.querySelector(
+                `[data-week-index="${weekIndex}"][data-day-index="${dayIndex}"][data-task-index="${taskIndex}"]`
+            );
+            renderCellPersonnel(cell, editingData[weekIndex].schedule[dayIndex][taskIndex]);
+
+            markAsModified();
+        }
+
+        function showPersonnelDropdown(cell, weekIndex, dayIndex, taskIndex) {
+            // 移除現有下拉選單
+            document.querySelectorAll('.personnel-dropdown').forEach(el => el.remove());
+
+            const dropdown = document.createElement('div');
+            dropdown.className = 'personnel-dropdown absolute bg-white border border-gray-300 rounded-lg shadow-lg p-2 z-50';
+            dropdown.style.minWidth = '200px';
+            dropdown.style.maxHeight = '400px';
+            dropdown.style.overflowY = 'auto';
+
+            const personnel = getActiveProfile().settings.personnel || [];
+            const currentPersonnel = editingData[weekIndex].schedule[dayIndex][taskIndex];
+            const allTasksThisDay = editingData[weekIndex].schedule[dayIndex];
+            const tasks = editingData[weekIndex].tasks;
+
+            // 檢查人數限制
+            const taskRequiredCount = tasks[taskIndex].count;
+            const currentCount = currentPersonnel.length;
+            const isFull = currentCount >= taskRequiredCount;
+
+            personnel.forEach(person => {
+                const option = document.createElement('div');
+                const isSelected = currentPersonnel.includes(person.name);
+
+                // 檢查固定排休日
+                const weekDayNames = ['一', '二', '三', '四', '五'];
+                const isOffDay = person.offDays && person.offDays.includes(dayIndex);
+
+                // 檢查是否在同一天的其他勤務中
+                let isInOtherTask = false;
+                let conflictTaskName = '';
+                for (let i = 0; i < allTasksThisDay.length; i++) {
+                    if (i !== taskIndex && allTasksThisDay[i].includes(person.name)) {
+                        isInOtherTask = true;
+                        conflictTaskName = tasks[i].name;
+                        break;
+                    }
+                }
+
+                // 根據狀態設定樣式
+                if (isOffDay) {
+                    // 固定排休日 - 顯示為禁用狀態
+                    option.className = 'px-3 py-2 rounded bg-red-50 text-red-400 cursor-not-allowed';
+                    option.innerHTML = `
+                        <input type="checkbox" disabled class="mr-2">
+                        ${person.name} <span class="text-xs">⛔ 星期${weekDayNames[dayIndex]}固定排休</span>
+                    `;
+                } else if (isInOtherTask) {
+                    option.className = 'px-3 py-2 rounded bg-gray-100 text-gray-400 cursor-not-allowed';
+                    option.innerHTML = `
+                        <input type="checkbox" disabled class="mr-2">
+                        ${person.name} <span class="text-xs">(已在「${conflictTaskName}」)</span>
+                    `;
+                } else if (isFull && !isSelected) {
+                    // 人數已滿且該人員未被選中 - 顯示為禁用狀態
+                    option.className = 'px-3 py-2 rounded bg-orange-50 text-orange-400 cursor-not-allowed';
+                    option.innerHTML = `
+                        <input type="checkbox" disabled class="mr-2">
+                        ${person.name} <span class="text-xs">⚠️ 人數已滿 (${currentCount}/${taskRequiredCount})</span>
+                    `;
+                } else {
+                    option.className = 'px-3 py-2 hover:bg-blue-50 cursor-pointer rounded';
+                    option.innerHTML = `
+                        <input type="checkbox" ${isSelected ? 'checked' : ''} class="mr-2">
+                        ${person.name}
+                    `;
+
+                    option.addEventListener('click', () => {
+                        if (isSelected) {
+                            const index = currentPersonnel.indexOf(person.name);
+                            removePersonFromCell(weekIndex, dayIndex, taskIndex, index);
+                        } else {
+                            addPersonToCell(weekIndex, dayIndex, taskIndex, person.name);
+                        }
+                        dropdown.remove();
+                    });
+                }
+
+                dropdown.appendChild(option);
+            });
+
+            // 定位下拉選單
+            const rect = cell.getBoundingClientRect();
+            dropdown.style.position = 'fixed';
+            dropdown.style.top = `${rect.bottom + 5}px`;
+            dropdown.style.left = `${rect.left}px`;
+
+            document.body.appendChild(dropdown);
+
+            // 點擊外部關閉
+            setTimeout(() => {
+                document.addEventListener('click', function closeDropdown(e) {
+                    if (!dropdown.contains(e.target)) {
+                        dropdown.remove();
+                        document.removeEventListener('click', closeDropdown);
+                    }
+                });
+            }, 0);
+        }
+
+        function markAsModified() {
+            hasUnsavedChanges = true;
+            document.getElementById('save-edits-btn').disabled = false;
+            document.getElementById('edit-status').textContent = '⚠️ 有未儲存的修改';
+            document.getElementById('edit-status').classList.add('text-orange-600', 'font-medium');
+        }
+
+        function saveEdits() {
+            // 將編輯資料寫回主資料
+            generatedData = JSON.parse(JSON.stringify(editingData));
+            hasUnsavedChanges = false;
+
+            document.getElementById('save-edits-btn').disabled = true;
+            document.getElementById('edit-status').textContent = '✅ 已儲存';
+            document.getElementById('edit-status').classList.remove('text-orange-600');
+            document.getElementById('edit-status').classList.add('text-green-600');
+
+            alert('班表修改已儲存！');
+        }
+
+        function cancelEdits() {
+            if (hasUnsavedChanges && !confirm('確定要放棄所有未儲存的修改嗎？')) {
+                return;
+            }
+
+            // 重新載入原始資料
+            editingData = JSON.parse(JSON.stringify(generatedData));
+            hasUnsavedChanges = false;
+            renderEditableSchedule();
+        }
+
+        function exitEditMode() {
+            if (hasUnsavedChanges && !confirm('有未儲存的修改，確定要離開編輯模式嗎？')) {
+                return;
+            }
+
+            // 返回預覽模式（使用後端生成的 HTML）
+            api.post('render-schedule', generatedData).then(response => {
+                if (response && response.html) {
+                    elements.scheduleOutput.innerHTML = response.html;
+                }
+            });
+        }
+
+        function showEditControls() {
+            // 編輯模式按鈕已包含在 toolbar 中
         }
 
         async function exportToPdf() {
