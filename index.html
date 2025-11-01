@@ -778,13 +778,26 @@
             sidebar.style.top = '20px'; // 距離視窗頂部 20px
             sidebar.style.alignSelf = 'flex-start'; // 確保在 flex 容器中正確對齊
             sidebar.style.maxHeight = 'calc(100vh - 40px)'; // 最大高度為視窗高度減去上下間距
-            sidebar.style.overflowY = 'auto'; // 如果內容過多，側邊欄本身可以滾動
+            sidebar.style.display = 'flex';
+            sidebar.style.flexDirection = 'column';
+            sidebar.style.overflow = 'hidden'; // 側邊欄本身不滾動
 
-            sidebar.innerHTML = '<h3 class="font-bold mb-3 text-gray-700">👥 可用人員</h3>';
+            // 標題
+            const header = document.createElement('h3');
+            header.className = 'font-bold mb-3 text-gray-700';
+            header.textContent = '👥 可用人員';
+            header.style.flexShrink = '0'; // 標題不縮小
+            sidebar.appendChild(header);
 
+            // 人員列表容器（可滾動）
             const personnelList = document.createElement('div');
             personnelList.className = 'space-y-2';
+            personnelList.style.flex = '1'; // 佔據剩餘空間
+            personnelList.style.overflowY = 'auto'; // 啟用滾動
+            personnelList.style.overflowX = 'hidden';
             personnelList.style.paddingRight = '8px'; // 避免滾動條遮住內容
+            personnelList.style.paddingBottom = '16px'; // 底部內邊距，確保最後一個人員可以完整顯示
+            personnelList.style.minHeight = '0'; // 重要：允許 flex 子元素縮小
 
             const personnel = getActiveProfile().settings.personnel || [];
 
@@ -873,6 +886,7 @@
                     } else {
                         // 可編輯的工作日
                         td.classList.add('editable-cell', 'hover:bg-blue-50', 'cursor-pointer');
+                        td.style.position = 'relative'; // 為絕對定位的提示文字提供參考點
                         td.dataset.weekIndex = weekIndex;
                         td.dataset.dayIndex = dayIndex;
                         td.dataset.taskIndex = taskIndex;
@@ -903,10 +917,106 @@
             table.appendChild(tbody);
             weekDiv.appendChild(table);
 
+            // 加入每週值勤次數統計
+            const statsDiv = createWeeklyStats(weekData, weekIndex);
+            weekDiv.appendChild(statsDiv);
+
             return weekDiv;
         }
 
+        // 創建每週值勤次數統計
+        function createWeeklyStats(weekData, weekIndex) {
+            const { schedule, tasks } = weekData;
+            const personnel = getActiveProfile().settings.personnel || [];
+
+            // 計算每個人在這週的值勤次數
+            const shiftCounts = {};
+            personnel.forEach(person => {
+                shiftCounts[person.name] = 0;
+            });
+
+            // 遍歷所有天和所有勤務，計算次數
+            schedule.forEach(daySchedule => {
+                daySchedule.forEach(taskPersonnel => {
+                    taskPersonnel.forEach(personName => {
+                        if (shiftCounts[personName] !== undefined) {
+                            shiftCounts[personName]++;
+                        }
+                    });
+                });
+            });
+
+            // 創建統計容器
+            const statsContainer = document.createElement('div');
+            statsContainer.className = 'mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
+
+            const title = document.createElement('div');
+            title.className = 'font-semibold text-gray-700 mb-2 text-sm';
+            title.textContent = '📊 本週值勤次數統計';
+            statsContainer.appendChild(title);
+
+            // 創建統計標籤容器
+            const tagsContainer = document.createElement('div');
+            tagsContainer.className = 'flex flex-wrap gap-2';
+
+            personnel.forEach(person => {
+                const count = shiftCounts[person.name] || 0;
+                const maxShifts = person.maxShifts || 5;
+
+                const tag = document.createElement('div');
+                tag.className = 'px-3 py-1 rounded-full text-sm font-medium';
+
+                // 根據值勤次數設定顏色
+                if (count === 0) {
+                    // 未排班：灰色
+                    tag.className += ' bg-gray-200 text-gray-600';
+                } else if (count > maxShifts) {
+                    // 超過上限：紅色
+                    tag.className += ' bg-red-100 text-red-700 border-2 border-red-400';
+                } else if (count === maxShifts) {
+                    // 剛好達到上限：橙色
+                    tag.className += ' bg-orange-100 text-orange-700';
+                } else if (count >= maxShifts - 1) {
+                    // 接近上限：黃色
+                    tag.className += ' bg-yellow-100 text-yellow-700';
+                } else {
+                    // 正常範圍：綠色
+                    tag.className += ' bg-green-100 text-green-700';
+                }
+
+                tag.textContent = `${person.name}: ${count}/${maxShifts}`;
+
+                // 如果超過上限，加上警告圖示
+                if (count > maxShifts) {
+                    tag.textContent = `⚠️ ${person.name}: ${count}/${maxShifts}`;
+                }
+
+                tagsContainer.appendChild(tag);
+            });
+
+            statsContainer.appendChild(tagsContainer);
+            return statsContainer;
+        }
+
+        // 更新特定週的統計資訊
+        function updateWeeklyStats(weekIndex) {
+            const weekElement = document.getElementById(`schedule-week-${weekIndex}`);
+            if (!weekElement) return;
+
+            // 移除舊的統計
+            const oldStats = weekElement.querySelector('.mt-3.p-3.bg-gray-50');
+            if (oldStats) oldStats.remove();
+
+            // 創建新的統計
+            const statsDiv = createWeeklyStats(editingData[weekIndex], weekIndex);
+            weekElement.appendChild(statsDiv);
+        }
+
         function renderCellPersonnel(cell, personnelList) {
+            // 保存當前滾動位置（防止 innerHTML 清空時觸發滾動）
+            const scrollY = window.scrollY;
+            const scrollX = window.scrollX;
+
             cell.innerHTML = '';
 
             // 獲取人數限制
@@ -942,10 +1052,19 @@
                 const tag = document.createElement('span');
                 tag.className = 'person-tag inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm cursor-move';
                 tag.draggable = true;
-                tag.innerHTML = `
-                    ${personName}
-                    <button class="remove-person ml-1 text-red-600 hover:text-red-800 font-bold">×</button>
-                `;
+
+                // 人員名字
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = personName;
+                tag.appendChild(nameSpan);
+
+                // 移除按鈕
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'remove-person ml-1 text-red-600 hover:text-red-800 font-bold';
+                removeBtn.textContent = '×';
+                removeBtn.draggable = false; // 防止按鈕本身被拖曳
+                tag.appendChild(removeBtn);
+
                 tag.dataset.personName = personName;
                 tag.dataset.personIndex = index;
 
@@ -954,12 +1073,18 @@
                 tag.addEventListener('dragend', handlePersonDragEnd);
 
                 // 移除按鈕事件
-                tag.querySelector('.remove-person').addEventListener('click', (e) => {
+                removeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    e.preventDefault();
                     const weekIndex = parseInt(cell.dataset.weekIndex);
                     const dayIndex = parseInt(cell.dataset.dayIndex);
                     const taskIndex = parseInt(cell.dataset.taskIndex);
                     removePersonFromCell(weekIndex, dayIndex, taskIndex, index);
+                });
+
+                // 防止從移除按鈕上開始拖曳
+                removeBtn.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
                 });
 
                 personnelContainer.appendChild(tag);
@@ -976,6 +1101,13 @@
             }
 
             cell.appendChild(container);
+
+            // 使用雙重 requestAnimationFrame 確保在瀏覽器完成渲染後恢復滾動位置
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(scrollX, scrollY);
+                });
+            });
         }
 
         // === 拖拽處理函數 ===
@@ -1044,6 +1176,10 @@
 
         // 高亮所有可用/不可用的格子
         function highlightAvailableCells(personName) {
+            // 保存當前滾動位置（防止大量 DOM 操作觸發滾動）
+            const scrollY = window.scrollY;
+            const scrollX = window.scrollX;
+
             document.querySelectorAll('.editable-cell').forEach(cell => {
                 const weekIndex = parseInt(cell.dataset.weekIndex);
                 const dayIndex = parseInt(cell.dataset.dayIndex);
@@ -1066,19 +1202,38 @@
                     cell.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; // 淡紅色背景
                     cell.style.cursor = 'not-allowed';
 
-                    // 添加提示文字
+                    // 添加提示文字（使用絕對定位，不佔據空間，避免改變格子高度）
                     if (!cell.querySelector('.drop-hint')) {
                         const hint = document.createElement('div');
-                        hint.className = 'drop-hint text-xs text-red-600 mt-1 font-semibold';
+                        hint.className = 'drop-hint text-xs text-red-600 font-semibold';
+                        hint.style.position = 'absolute';
+                        hint.style.bottom = '2px';
+                        hint.style.left = '2px';
+                        hint.style.right = '2px';
+                        hint.style.backgroundColor = 'rgba(254, 242, 242, 0.95)'; // 半透明白底
+                        hint.style.padding = '2px 4px';
+                        hint.style.borderRadius = '4px';
+                        hint.style.zIndex = '10';
                         hint.textContent = `🚫 ${result.reason}`;
                         cell.appendChild(hint);
                     }
                 }
             });
+
+            // 使用雙重 RAF 確保在所有渲染完成後恢復滾動位置
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(scrollX, scrollY);
+                });
+            });
         }
 
         // 清除所有高亮
         function clearAllHighlights() {
+            // 保存當前滾動位置（防止大量 DOM 操作觸發滾動）
+            const scrollY = window.scrollY;
+            const scrollX = window.scrollX;
+
             document.querySelectorAll('.editable-cell').forEach(cell => {
                 cell.classList.remove('bg-green-100', 'border-green-400', 'bg-red-100', 'border-red-400', 'drop-allowed', 'drop-forbidden');
                 cell.style.border = '';
@@ -1088,6 +1243,13 @@
                 // 移除提示文字
                 const hint = cell.querySelector('.drop-hint');
                 if (hint) hint.remove();
+            });
+
+            // 使用雙重 RAF 確保在所有渲染完成後恢復滾動位置
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(scrollX, scrollY);
+                });
             });
         }
 
@@ -1146,6 +1308,10 @@
         function handleCellDrop(e) {
             e.preventDefault();
 
+            // 保存當前滾動位置（在所有操作之前）
+            const scrollY = window.scrollY;
+            const scrollX = window.scrollX;
+
             // 清除所有高亮
             clearAllHighlights();
 
@@ -1172,13 +1338,25 @@
                 const personIndex = editingData[fromWeekIndex].schedule[fromDayIndex][fromTaskIndex].indexOf(draggedPerson);
                 if (personIndex > -1) {
                     editingData[fromWeekIndex].schedule[fromDayIndex][fromTaskIndex].splice(personIndex, 1);
-                    // 重新渲染原格子
+                    // 重新渲染原格子（renderCellPersonnel 內部會保護滾動位置）
                     renderCellPersonnel(draggedFromCell, editingData[fromWeekIndex].schedule[fromDayIndex][fromTaskIndex]);
+
+                    // 如果是跨週拖拽，更新原週的統計
+                    if (fromWeekIndex !== weekIndex) {
+                        updateWeeklyStats(fromWeekIndex);
+                    }
                 }
             }
 
-            // 添加到新位置
+            // 添加到新位置（addPersonToCell 內部會更新新週的統計）
             addPersonToCell(weekIndex, dayIndex, taskIndex, draggedPerson);
+
+            // 使用 requestAnimationFrame 確保在所有渲染完成後恢復滾動位置
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(scrollX, scrollY);
+                });
+            });
 
             draggedPerson = null;
             draggedFromCell = null;
@@ -1206,6 +1384,10 @@
                 }
             }
 
+            // 保存當前滾動位置
+            const scrollY = window.scrollY;
+            const scrollX = window.scrollX;
+
             // 添加人員
             personnelList.push(personName);
 
@@ -1215,10 +1397,25 @@
             );
             renderCellPersonnel(cell, personnelList);
 
+            // renderCellPersonnel 內部已經使用 requestAnimationFrame 恢復滾動位置
+            // 這裡再次確保（雙重保護）
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(scrollX, scrollY);
+                });
+            });
+
+            // 更新該週的統計資訊
+            updateWeeklyStats(weekIndex);
+
             markAsModified();
         }
 
         function removePersonFromCell(weekIndex, dayIndex, taskIndex, personIndex) {
+            // 保存當前滾動位置
+            const scrollY = window.scrollY;
+            const scrollX = window.scrollX;
+
             editingData[weekIndex].schedule[dayIndex][taskIndex].splice(personIndex, 1);
 
             // 重新渲染格子
@@ -1226,6 +1423,17 @@
                 `[data-week-index="${weekIndex}"][data-day-index="${dayIndex}"][data-task-index="${taskIndex}"]`
             );
             renderCellPersonnel(cell, editingData[weekIndex].schedule[dayIndex][taskIndex]);
+
+            // renderCellPersonnel 內部已經使用 requestAnimationFrame 恢復滾動位置
+            // 這裡再次確保（雙重保護）
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    window.scrollTo(scrollX, scrollY);
+                });
+            });
+
+            // 更新該週的統計資訊
+            updateWeeklyStats(weekIndex);
 
             markAsModified();
         }
@@ -1311,13 +1519,27 @@
                 dropdown.appendChild(option);
             });
 
-            // 定位下拉選單
-            const rect = cell.getBoundingClientRect();
-            dropdown.style.position = 'fixed';
-            dropdown.style.top = `${rect.bottom + 5}px`;
-            dropdown.style.left = `${rect.left}px`;
-
+            // 定位下拉選單（智能判斷上方或下方）
             document.body.appendChild(dropdown);
+
+            const rect = cell.getBoundingClientRect();
+            const dropdownHeight = dropdown.offsetHeight;
+            const windowHeight = window.innerHeight;
+            const spaceBelow = windowHeight - rect.bottom;
+            const spaceAbove = rect.top;
+
+            dropdown.style.position = 'fixed';
+            dropdown.style.left = `${rect.left}px`;
+            dropdown.style.zIndex = '9999'; // 確保在最上層
+
+            // 判斷應該在上方還是下方顯示
+            if (spaceBelow >= dropdownHeight + 10 || spaceBelow >= spaceAbove) {
+                // 下方空間足夠，或下方空間比上方大 - 在下方顯示
+                dropdown.style.top = `${rect.bottom + 5}px`;
+            } else {
+                // 上方空間更大 - 在上方顯示
+                dropdown.style.top = `${rect.top - dropdownHeight - 5}px`;
+            }
 
             // 點擊外部關閉
             setTimeout(() => {
