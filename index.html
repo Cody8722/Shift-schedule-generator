@@ -308,7 +308,8 @@
     
     let availableHolidays = [];
     let activeHolidayDates = new Set();
-    let generatedData = null; 
+    let generatedData = null;
+    let currentScheduleName = null; // 追踪當前載入的班表名稱
     let currentEditingPersonnelIndex = -1;
     
     document.addEventListener('DOMContentLoaded', () => {
@@ -657,6 +658,7 @@
                 });
                 if (response) {
                     generatedData = response.data;
+                    currentScheduleName = null; // 清除班表名稱（這是新生成的班表）
                     displaySchedule(response.html);
                 } else {
                     elements.outputContainer.classList.add('hidden');
@@ -1559,7 +1561,7 @@
             document.getElementById('edit-status').classList.add('text-orange-600', 'font-medium');
         }
 
-        function saveEdits() {
+        async function saveEdits() {
             // 將編輯資料寫回主資料
             generatedData = JSON.parse(JSON.stringify(editingData));
             hasUnsavedChanges = false;
@@ -1569,7 +1571,26 @@
             document.getElementById('edit-status').classList.remove('text-orange-600');
             document.getElementById('edit-status').classList.add('text-green-600');
 
-            alert('班表修改已儲存！');
+            // 如果當前班表是從數據庫載入的，則同步更新到數據庫
+            if (currentScheduleName) {
+                try {
+                    const result = await api.post('schedules', {
+                        name: currentScheduleName,
+                        data: generatedData
+                    });
+                    if (result) {
+                        getActiveProfile().schedules[currentScheduleName] = generatedData;
+                        alert('班表修改已儲存並同步到雲端！');
+                    } else {
+                        alert('班表修改已儲存到本地，但同步到雲端時發生錯誤。');
+                    }
+                } catch (error) {
+                    console.error('同步班表到雲端失敗:', error);
+                    alert('班表修改已儲存到本地，但同步到雲端時發生錯誤。');
+                }
+            } else {
+                alert('班表修改已儲存！');
+            }
         }
 
         function cancelEdits() {
@@ -1929,6 +1950,7 @@
                 const result = await api.post('schedules', { name: name.trim(), data: generatedData });
                 if (result) {
                     getActiveProfile().schedules[name.trim()] = generatedData;
+                    currentScheduleName = name.trim(); // 設置當前班表名稱
                     renderSavedSchedules();
                     alert('班表已儲存！');
                 }
@@ -1944,6 +1966,7 @@
                 const scheduleData = await api.get(`schedules/${name}`);
                 if (scheduleData) {
                     generatedData = scheduleData;
+                    currentScheduleName = name; // 設置當前班表名稱
                     const response = await api.post('render-schedule', scheduleData);
                     if(response && response.html) {
                         displaySchedule(response.html);
