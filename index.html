@@ -548,7 +548,7 @@
         const updateHolidaySelectionUI = async () => {
             const startWeek = elements.startWeekInput.value;
             const numWeeks = elements.numWeeksInput.value;
-            if (!startWeek || !numWeeks || parseInt(numWeeks) < 1) {
+            if (!startWeek || !numWeeks || parseInt(numWeeks, 10) < 1) {
                 availableHolidays = [];
                 activeHolidayDates = new Set();
                 updateHolidayButtonText();
@@ -1015,6 +1015,8 @@
         }
 
         function renderCellPersonnel(cell, personnelList) {
+            if (!cell || !editingData) return; // 安全檢查
+
             // 保存當前滾動位置（防止 innerHTML 清空時觸發滾動）
             const scrollY = window.scrollY;
             const scrollX = window.scrollX;
@@ -1022,8 +1024,9 @@
             cell.innerHTML = '';
 
             // 獲取人數限制
-            const weekIndex = parseInt(cell.dataset.weekIndex);
-            const taskIndex = parseInt(cell.dataset.taskIndex);
+            const weekIndex = parseInt(cell.dataset.weekIndex, 10);
+            const taskIndex = parseInt(cell.dataset.taskIndex, 10);
+            if (!editingData[weekIndex] || !editingData[weekIndex].tasks || !editingData[weekIndex].tasks[taskIndex]) return; // 防止越界
             const taskRequiredCount = editingData[weekIndex].tasks[taskIndex].count;
             const currentCount = personnelList.length;
 
@@ -1078,9 +1081,9 @@
                 removeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     e.preventDefault();
-                    const weekIndex = parseInt(cell.dataset.weekIndex);
-                    const dayIndex = parseInt(cell.dataset.dayIndex);
-                    const taskIndex = parseInt(cell.dataset.taskIndex);
+                    const weekIndex = parseInt(cell.dataset.weekIndex, 10);
+                    const dayIndex = parseInt(cell.dataset.dayIndex, 10);
+                    const taskIndex = parseInt(cell.dataset.taskIndex, 10);
                     removePersonFromCell(weekIndex, dayIndex, taskIndex, index);
                 });
 
@@ -1118,6 +1121,8 @@
 
         // 檢查是否可以將人員添加到指定格子
         function canAddPersonToCell(weekIndex, dayIndex, taskIndex, personName, ignoreSameCell = false) {
+            if (!editingData || !editingData[weekIndex]) return { canAdd: false, reason: '數據無效' };
+
             const personnelList = editingData[weekIndex].schedule[dayIndex][taskIndex];
             const tasks = editingData[weekIndex].tasks;
 
@@ -1133,9 +1138,9 @@
             // 判斷是否從同一格子拖拽（不算新增人員）
             let isDraggingFromSameCell = false;
             if (draggedFromCell) {
-                const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex);
-                const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex);
-                const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex);
+                const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex, 10);
+                const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex, 10);
+                const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex, 10);
                 isDraggingFromSameCell = (fromWeekIndex === weekIndex && fromDayIndex === dayIndex && fromTaskIndex === taskIndex);
             }
 
@@ -1159,9 +1164,9 @@
                 if (i !== taskIndex && allTasksThisDay[i].includes(personName)) {
                     // 如果是從同一天的其他格子拖拽過來，允許移動
                     if (ignoreSameCell && draggedFromCell) {
-                        const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex);
-                        const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex);
-                        const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex);
+                        const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex, 10);
+                        const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex, 10);
+                        const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex, 10);
 
                         if (fromWeekIndex === weekIndex && fromDayIndex === dayIndex && fromTaskIndex === i) {
                             continue; // 忽略原始位置
@@ -1183,9 +1188,9 @@
             const scrollX = window.scrollX;
 
             document.querySelectorAll('.editable-cell').forEach(cell => {
-                const weekIndex = parseInt(cell.dataset.weekIndex);
-                const dayIndex = parseInt(cell.dataset.dayIndex);
-                const taskIndex = parseInt(cell.dataset.taskIndex);
+                const weekIndex = parseInt(cell.dataset.weekIndex, 10);
+                const dayIndex = parseInt(cell.dataset.dayIndex, 10);
+                const taskIndex = parseInt(cell.dataset.taskIndex, 10);
 
                 const result = canAddPersonToCell(weekIndex, dayIndex, taskIndex, personName, true);
 
@@ -1318,9 +1323,9 @@
             clearAllHighlights();
 
             const cell = e.currentTarget;
-            const weekIndex = parseInt(cell.dataset.weekIndex);
-            const dayIndex = parseInt(cell.dataset.dayIndex);
-            const taskIndex = parseInt(cell.dataset.taskIndex);
+            const weekIndex = parseInt(cell.dataset.weekIndex, 10);
+            const dayIndex = parseInt(cell.dataset.dayIndex, 10);
+            const taskIndex = parseInt(cell.dataset.taskIndex, 10);
 
             // 檢查是否可以放置（雙重驗證）
             const canAdd = canAddPersonToCell(weekIndex, dayIndex, taskIndex, draggedPerson, true);
@@ -1332,9 +1337,9 @@
 
             // 檢查是否從其他格子拖拽
             if (draggedFromCell) {
-                const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex);
-                const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex);
-                const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex);
+                const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex, 10);
+                const fromDayIndex = parseInt(draggedFromCell.dataset.dayIndex, 10);
+                const fromTaskIndex = parseInt(draggedFromCell.dataset.taskIndex, 10);
 
                 // 移除原位置
                 const personIndex = editingData[fromWeekIndex].schedule[fromDayIndex][fromTaskIndex].indexOf(draggedPerson);
@@ -1609,11 +1614,20 @@
                 return;
             }
 
+            // 清理編輯狀態
+            editingData = null;
+            hasUnsavedChanges = false;
+            draggedPerson = null;
+            draggedFromCell = null;
+
             // 返回預覽模式（使用後端生成的 HTML）
             api.post('render-schedule', generatedData).then(response => {
                 if (response && response.html) {
                     elements.scheduleOutput.innerHTML = response.html;
                 }
+            }).catch(error => {
+                console.error('渲染班表失敗:', error);
+                alert('無法載入預覽模式，請重新整理頁面');
             });
         }
 
