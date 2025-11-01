@@ -21,7 +21,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'scheduleApp';
-const CONFIG_ID = 'main_config'; 
+const CONFIG_ID = 'main_config';
+
+// --- 安全性設定 ---
+// 安全的 Profile 名稱格式：字母、數字、中文、底線、連字號，1-50 字符
+const SAFE_PROFILE_NAME_REGEX = /^[a-zA-Z0-9_\u4e00-\u9fa5-]{1,50}$/;
+// 安全的班表名稱格式
+const SAFE_SCHEDULE_NAME_REGEX = /^[a-zA-Z0-9_\u4e00-\u9fa5-]{1,100}$/; 
 
 // --- 資料庫客戶端設定 ---
 let client;
@@ -55,6 +61,76 @@ const apiLimiter = rateLimit({
     message: '來自此 IP 的請求過多，請於 15 分鐘後再試。'
 });
 app.use('/api/', apiLimiter);
+
+// --- 安全輔助函式 ---
+const escapeHtml = (unsafe) => {
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+};
+
+const validateProfileName = (name) => {
+    if (!name || typeof name !== 'string') {
+        return { valid: false, error: 'Profile 名稱必須是字串' };
+    }
+    if (!SAFE_PROFILE_NAME_REGEX.test(name)) {
+        return { valid: false, error: 'Profile 名稱格式不正確（僅允許字母、數字、中文、底線、連字號，1-50 字符）' };
+    }
+    return { valid: true };
+};
+
+const validateScheduleName = (name) => {
+    if (!name || typeof name !== 'string') {
+        return { valid: false, error: '班表名稱必須是字串' };
+    }
+    if (!SAFE_SCHEDULE_NAME_REGEX.test(name)) {
+        return { valid: false, error: '班表名稱格式不正確（僅允許字母、數字、中文、底線、連字號，1-100 字符）' };
+    }
+    return { valid: true };
+};
+
+const validateSettings = (settings) => {
+    if (!settings || typeof settings !== 'object') {
+        return { valid: false, error: 'Settings 必須是對象' };
+    }
+    if (!Array.isArray(settings.tasks)) {
+        return { valid: false, error: 'tasks 必須是數組' };
+    }
+    if (!Array.isArray(settings.personnel)) {
+        return { valid: false, error: 'personnel 必須是數組' };
+    }
+
+    // 驗證每個 task
+    for (let i = 0; i < settings.tasks.length; i++) {
+        const task = settings.tasks[i];
+        if (!task.name || typeof task.name !== 'string' || task.name.length > 100) {
+            return { valid: false, error: `Task ${i} 名稱無效` };
+        }
+        if (typeof task.count !== 'number' || task.count < 1 || task.count > 50) {
+            return { valid: false, error: `Task ${i} 人數必須在 1-50 之間` };
+        }
+    }
+
+    // 驗證每個 personnel
+    for (let i = 0; i < settings.personnel.length; i++) {
+        const person = settings.personnel[i];
+        if (!person.name || typeof person.name !== 'string' || person.name.length > 50) {
+            return { valid: false, error: `Personnel ${i} 名稱無效` };
+        }
+        if (person.maxShifts !== undefined && (typeof person.maxShifts !== 'number' || person.maxShifts < 1 || person.maxShifts > 7)) {
+            return { valid: false, error: `Personnel ${i} maxShifts 必須在 1-7 之間` };
+        }
+        if (person.offDays !== undefined && !Array.isArray(person.offDays)) {
+            return { valid: false, error: `Personnel ${i} offDays 必須是數組` };
+        }
+    }
+
+    return { valid: true };
+};
 
 // --- 輔助函式 ---
 const ensureConfigDocument = async () => {
@@ -242,26 +318,29 @@ const generateScheduleHtml = (fullScheduleData) => {
     fullScheduleData.forEach((data, index) => {
         const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
         const weekDayNames = ['一', '二', '三', '四', '五'];
-        const headerStyle = `style="background-color: ${color.header}; color: white;"`;
+        // 驗證並清理顏色值（防止 CSS 注入）
+        const safeHeaderColor = /^#[0-9a-fA-F]{6}$/.test(color.header) ? color.header : '#0284c7';
+        const headerStyle = `style="background-color: ${safeHeaderColor}; color: white;"`;
         html += `
             <div class="mb-8" id="schedule-week-${index}">
-                <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${dateRange})</h3>
+                <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${escapeHtml(dateRange)})</h3>
                 <table class="schedule-table">
                     <thead>
                         <tr>
                             <th ${headerStyle}>勤務地點</th>
-                            ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${date})</th>`).join('')}
+                            ${weekDayDates.map((date, i) => `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${escapeHtml(date)})</th>`).join('')}
                         </tr>
                     </thead>
                     <tbody>
                         ${tasks.map((task, taskIndex) => `
                             <tr>
-                                <td class="font-medium align-middle">${task.name}</td>
+                                <td class="font-medium align-middle">${escapeHtml(task.name)}</td>
                                 ${weekDayDates.map((_, dayIndex) => {
                                     if (!scheduleDays[dayIndex].shouldSchedule) {
-                                        return `<td class="holiday-cell align-middle">${scheduleDays[dayIndex].description}</td>`;
+                                        return `<td class="holiday-cell align-middle">${escapeHtml(scheduleDays[dayIndex].description)}</td>`;
                                     } else {
-                                        return `<td class="align-middle">${schedule[dayIndex][taskIndex].join('<br>')}</td>`;
+                                        const personnelNames = schedule[dayIndex][taskIndex].map(name => escapeHtml(name)).join('<br>');
+                                        return `<td class="align-middle">${personnelNames}</td>`;
                                     }
                                 }).join('')}
                             </tr>
@@ -427,6 +506,13 @@ app.post('/api/profiles', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const { name } = req.body;
+
+        // 驗證 Profile 名稱
+        const validation = validateProfileName(name);
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+
         const update = { $set: { [`profiles.${name}`]: { settings: { tasks: [], personnel: [] }, schedules: {} } } };
         const result = await configCollection.updateOne({ _id: CONFIG_ID, [`profiles.${name}`]: { $exists: false } }, update);
         if (result.modifiedCount === 0) throw new Error('設定檔已存在');
@@ -445,6 +531,18 @@ app.put('/api/profiles/:name', async (req, res) => {
 
         // 解碼 URL 編碼的名稱（處理中文等特殊字元）
         const decodedName = decodeURIComponent(name);
+
+        // 驗證 Profile 名稱
+        const nameValidation = validateProfileName(decodedName);
+        if (!nameValidation.valid) {
+            return res.status(400).json({ message: nameValidation.error });
+        }
+
+        // 驗證 Settings
+        const settingsValidation = validateSettings(settings);
+        if (!settingsValidation.valid) {
+            return res.status(400).json({ message: settingsValidation.error });
+        }
 
         // 驗證設定檔是否存在
         const config = await configCollection.findOne({ _id: CONFIG_ID });
@@ -468,12 +566,8 @@ app.put('/api/profiles/:name', async (req, res) => {
         res.json({ message: `設定檔 ${decodedName} 已更新` });
     } catch (error) {
         debugDb('更新設定檔失敗:', error);
-        debugDb('錯誤詳情:', error.stack);
-        res.status(500).json({
-            message: '更新設定檔時發生錯誤',
-            error: error.message,
-            details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-        });
+        // 不洩露堆棧跟踪到客戶端
+        res.status(500).json({ message: '更新設定檔時發生錯誤' });
     }
 });
 
@@ -482,6 +576,17 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
     try {
         const oldName = decodeURIComponent(req.params.name);
         const { newName } = req.body;
+
+        // 驗證兩個名稱
+        const oldNameValidation = validateProfileName(oldName);
+        if (!oldNameValidation.valid) {
+            return res.status(400).json({ message: '舊名稱無效: ' + oldNameValidation.error });
+        }
+        const newNameValidation = validateProfileName(newName);
+        if (!newNameValidation.valid) {
+            return res.status(400).json({ message: '新名稱無效: ' + newNameValidation.error });
+        }
+
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         if (!config.profiles[oldName] || config.profiles[newName]) {
             return res.status(400).json({ message: '無效的名稱或新名稱已存在' });
@@ -495,8 +600,7 @@ app.put('/api/profiles/:name/rename', async (req, res) => {
         res.json({ message: '設定檔已重新命名' });
     } catch (error) {
         debugDb('重新命名設定檔失敗:', error);
-        debugDb('錯誤詳情:', error.stack);
-        res.status(500).json({ message: '重新命名設定檔時發生錯誤', error: error.message });
+        res.status(500).json({ message: '重新命名設定檔時發生錯誤' });
     }
 });
 
@@ -504,6 +608,13 @@ app.delete('/api/profiles/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const nameToDelete = decodeURIComponent(req.params.name);
+
+        // 驗證 Profile 名稱
+        const validation = validateProfileName(nameToDelete);
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const profileKeys = Object.keys(config.profiles);
         if (profileKeys.length <= 1) return res.status(400).json({ message: '無法刪除最後一個設定檔' });
@@ -517,8 +628,7 @@ app.delete('/api/profiles/:name', async (req, res) => {
         res.json({ message: '設定檔已刪除' });
     } catch (error) {
         debugDb('刪除設定檔失敗:', error);
-        debugDb('錯誤詳情:', error.stack);
-        res.status(500).json({ message: '刪除設定檔時發生錯誤', error: error.message });
+        res.status(500).json({ message: '刪除設定檔時發生錯誤' });
     }
 });
 
@@ -526,9 +636,31 @@ app.post('/api/schedules', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const { name, data } = req.body;
-        const config = await configCollection.findOne({ _id: CONFIG_ID });
+
+        // 驗證班表名稱
+        const validation = validateScheduleName(name);
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+
+        // 驗證班表數據結構
+        if (!Array.isArray(data) || data.length === 0) {
+            return res.status(400).json({ message: '班表數據必須是非空數組' });
+        }
+
+        // 使用原子操作避免競態條件
+        // 直接在更新時獲取 activeProfile，而不是分兩步
+        const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
+        if (!config || !config.activeProfile) {
+            return res.status(500).json({ message: '無法獲取作用中的設定檔' });
+        }
+
         const activeProfile = config.activeProfile;
-        const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $set: { [`profiles.${activeProfile}.schedules.${name}`]: data } });
+        const result = await configCollection.updateOne(
+            { _id: CONFIG_ID },
+            { $set: { [`profiles.${activeProfile}.schedules.${name}`]: data } }
+        );
+
         if (result.modifiedCount === 0) throw new Error('儲存班表失敗');
         res.status(201).json({ message: '班表已儲存' });
     } catch (error) {
@@ -541,14 +673,20 @@ app.get('/api/schedules/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const name = decodeURIComponent(req.params.name);
+
+        // 驗證班表名稱
+        const validation = validateScheduleName(name);
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+
         const config = await configCollection.findOne({ _id: CONFIG_ID });
         const scheduleData = config.profiles[config.activeProfile]?.schedules?.[name];
         if (!scheduleData) return res.status(404).json({ message: '找不到班表' });
         res.json(scheduleData);
     } catch (error) {
         debugDb('取得班表失敗:', error);
-        debugDb('錯誤詳情:', error.stack);
-        res.status(500).json({ message: '取得班表時發生錯誤', error: error.message });
+        res.status(500).json({ message: '取得班表時發生錯誤' });
     }
 });
 
@@ -556,7 +694,14 @@ app.delete('/api/schedules/:name', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const name = decodeURIComponent(req.params.name);
-        const config = await configCollection.findOne({ _id: CONFIG_ID });
+
+        // 驗證班表名稱
+        const validation = validateScheduleName(name);
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+
+        const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
         const activeProfile = config.activeProfile;
         const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } });
         if (result.modifiedCount === 0) throw new Error('刪除班表失敗');
@@ -564,8 +709,7 @@ app.delete('/api/schedules/:name', async (req, res) => {
         res.json({ message: '班表已刪除' });
     } catch (error) {
         debugDb('刪除班表失敗:', error);
-        debugDb('錯誤詳情:', error.stack);
-        res.status(500).json({ message: '刪除班表時發生錯誤', error: error.message });
+        res.status(500).json({ message: '刪除班表時發生錯誤' });
     }
 });
 

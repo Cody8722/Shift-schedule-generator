@@ -311,7 +311,18 @@
     let generatedData = null;
     let currentScheduleName = null; // 追踪當前載入的班表名稱
     let currentEditingPersonnelIndex = -1;
-    
+
+    // 安全輔助函式：HTML 轉義（防止 XSS）
+    const escapeHtml = (unsafe) => {
+        if (typeof unsafe !== 'string') return unsafe;
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    };
+
     document.addEventListener('DOMContentLoaded', () => {
         const elements = {
             profileSelect: document.getElementById('profile-select'),
@@ -471,8 +482,8 @@
                 const div = document.createElement('div');
                 div.className = 'flex items-center gap-2';
                 div.innerHTML = `
-                    <input type="text" value="${task.name}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
-                    <input type="number" value="${task.count}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count">
+                    <input type="text" value="${escapeHtml(task.name)}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${escapeHtml(task.count)}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count">
                     <button class="remove-task text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
                 `;
                 elements.taskList.appendChild(div);
@@ -485,8 +496,8 @@
                 const div = document.createElement('div');
                 div.className = 'flex items-center gap-2';
                 div.innerHTML = `
-                    <input type="text" value="${person.name}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
-                    <input type="number" value="${person.maxShifts || 5}" class="form-input w-24 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
+                    <input type="text" value="${escapeHtml(person.name)}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${escapeHtml(person.maxShifts || 5)}" class="form-input w-24 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
                     <button class="advanced-settings-btn text-blue-500 hover:text-blue-700 p-1" data-index="${index}">⚙️</button>
                     <button class="remove-personnel text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
                 `;
@@ -512,8 +523,8 @@
                     const li = document.createElement('li');
                     li.className = 'flex justify-between items-center';
                     li.innerHTML = `
-                        <a href="#" class="load-schedule-link hover:underline" data-name="${name}">${name}</a>
-                        <button class="delete-schedule-btn text-red-500 hover:text-red-700 text-xs p-1" data-name="${name}">刪除</button>
+                        <a href="#" class="load-schedule-link hover:underline" data-name="${escapeHtml(name)}">${escapeHtml(name)}</a>
+                        <button class="delete-schedule-btn text-red-500 hover:text-red-700 text-xs p-1" data-name="${escapeHtml(name)}">刪除</button>
                     `;
                     elements.savedSchedulesList.appendChild(li);
                 });
