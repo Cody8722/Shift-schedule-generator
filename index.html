@@ -937,12 +937,15 @@
                 shiftCounts[person.name] = 0;
             });
 
-            // 遍歷所有天和所有勤務，計算次數
+            // 遍歷所有天和所有勤務，計算次數（包含已刪除的人員）
             schedule.forEach(daySchedule => {
                 daySchedule.forEach(taskPersonnel => {
                     taskPersonnel.forEach(personName => {
                         if (shiftCounts[personName] !== undefined) {
                             shiftCounts[personName]++;
+                        } else {
+                            // 人員已從列表中刪除，但還在班表中
+                            shiftCounts[personName] = (shiftCounts[personName] || 0) + 1;
                         }
                     });
                 });
@@ -961,6 +964,7 @@
             const tagsContainer = document.createElement('div');
             tagsContainer.className = 'flex flex-wrap gap-2';
 
+            // 先顯示當前人員列表中的人員
             personnel.forEach(person => {
                 const count = shiftCounts[person.name] || 0;
                 const maxShifts = person.maxShifts || 5;
@@ -994,6 +998,19 @@
                 }
 
                 tagsContainer.appendChild(tag);
+            });
+
+            // 顯示已刪除但還在班表中的人員
+            Object.keys(shiftCounts).forEach(personName => {
+                const isInCurrentList = personnel.some(p => p.name === personName);
+                if (!isInCurrentList) {
+                    const count = shiftCounts[personName];
+                    const tag = document.createElement('div');
+                    tag.className = 'px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700 border border-purple-300';
+                    tag.textContent = `${personName}: ${count} (已刪除)`;
+                    tag.title = '此人員已從設定中刪除，但仍在班表中';
+                    tagsContainer.appendChild(tag);
+                }
             });
 
             statsContainer.appendChild(tagsContainer);
@@ -1567,33 +1584,42 @@
         }
 
         async function saveEdits() {
-            // 將編輯資料寫回主資料
-            generatedData = JSON.parse(JSON.stringify(editingData));
-            hasUnsavedChanges = false;
-
-            document.getElementById('save-edits-btn').disabled = true;
-            document.getElementById('edit-status').textContent = '✅ 已儲存';
-            document.getElementById('edit-status').classList.remove('text-orange-600');
-            document.getElementById('edit-status').classList.add('text-green-600');
-
-            // 如果當前班表是從數據庫載入的，則同步更新到數據庫
+            // 如果當前班表是從數據庫載入的，先同步到數據庫
             if (currentScheduleName) {
                 try {
                     const result = await api.post('schedules', {
                         name: currentScheduleName,
-                        data: generatedData
+                        data: editingData
                     });
                     if (result) {
+                        // API 成功後才更新本地狀態
+                        generatedData = JSON.parse(JSON.stringify(editingData));
+                        hasUnsavedChanges = false;
                         getActiveProfile().schedules[currentScheduleName] = generatedData;
+
+                        document.getElementById('save-edits-btn').disabled = true;
+                        document.getElementById('edit-status').textContent = '✅ 已儲存';
+                        document.getElementById('edit-status').classList.remove('text-orange-600');
+                        document.getElementById('edit-status').classList.add('text-green-600');
+
                         alert('班表修改已儲存並同步到雲端！');
                     } else {
-                        alert('班表修改已儲存到本地，但同步到雲端時發生錯誤。');
+                        alert('同步到雲端時發生錯誤，請稍後再試。');
                     }
                 } catch (error) {
                     console.error('同步班表到雲端失敗:', error);
-                    alert('班表修改已儲存到本地，但同步到雲端時發生錯誤。');
+                    alert('同步到雲端時發生錯誤，請稍後再試。');
                 }
             } else {
+                // 未命名的班表，只保存到本地
+                generatedData = JSON.parse(JSON.stringify(editingData));
+                hasUnsavedChanges = false;
+
+                document.getElementById('save-edits-btn').disabled = true;
+                document.getElementById('edit-status').textContent = '✅ 已儲存';
+                document.getElementById('edit-status').classList.remove('text-orange-600');
+                document.getElementById('edit-status').classList.add('text-green-600');
+
                 alert('班表修改已儲存！');
             }
         }
@@ -1821,7 +1847,7 @@
             if (currentEditingPersonnelIndex > -1) {
                 handleSettingsChange(() => {
                     const person = getActiveProfile().settings.personnel[currentEditingPersonnelIndex];
-                    person.offDays = Array.from(elements.offDaysContainer.querySelectorAll('input:checked')).map(cb => parseInt(cb.value));
+                    person.offDays = Array.from(elements.offDaysContainer.querySelectorAll('input:checked')).map(cb => parseInt(cb.value, 10));
                     person.preferredTask = elements.preferredTaskSelect.value;
                 });
                 closeModal();
@@ -1834,7 +1860,11 @@
             if (result) {
                 appState.activeProfile = newProfileName;
                 renderAll();
-                generatedData = null; 
+                // 清除所有班表相關狀態
+                generatedData = null;
+                currentScheduleName = null;
+                editingData = null;
+                hasUnsavedChanges = false;
                 elements.outputContainer.classList.add('hidden');
             }
         });
@@ -1876,8 +1906,11 @@
             const a = document.createElement('a');
             a.href = url;
             a.download = `${appState.activeProfile}_profile.json`;
+            document.body.appendChild(a); // 添加到 DOM 以確保兼容性
             a.click();
-            URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            // 延遲釋放 URL，確保下載開始
+            setTimeout(() => URL.revokeObjectURL(url), 100);
         });
 
         elements.importProfileBtn.addEventListener('click', () => elements.profileFileInput.click());
@@ -1896,6 +1929,12 @@
                             const activeProfile = getActiveProfile();
                             activeProfile.settings = importedData.settings;
                             activeProfile.schedules = importedData.schedules || {};
+                            // 清除所有班表相關狀態
+                            generatedData = null;
+                            currentScheduleName = null;
+                            editingData = null;
+                            hasUnsavedChanges = false;
+                            elements.outputContainer.classList.add('hidden');
                             await saveSettings();
                             renderAll();
                         }
