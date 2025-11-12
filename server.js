@@ -314,13 +314,29 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
 };
 
 const generateScheduleHtml = (fullScheduleData) => {
-    let html = '';
+    // 加入 A4 直式版面的 CSS
+    let html = `
+<style>
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 10mm;
+    }
+    body {
+        width: 210mm;
+        min-height: 297mm;
+    }
+}
+</style>
+`;
+
     fullScheduleData.forEach((data, index) => {
         const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
         const weekDayNames = ['一', '二', '三', '四', '五'];
         // 驗證並清理顏色值（防止 CSS 注入）
         const safeHeaderColor = /^#[0-9a-fA-F]{6}$/.test(color.header) ? color.header : '#0284c7';
         const headerStyle = `style="background-color: ${safeHeaderColor}; color: white;"`;
+
         html += `
             <div class="mb-8" id="schedule-week-${index}">
                 <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${escapeHtml(dateRange)})</h3>
@@ -343,7 +359,7 @@ const generateScheduleHtml = (fullScheduleData) => {
                                 1 // 至少一列
                             );
 
-                            // 為每位員工生成一個 <tr>
+                            // 為每位員工生成一個獨立的 <tr>
                             let taskRows = '';
                             for (let personIndex = 0; personIndex < maxPersonnel; personIndex++) {
                                 taskRows += '<tr>';
@@ -353,7 +369,7 @@ const generateScheduleHtml = (fullScheduleData) => {
                                     taskRows += `<td class="font-medium align-middle" rowspan="${maxPersonnel}">${escapeHtml(task.name)}</td>`;
                                 }
 
-                                // 為每一天生成 <td>
+                                // 為每一天生成 <td>，每個儲存格只顯示一位員工
                                 weekDayDates.forEach((_, dayIndex) => {
                                     if (!scheduleDays[dayIndex].shouldSchedule) {
                                         // 假日：只在第一列顯示（使用 rowspan）
@@ -361,7 +377,7 @@ const generateScheduleHtml = (fullScheduleData) => {
                                             taskRows += `<td class="holiday-cell align-middle" rowspan="${maxPersonnel}">${escapeHtml(scheduleDays[dayIndex].description)}</td>`;
                                         }
                                     } else {
-                                        // 正常日：顯示這位員工的姓名
+                                        // 正常日：顯示這位員工的姓名（一個儲存格只有一個人）
                                         const personnel = schedule[dayIndex][taskIndex];
                                         const personName = personnel[personIndex] || '';
                                         taskRows += `<td class="align-middle">${escapeHtml(personName)}</td>`;
