@@ -123,6 +123,28 @@
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
 
+        /* 衝突標記樣式 */
+        .conflict-cell {
+            background-color: #fee2e2 !important;
+            border: 2px solid #ef4444 !important;
+            animation: pulse-red 2s ease-in-out infinite;
+            cursor: help;
+        }
+        .dark .conflict-cell {
+            background-color: #7f1d1d !important;
+            border-color: #dc2626 !important;
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { background-color: #fee2e2; }
+            50% { background-color: #fecaca; }
+        }
+
+        .dark @keyframes pulse-red {
+            0%, 100% { background-color: #7f1d1d; }
+            50% { background-color: #991b1b; }
+        }
+
         /* 列印模式：使用減法，明確隱藏不需要的 UI 元素 */
         @media print {
             /* 隱藏導航列 */
@@ -736,6 +758,156 @@
             elements.outputContainer.classList.remove('hidden');
             // 啟用編輯模式
             enableEditMode();
+            // 自動驗證班表
+            validateScheduleAndDisplay();
+        }
+
+        // === 班表衝突檢測系統 ===
+        let validationResult = null;
+
+        async function validateScheduleAndDisplay() {
+            if (!generatedData) return;
+
+            try {
+                validationResult = await api.post('schedules/validate', {
+                    schedule: generatedData,
+                    constraints: {
+                        maxConsecutiveDays: 5,
+                        minRestDays: 2
+                    }
+                });
+
+                if (validationResult && !validationResult.valid) {
+                    // 顯示衝突警告
+                    displayConflictWarning(validationResult.conflicts);
+                } else {
+                    // 清除衝突警告
+                    clearConflictWarning();
+                }
+            } catch (error) {
+                console.error('驗證班表失敗:', error);
+            }
+        }
+
+        function displayConflictWarning(conflicts) {
+            // 移除舊的警告面板
+            clearConflictWarning();
+
+            // 創建警告面板
+            const warningPanel = document.createElement('div');
+            warningPanel.id = 'conflict-warning-panel';
+            warningPanel.className = 'bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded shadow-md';
+            warningPanel.innerHTML = `
+                <div class="flex items-start">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="ml-3 flex-1">
+                        <h3 class="text-sm font-medium text-red-800">
+                            ⚠️ 發現 ${conflicts.length} 個班表衝突
+                        </h3>
+                        <div class="mt-2 text-sm text-red-700">
+                            <ul class="list-disc list-inside space-y-1">
+                                ${conflicts.map(conflict => {
+                                    if (conflict.type === 'duplicate') {
+                                        return `<li><strong>${conflict.person}</strong> 在第 ${conflict.week} 週 ${formatDate(conflict.date)} 重複排班</li>`;
+                                    } else if (conflict.type === 'overwork') {
+                                        return `<li><strong>${conflict.person}</strong> 連續工作 ${conflict.consecutiveDays} 天 (${formatDate(conflict.startDate)} - ${formatDate(conflict.endDate)})</li>`;
+                                    }
+                                    return '';
+                                }).join('')}
+                            </ul>
+                        </div>
+                        <div class="mt-4 flex gap-2">
+                            <button id="regenerate-btn" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded transition">
+                                🔄 重新生成
+                            </button>
+                            <button id="dismiss-warning-btn" class="bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium py-2 px-4 rounded transition">
+                                ❌ 關閉警告
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 插入到班表輸出容器之前
+            const outputContainer = elements.outputContainer;
+            outputContainer.parentNode.insertBefore(warningPanel, outputContainer);
+
+            // 綁定按鈕事件
+            document.getElementById('regenerate-btn').addEventListener('click', regenerateSchedule);
+            document.getElementById('dismiss-warning-btn').addEventListener('click', clearConflictWarning);
+
+            // 標記衝突的儲存格（紅色背景）
+            highlightConflictCells(conflicts);
+        }
+
+        function clearConflictWarning() {
+            const warningPanel = document.getElementById('conflict-warning-panel');
+            if (warningPanel) {
+                warningPanel.remove();
+            }
+            // 清除所有衝突標記
+            document.querySelectorAll('.conflict-cell').forEach(cell => {
+                cell.classList.remove('conflict-cell');
+            });
+        }
+
+        function highlightConflictCells(conflicts) {
+            conflicts.forEach(conflict => {
+                if (conflict.type === 'duplicate') {
+                    // 標記重複排班的儲存格
+                    highlightDuplicateConflict(conflict);
+                } else if (conflict.type === 'overwork') {
+                    // 標記過勞的儲存格
+                    highlightOverworkConflict(conflict);
+                }
+            });
+        }
+
+        function highlightDuplicateConflict(conflict) {
+            // 找到第 N 週的表格
+            const weekElement = document.getElementById(`schedule-week-${conflict.week - 1}`);
+            if (!weekElement) return;
+
+            // 找到對應日期的所有儲存格，標記為衝突
+            const cells = weekElement.querySelectorAll('td');
+            cells.forEach(cell => {
+                const text = cell.textContent.trim();
+                if (text === conflict.person) {
+                    cell.classList.add('conflict-cell');
+                    cell.setAttribute('title', `⚠️ ${conflict.person} 在此日重複排班`);
+                }
+            });
+        }
+
+        function highlightOverworkConflict(conflict) {
+            // 標記過勞員工的所有工作日
+            conflict.dates?.forEach(date => {
+                const cells = document.querySelectorAll('td');
+                cells.forEach(cell => {
+                    const text = cell.textContent.trim();
+                    if (text === conflict.person) {
+                        cell.classList.add('conflict-cell');
+                        cell.setAttribute('title', `⚠️ ${conflict.person} 連續工作 ${conflict.consecutiveDays} 天`);
+                    }
+                });
+            });
+        }
+
+        function formatDate(dateStr) {
+            // 將 YYYYMMDD 轉換為 MM/DD 格式
+            if (!dateStr || dateStr.length !== 8) return dateStr;
+            const month = dateStr.substring(4, 6);
+            const day = dateStr.substring(6, 8);
+            return `${month}/${day}`;
+        }
+
+        async function regenerateSchedule() {
+            clearConflictWarning();
+            await generateFullSchedule();
         }
 
         // === 可編輯班表系統 ===
