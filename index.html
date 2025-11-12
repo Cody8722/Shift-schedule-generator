@@ -292,8 +292,8 @@
                             <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
                             <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製</button>
                             <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">Excel</button>
-                            <button id="export-pdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-md transition">🖨️ 列印（推薦）</button>
-                            <button id="export-image-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition text-sm">📸 匯出圖片 PDF</button>
+                            <button id="export-pdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-md transition">📄 PDF（推薦）</button>
+                            <button id="export-image-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition text-sm">🖨️ 瀏覽器列印</button>
                         </div>
                     </div>
                     <div id="schedule-output" class="overflow-x-auto"></div>
@@ -2093,9 +2093,9 @@
             XLSX.writeFile(wb, "班表.xlsx");
         });
 
-        // 策略 C：兩個按鈕 - 列印（推薦）和匯出圖片 PDF
-        elements.exportPdfBtn.addEventListener('click', printSchedule);
-        elements.exportImagePdfBtn.addEventListener('click', exportToPdf);
+        // 策略 C 修正：主按鈕用 jsPDF 縮放（適合多週），備用按鈕用瀏覽器列印（適合單週）
+        elements.exportPdfBtn.addEventListener('click', exportToPdf);
+        elements.exportImagePdfBtn.addEventListener('click', printSchedule);
 
         elements.saveScheduleBtn.addEventListener('click', async () => {
             if (!generatedData) return alert('請先產生班表！');
