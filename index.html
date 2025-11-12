@@ -244,7 +244,8 @@
                             <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
                             <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製</button>
                             <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">Excel</button>
-                            <button id="export-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition">PDF</button>
+                            <button id="export-pdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-md transition">🖨️ 列印（推薦）</button>
+                            <button id="export-image-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition text-sm">📸 匯出圖片 PDF</button>
                         </div>
                     </div>
                     <div id="schedule-output" class="overflow-x-auto"></div>
@@ -349,6 +350,7 @@
             copyBtn: document.getElementById('copy-schedule'),
             exportExcelBtn: document.getElementById('export-excel'),
             exportPdfBtn: document.getElementById('export-pdf'),
+            exportImagePdfBtn: document.getElementById('export-image-pdf'),
             saveScheduleBtn: document.getElementById('save-schedule-btn'),
             savedSchedulesList: document.getElementById('saved-schedules-list'),
             themeToggle: document.getElementById('theme-toggle'),
@@ -1672,15 +1674,53 @@
             // 編輯模式按鈕已包含在 toolbar 中
         }
 
+        // 策略 C：瀏覽器原生列印（推薦，A4 直式 + rowspan）
+        async function printSchedule() {
+            if (!generatedData) return;
+
+            try {
+                // 強制切換到預覽模式（確保使用後端生成的 rowspan HTML）
+                const response = await api.post('render-schedule', generatedData);
+                if (response && response.html) {
+                    elements.scheduleOutput.innerHTML = response.html;
+                }
+
+                // 等待 DOM 更新
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // 使用瀏覽器原生列印（尊重後端的 @page CSS）
+                window.print();
+            } catch (err) {
+                console.error("列印失敗:", err);
+                alert('列印失敗，請稍後再試');
+            }
+        }
+
+        // 策略 C：jsPDF 圖片匯出（適合多週班表，但已強制 A4 直式 + rowspan）
         async function exportToPdf() {
             if (!generatedData) return;
+
+            try {
+                // ✅ 強制載入後端生成的 rowspan HTML（確保抓到正確的表格結構）
+                const response = await api.post('render-schedule', generatedData);
+                if (response && response.html) {
+                    elements.scheduleOutput.innerHTML = response.html;
+                }
+
+                // 等待 DOM 更新
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (err) {
+                console.error("載入預覽 HTML 失敗:", err);
+                alert('無法載入班表，請稍後再試');
+                return;
+            }
+
             const { jsPDF } = window.jspdf;
             const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
             const numWeeks = generatedData.length;
 
-            // 根據週數決定使用橫向或直向，以及字體大小
-            const isLandscape = numWeeks >= 2;
-            const orientation = isLandscape ? 'l' : 'p'; // landscape or portrait
+            // ✅ 強制 A4 直式（修復橫向問題）
+            const orientation = 'p'; // 永遠 portrait（符合後端 @page CSS）
 
             // 創建樣式，根據週數調整字體大小（大幅增加字體以提升可讀性）
             let fontSize, headerFontSize, titleFontSize, padding, scaleValue;
@@ -1716,8 +1756,8 @@
                     display: block;
                     padding: ${padding}px;
                     background: white;
-                    width: ${isLandscape ? '1800px' : '1000px'} !important;
-                    min-width: ${isLandscape ? '1800px' : '1000px'} !important;
+                    width: 1000px !important;
+                    min-width: 1000px !important;
                 }
                 .pdf-export-container .mb-8 { margin-bottom: ${padding}px !important; }
                 .pdf-export-container h3 {
@@ -2005,7 +2045,9 @@
             XLSX.writeFile(wb, "班表.xlsx");
         });
 
-        elements.exportPdfBtn.addEventListener('click', exportToPdf);
+        // 策略 C：兩個按鈕 - 列印（推薦）和匯出圖片 PDF
+        elements.exportPdfBtn.addEventListener('click', printSchedule);
+        elements.exportImagePdfBtn.addEventListener('click', exportToPdf);
 
         elements.saveScheduleBtn.addEventListener('click', async () => {
             if (!generatedData) return alert('請先產生班表！');
