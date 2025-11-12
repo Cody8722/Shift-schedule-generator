@@ -123,17 +123,35 @@
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
 
-        /* 列印模式：只顯示班表，隱藏所有 UI */
+        /* 列印模式：使用減法，明確隱藏不需要的 UI 元素 */
         @media print {
-            /* 隱藏所有頁面元素 */
-            body > * {
+            /* 隱藏導航列 */
+            nav {
                 display: none !important;
             }
 
-            /* 只顯示班表輸出容器 */
+            /* 隱藏標題區域（包含主題切換按鈕） */
+            header {
+                display: none !important;
+            }
+
+            /* 隱藏左側所有表單設定區域 */
+            .lg\:col-span-1 {
+                display: none !important;
+            }
+
+            /* 隱藏班表結果區域的標題和按鈕列 */
+            #output-container > div:first-child {
+                display: none !important;
+            }
+
+            /* 隱藏已儲存班表區域（如果存在） */
+            .lg\:col-span-2 > div:not(#output-container) {
+                display: none !important;
+            }
+
+            /* 優化班表容器外觀 */
             #output-container {
-                display: block !important;
-                position: static !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 border: none !important;
@@ -141,18 +159,12 @@
                 background: white !important;
             }
 
-            /* 隱藏按鈕區域（標題和按鈕） */
-            #output-container > div:first-child {
-                display: none !important;
-            }
-
-            /* 顯示班表內容 */
+            /* 確保班表內容可見 */
             #schedule-output {
-                display: block !important;
                 overflow: visible !important;
             }
 
-            /* 確保後端生成的樣式被應用（A4 Portrait 已在後端 HTML 中） */
+            /* 列印優化：避免表格跨頁切斷 */
             .schedule-table {
                 page-break-inside: avoid;
                 width: 100% !important;
