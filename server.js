@@ -332,19 +332,46 @@ const generateScheduleHtml = (fullScheduleData) => {
                         </tr>
                     </thead>
                     <tbody>
-                        ${tasks.map((task, taskIndex) => `
-                            <tr>
-                                <td class="font-medium align-middle">${escapeHtml(task.name)}</td>
-                                ${weekDayDates.map((_, dayIndex) => {
+                        ${tasks.map((task, taskIndex) => {
+                            // 計算這個任務在整週中最多有幾位員工（決定需要幾列）
+                            const maxPersonnel = Math.max(
+                                ...weekDayDates.map((_, dayIndex) =>
+                                    scheduleDays[dayIndex].shouldSchedule
+                                        ? schedule[dayIndex][taskIndex].length
+                                        : 0
+                                ),
+                                1 // 至少一列
+                            );
+
+                            // 為每位員工生成一個 <tr>
+                            let taskRows = '';
+                            for (let personIndex = 0; personIndex < maxPersonnel; personIndex++) {
+                                taskRows += '<tr>';
+
+                                // 第一列顯示任務名稱（使用 rowspan 跨越所有員工列）
+                                if (personIndex === 0) {
+                                    taskRows += `<td class="font-medium align-middle" rowspan="${maxPersonnel}">${escapeHtml(task.name)}</td>`;
+                                }
+
+                                // 為每一天生成 <td>
+                                weekDayDates.forEach((_, dayIndex) => {
                                     if (!scheduleDays[dayIndex].shouldSchedule) {
-                                        return `<td class="holiday-cell align-middle">${escapeHtml(scheduleDays[dayIndex].description)}</td>`;
+                                        // 假日：只在第一列顯示（使用 rowspan）
+                                        if (personIndex === 0) {
+                                            taskRows += `<td class="holiday-cell align-middle" rowspan="${maxPersonnel}">${escapeHtml(scheduleDays[dayIndex].description)}</td>`;
+                                        }
                                     } else {
-                                        const personnelNames = schedule[dayIndex][taskIndex].map(name => escapeHtml(name)).join('<br>');
-                                        return `<td class="align-middle">${personnelNames}</td>`;
+                                        // 正常日：顯示這位員工的姓名
+                                        const personnel = schedule[dayIndex][taskIndex];
+                                        const personName = personnel[personIndex] || '';
+                                        taskRows += `<td class="align-middle">${escapeHtml(personName)}</td>`;
                                     }
-                                }).join('')}
-                            </tr>
-                        `).join('')}
+                                });
+
+                                taskRows += '</tr>';
+                            }
+                            return taskRows;
+                        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -801,13 +828,39 @@ const startServer = async () => {
     }
 };
 
-startServer();
-
-process.on('SIGINT', async () => {
-    debugServer('收到 SIGINT。正在關閉連線...');
-    if (client) {
-        await client.close();
+// 測試環境下的數據庫初始化函數
+const initTestDb = async () => {
+    if (process.env.NODE_ENV === 'test' && MONGODB_URI) {
+        try {
+            await client.connect();
+            db = client.db(DB_NAME);
+            configCollection = db.collection('profiles');
+            holidaysCollection = db.collection('holidays');
+            isDbConnected = true;
+            await ensureConfigDocument();
+            await seedHolidays();
+            debugDb('測試環境資料庫已初始化');
+        } catch (err) {
+            debugDb('測試環境資料庫初始化失敗: %O', err);
+            isDbConnected = false;
+        }
     }
-    process.exit(0);
-});
+};
+
+// 導出 app 和輔助函數供測試使用
+module.exports = app;
+module.exports.initTestDb = initTestDb;
+
+// 僅在非測試環境下自動啟動伺服器
+if (process.env.NODE_ENV !== 'test') {
+    startServer();
+
+    process.on('SIGINT', async () => {
+        debugServer('收到 SIGINT。正在關閉連線...');
+        if (client) {
+            await client.close();
+        }
+        process.exit(0);
+    });
+}
 
