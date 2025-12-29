@@ -42,13 +42,25 @@ if (MONGODB_URI) {
             version: ServerApiVersion.v1,
             strict: true,
             deprecationErrors: true,
-        }
+        },
+        // 增加連線逾時設定,處理網路問題
+        connectTimeoutMS: 30000,
+        socketTimeoutMS: 30000,
+        // 增加重試設定
+        retryWrites: true,
+        retryReads: true,
+        maxPoolSize: 10,
+        minPoolSize: 2
     });
 } else {
     debugServer('警告: 未提供 MONGODB_URI 環境變數。資料庫功能將被禁用。');
 }
 
 // --- 中介軟體設定 ---
+// 信任代理設定 (必須在 rate limiter 之前設定)
+// 當應用程式部署在反向代理(如 Zeabur)後面時需要此設定
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
@@ -808,6 +820,11 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Favicon 路由 - 防止 404 錯誤
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end(); // 204 No Content
+});
+
 // --- 伺服器啟動函式 ---
 const startServer = async () => {
     if (!client) {
@@ -836,6 +853,39 @@ const startServer = async () => {
         });
     } catch (err) {
         console.error("無法連線到 MongoDB 或啟動伺服器:", err);
+
+        // 提供更詳細的錯誤訊息
+        if (err.code === 8000) {
+            console.error('\n⚠️  MongoDB Atlas 錯誤 (code: 8000)');
+
+            // 檢查是否為儲存空間配額問題
+            if (err.errmsg && err.errmsg.includes('space quota')) {
+                console.error('🚨 儲存空間配額已用盡!');
+                console.error('錯誤訊息:', err.errmsg);
+                console.error('\n解決方案:');
+                console.error('1. 登入 MongoDB Atlas (https://cloud.mongodb.com)');
+                console.error('2. 刪除不需要的資料或集合以釋放空間');
+                console.error('3. 或升級到付費方案以獲得更多儲存空間');
+                console.error('4. 或建立新的免費叢集 (每個帳號可建立一個免費叢集)\n');
+            } else {
+                console.error('可能的原因:');
+                console.error('1. 資料庫認證失敗 - 請檢查 MONGODB_URI 中的使用者名稱和密碼');
+                console.error('2. IP 白名單限制 - 請在 MongoDB Atlas 中將此伺服器的 IP 位址加入白名單');
+                console.error('3. 資料庫存取權限不足 - 請確認使用者具有正確的資料庫權限');
+                console.error('4. 網路連線問題 - 請檢查網路連線是否正常\n');
+            }
+        } else if (err.name === 'MongoNetworkError') {
+            console.error('\n⚠️  MongoDB 網路連線錯誤');
+            console.error('請檢查:');
+            console.error('1. 網路連線是否正常');
+            console.error('2. MongoDB URI 格式是否正確');
+            console.error('3. 防火牆設定是否允許連線\n');
+        } else if (err.name === 'MongoServerError') {
+            console.error('\n⚠️  MongoDB 伺服器錯誤');
+            console.error('錯誤訊息:', err.message);
+            console.error('錯誤代碼:', err.code, '\n');
+        }
+
         isDbConnected = false;
         debugServer('伺服器啟動失敗: %O', err);
         app.listen(PORT, () => {
