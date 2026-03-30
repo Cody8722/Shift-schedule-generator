@@ -160,6 +160,16 @@ const validateSettings = (settings) => {
         if (person.offDays !== undefined && !Array.isArray(person.offDays)) {
             return { valid: false, error: `Personnel ${i} offDays 必須是數組` };
         }
+        if (person.taskScores !== undefined) {
+            if (typeof person.taskScores !== 'object' || person.taskScores === null || Array.isArray(person.taskScores)) {
+                return { valid: false, error: `Personnel ${i} taskScores 必須是物件` };
+            }
+            for (const [taskName, score] of Object.entries(person.taskScores)) {
+                if (typeof score !== 'number' || !Number.isInteger(score) || score < 0 || score > 5) {
+                    return { valid: false, error: `Personnel ${i} 的 taskScores["${taskName}"] 必須是 0-5 的整數` };
+                }
+            }
+        }
     }
 
     return { valid: true };
@@ -330,38 +340,63 @@ const seedHolidays = async () => {
 };
 
 
+// [預留功能] 技能分數系統 — 目前 UI 尚未提供輸入介面，邏輯保留供日後啟用
+// 計算人員對特定班次的有效技能分 (0-5)
+// 優先使用 taskScores，否則從 preferredTask 推算（向下兼容）
+const getEffectiveScore = (person, taskName) => {
+    if (person.taskScores && typeof person.taskScores === 'object') {
+        const score = person.taskScores[taskName];
+        if (typeof score === 'number') return score;
+        return 1; // taskScores 存在但無此班次的條目 → 低分
+    }
+    if (!person.preferredTask) return 3;             // 無偏好 → 中性
+    if (person.preferredTask === taskName) return 4; // 偏好此班次
+    return 2;                                        // 偏好其他班次
+};
+
 const generateWeeklySchedule = (settings, scheduleDays) => {
     const { personnel, tasks } = settings;
-    let availablePersonnel = [...personnel];
     const weeklySchedule = Array(5).fill(null).map(() => Array(tasks.length).fill(null).map(() => []));
     const shiftCounts = new Map(personnel.map(p => [p.name, 0]));
 
+    // 加權係數（三項加總為 1）
+    const W_SKILL   = 0.45; // 技能適合度
+    const W_FAIR    = 0.35; // 公平性（班次越少優先）
+    const W_RAND    = 0.20; // 隨機擾動（防止每次結果相同）
+
     for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
-        let dailyAvailablePersonnel = availablePersonnel.filter(p =>
+
+        let dailyPool = personnel.filter(p =>
             !p.offDays?.includes(dayIndex) &&
             (shiftCounts.get(p.name) || 0) < (p.maxShifts || 5)
         );
+
         for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
             const task = tasks[taskIndex];
-            let preferredPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask === task.name);
-            let otherPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask !== task.name);
-            for (let i = preferredPersonnel.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [preferredPersonnel[i], preferredPersonnel[j]] = [preferredPersonnel[j], preferredPersonnel[i]];
-            }
-            for (let i = otherPersonnel.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [otherPersonnel[i], otherPersonnel[j]] = [otherPersonnel[j], otherPersonnel[i]];
-            }
-            const combinedPool = [...preferredPersonnel, ...otherPersonnel];
+
+            // 計算每位可用人員的加權競標分
+            const scored = dailyPool.map(p => {
+                const maxS = p.maxShifts || 5;
+                const used = shiftCounts.get(p.name) || 0;
+                const skillScore    = getEffectiveScore(p, task.name) / 5; // 正規化到 0-1
+                const fairnessScore = 1 - (used / maxS);                   // 班次越少越高
+                const randomScore   = Math.random();
+                const total = W_SKILL * skillScore + W_FAIR * fairnessScore + W_RAND * randomScore;
+                return { person: p, score: total };
+            });
+
+            // 降序排列，高分者優先
+            scored.sort((a, b) => b.score - a.score);
+
             for (let i = 0; i < task.count; i++) {
-                if (combinedPool.length > 0) {
-                    const person = combinedPool.shift();
-                    weeklySchedule[dayIndex][taskIndex].push(person.name);
-                    shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
-                    dailyAvailablePersonnel = dailyAvailablePersonnel.filter(p => p.name !== person.name);
-                }
+                if (scored.length === 0) break;
+                const { person } = scored.shift();
+                weeklySchedule[dayIndex][taskIndex].push(person.name);
+                shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
+                // 同一天一人只排一班：從今日候選移除
+                dailyPool = dailyPool.filter(p => p.name !== person.name);
+                scored.splice(0, scored.length, ...scored.filter(s => s.person.name !== person.name));
             }
         }
     }
