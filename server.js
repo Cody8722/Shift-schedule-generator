@@ -358,49 +358,57 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
     const { personnel, tasks } = settings;
     const weeklySchedule = Array(5).fill(null).map(() => Array(tasks.length).fill(null).map(() => []));
     const shiftCounts = new Map(personnel.map(p => [p.name, 0]));
+    // 每天已分配的人（同一天不重複排）
+    const dailyAssigned = new Map(
+        scheduleDays.map((_, i) => [i, new Set()])
+    );
 
-    // 同班次數內的優先順序係數（加總為 1）
-    const W_SKILL = 0.60; // [預留] 技能適合度（目前 UI 未提供設定）
-    const W_RAND  = 0.40; // 隨機擾動（防止每次結果相同）
-
-    // 隨機打亂天的處理順序，避免週五永遠最後被排而空班
-    const dayOrder = [0, 1, 2, 3, 4].sort(() => Math.random() - 0.5);
-    for (const dayIndex of dayOrder) {
-        if (!scheduleDays[dayIndex].shouldSchedule) continue;
-
-        let dailyPool = personnel.filter(p =>
-            !p.offDays?.includes(dayIndex) &&
-            (shiftCounts.get(p.name) || 0) < (p.maxShifts || 5)
-        );
-
-        for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
-            const task = tasks[taskIndex];
-
-            // 計算每位可用人員的分數
-            const scored = dailyPool.map(p => {
-                const skillScore  = getEffectiveScore(p, task.name) / 5; // [預留] 技能分
-                const randomScore = Math.random();
-                return {
-                    person: p,
-                    used: shiftCounts.get(p.name) || 0,
-                    tiebreak: W_SKILL * skillScore + W_RAND * randomScore
-                };
-            });
-
-            // 先按班次數量升序（最少班次絕對優先），相同班次數再用技能+隨機決定
-            scored.sort((a, b) => a.used !== b.used ? a.used - b.used : b.tiebreak - a.tiebreak);
-
-            for (let i = 0; i < task.count; i++) {
-                if (scored.length === 0) break;
-                const { person } = scored.shift();
-                weeklySchedule[dayIndex][taskIndex].push(person.name);
-                shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
-                // 同一天一人只排一班：從今日候選移除
-                dailyPool = dailyPool.filter(p => p.name !== person.name);
-                scored.splice(0, scored.length, ...scored.filter(s => s.person.name !== person.name));
+    // 取出所有需要填補的 slot，按「輪次（slotIndex）」排序：
+    // 先填每天的第 1 個人（保證每天不空），再填第 2 個、第 3 個...
+    // 每一輪內，各天的順序隨機打亂（避免固定偏好某一天）
+    const maxCount = Math.max(...tasks.map(t => t.count), 1);
+    const slots = [];
+    for (let slotIndex = 0; slotIndex < maxCount; slotIndex++) {
+        const workDayIndices = [0, 1, 2, 3, 4]
+            .filter(i => scheduleDays[i].shouldSchedule)
+            .sort(() => Math.random() - 0.5); // 每輪隨機順序
+        for (const dayIndex of workDayIndices) {
+            for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
+                if (slotIndex < tasks[taskIndex].count) {
+                    slots.push({ dayIndex, taskIndex });
+                }
             }
         }
     }
+
+    // 逐一填補每個 slot
+    for (const { dayIndex, taskIndex } of slots) {
+        const task = tasks[taskIndex];
+        const assigned = dailyAssigned.get(dayIndex);
+
+        // 可用人員：未超班次上限、非休假、今天尚未被排
+        const available = personnel.filter(p =>
+            !p.offDays?.includes(dayIndex) &&
+            (shiftCounts.get(p.name) || 0) < (p.maxShifts || 5) &&
+            !assigned.has(p.name)
+        );
+        if (available.length === 0) continue;
+
+        // 第一優先：班次最少；同班次數：技能分（預留）+ 隨機決定
+        available.sort((a, b) => {
+            const usedDiff = (shiftCounts.get(a.name) || 0) - (shiftCounts.get(b.name) || 0);
+            if (usedDiff !== 0) return usedDiff;
+            const scoreA = getEffectiveScore(a, task.name) / 5 * 0.6 + Math.random() * 0.4;
+            const scoreB = getEffectiveScore(b, task.name) / 5 * 0.6 + Math.random() * 0.4;
+            return scoreB - scoreA;
+        });
+
+        const person = available[0];
+        weeklySchedule[dayIndex][taskIndex].push(person.name);
+        shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
+        assigned.add(person.name);
+    }
+
     return weeklySchedule;
 };
 
