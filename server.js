@@ -922,6 +922,11 @@ app.post('/api/generate-schedule', async (req, res) => {
     try {
         const { settings, startWeek, numWeeks, activeHolidays } = req.body;
 
+        const validation = validateSettings(settings);
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+
         const fullScheduleData = [];
         const colors = [ { header: '#0284c7', row: '#f0f9ff' }, { header: '#15803d', row: '#f0fdf4' }, { header: '#be185d', row: '#fdf2f8' }, { header: '#86198f', row: '#faf5ff' } ];
         for (let i = 0; i < numWeeks; i++) {
