@@ -231,7 +231,8 @@
                             <div class="space-y-2 mb-3" id="task-list"></div>
                             <div class="flex gap-2">
                                 <input type="text" id="new-task-name" class="form-input flex-grow p-2 rounded-md" placeholder="勤務名稱">
-                                <input type="number" id="new-task-count" class="form-input w-24 p-2 rounded-md" placeholder="人數" value="1" min="1">
+                                <input type="number" id="new-task-count" class="form-input w-20 p-2 rounded-md" placeholder="人數" value="1" min="1" title="每天需要幾人">
+                                <input type="number" id="new-task-priority" class="form-input w-16 p-2 rounded-md text-center" placeholder="優先" value="9" min="1" max="9" title="優先級（1=最優先，9=最低）">
                                 <button id="add-task-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold p-2 rounded-md flex-shrink-0">＋</button>
                             </div>
                         </div>
@@ -533,7 +534,8 @@
                 div.className = 'flex items-center gap-2';
                 div.innerHTML = `
                     <input type="text" value="${escapeHtml(task.name)}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
-                    <input type="number" value="${escapeHtml(task.count)}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count">
+                    <input type="number" value="${escapeHtml(task.count)}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count" title="每天需要幾人">
+                    <input type="number" value="${escapeHtml(task.priority || 9)}" class="form-input w-16 p-1 rounded-md text-center" min="1" max="9" data-index="${index}" data-field="priority" title="優先級（1=最優先，9=最低）">
                     <button class="remove-task text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
                 `;
                 elements.taskList.appendChild(div);
@@ -1894,10 +1896,12 @@
         elements.addTaskBtn.addEventListener('click', () => {
             const name = elements.newTaskNameInput.value.trim();
             const count = parseInt(elements.newTaskCountInput.value, 10) || 1;
+            const priority = parseInt(document.getElementById('new-task-priority').value, 10) || 9;
             if (name) {
-                handleSettingsChange(() => getActiveProfile().settings.tasks.push({ name, count }));
+                handleSettingsChange(() => getActiveProfile().settings.tasks.push({ name, count, priority }));
                 elements.newTaskNameInput.value = '';
                 elements.newTaskCountInput.value = '1';
+                document.getElementById('new-task-priority').value = '9';
             }
         });
 
@@ -1906,6 +1910,7 @@
                 const { index, field } = e.target.dataset;
                 let value = e.target.type === 'number' ? parseInt(e.target.value, 10) : e.target.value.trim();
                 if (e.target.type === 'number' && (isNaN(value) || value < 1)) value = 1;
+                if (field === 'priority' && value > 9) value = 9;
                 handleSettingsChange(() => getActiveProfile().settings.tasks[index][field] = value);
             }
         });

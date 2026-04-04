@@ -146,6 +146,9 @@ const validateSettings = (settings) => {
         if (typeof task.count !== 'number' || task.count < 1 || task.count > 50) {
             return { valid: false, error: `Task ${i} 人數必須在 1-50 之間` };
         }
+        if (task.priority !== undefined && (typeof task.priority !== 'number' || !Number.isInteger(task.priority) || task.priority < 1 || task.priority > 9)) {
+            return { valid: false, error: `Task ${i} 優先級必須是 1-9 的整數` };
+        }
     }
 
     // 驗證每個 personnel
@@ -368,15 +371,20 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
     // 每一輪內，各天的順序隨機打亂（避免固定偏好某一天）
     const maxCount = Math.max(...tasks.map(t => t.count), 1);
     const slots = [];
+    // 任務依優先級排序（數字小 = 優先級高，未設定視為 9）
+    const tasksByPriority = tasks
+        .map((t, i) => ({ ...t, taskIndex: i }))
+        .sort((a, b) => (a.priority || 9) - (b.priority || 9));
+
     for (let slotIndex = 0; slotIndex < maxCount; slotIndex++) {
         const workDayIndices = [0, 1, 2, 3, 4]
             .filter(i => scheduleDays[i].shouldSchedule)
             .sort(() => Math.random() - 0.5); // 每輪隨機順序
-        for (const dayIndex of workDayIndices) {
-            for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
-                if (slotIndex < tasks[taskIndex].count) {
-                    slots.push({ dayIndex, taskIndex });
-                }
+        // 高優先級任務先搶人，低優先級才排剩下的
+        for (const { taskIndex, count } of tasksByPriority) {
+            if (slotIndex >= count) continue;
+            for (const dayIndex of workDayIndices) {
+                slots.push({ dayIndex, taskIndex });
             }
         }
     }
