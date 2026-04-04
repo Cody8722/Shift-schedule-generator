@@ -359,10 +359,9 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
     const weeklySchedule = Array(5).fill(null).map(() => Array(tasks.length).fill(null).map(() => []));
     const shiftCounts = new Map(personnel.map(p => [p.name, 0]));
 
-    // 加權係數（三項加總為 1）
-    const W_SKILL   = 0.45; // 技能適合度
-    const W_FAIR    = 0.35; // 公平性（班次越少優先）
-    const W_RAND    = 0.20; // 隨機擾動（防止每次結果相同）
+    // 同班次數內的優先順序係數（加總為 1）
+    const W_SKILL = 0.60; // [預留] 技能適合度（目前 UI 未提供設定）
+    const W_RAND  = 0.40; // 隨機擾動（防止每次結果相同）
 
     for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
@@ -375,19 +374,19 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
             const task = tasks[taskIndex];
 
-            // 計算每位可用人員的加權競標分
+            // 計算每位可用人員的分數
             const scored = dailyPool.map(p => {
-                const maxS = p.maxShifts || 5;
-                const used = shiftCounts.get(p.name) || 0;
-                const skillScore    = getEffectiveScore(p, task.name) / 5; // 正規化到 0-1
-                const fairnessScore = 1 - (used / maxS);                   // 班次越少越高
-                const randomScore   = Math.random();
-                const total = W_SKILL * skillScore + W_FAIR * fairnessScore + W_RAND * randomScore;
-                return { person: p, score: total };
+                const skillScore  = getEffectiveScore(p, task.name) / 5; // [預留] 技能分
+                const randomScore = Math.random();
+                return {
+                    person: p,
+                    used: shiftCounts.get(p.name) || 0,
+                    tiebreak: W_SKILL * skillScore + W_RAND * randomScore
+                };
             });
 
-            // 降序排列，高分者優先
-            scored.sort((a, b) => b.score - a.score);
+            // 先按班次數量升序（最少班次絕對優先），相同班次數再用技能+隨機決定
+            scored.sort((a, b) => a.used !== b.used ? a.used - b.used : b.tiebreak - a.tiebreak);
 
             for (let i = 0; i < task.count; i++) {
                 if (scored.length === 0) break;
