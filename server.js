@@ -376,13 +376,12 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         .map((t, i) => ({ ...t, taskIndex: i }))
         .sort((a, b) => (a.priority || 9) - (b.priority || 9));
 
-    for (let slotIndex = 0; slotIndex < maxCount; slotIndex++) {
-        const workDayIndices = [0, 1, 2, 3, 4]
-            .filter(i => scheduleDays[i].shouldSchedule)
-            .sort(() => Math.random() - 0.5); // 每輪隨機順序
-        // 高優先級任務先搶人，低優先級才排剩下的
-        for (const { taskIndex, count } of tasksByPriority) {
-            if (slotIndex >= count) continue;
+    // 先把高優先級任務所有 slot 全部填完，才輪到低優先級
+    for (const { taskIndex, count } of tasksByPriority) {
+        for (let slotIndex = 0; slotIndex < count; slotIndex++) {
+            const workDayIndices = [0, 1, 2, 3, 4]
+                .filter(i => scheduleDays[i].shouldSchedule)
+                .sort(() => Math.random() - 0.5); // 每輪隨機順序
             for (const dayIndex of workDayIndices) {
                 slots.push({ dayIndex, taskIndex });
             }
