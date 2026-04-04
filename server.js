@@ -363,7 +363,9 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
     const W_SKILL = 0.60; // [預留] 技能適合度（目前 UI 未提供設定）
     const W_RAND  = 0.40; // 隨機擾動（防止每次結果相同）
 
-    for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
+    // 隨機打亂天的處理順序，避免週五永遠最後被排而空班
+    const dayOrder = [0, 1, 2, 3, 4].sort(() => Math.random() - 0.5);
+    for (const dayIndex of dayOrder) {
         if (!scheduleDays[dayIndex].shouldSchedule) continue;
 
         let dailyPool = personnel.filter(p =>
