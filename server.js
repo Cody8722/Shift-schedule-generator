@@ -163,6 +163,9 @@ const validateSettings = (settings) => {
         if (person.offDays !== undefined && !Array.isArray(person.offDays)) {
             return { valid: false, error: `Personnel ${i} offDays 必須是數組` };
         }
+        if (person.offDays && !person.offDays.every(d => Number.isInteger(d) && d >= 0 && d <= 4)) {
+            return { valid: false, error: `人員 ${i + 1} 的 offDays 只能包含 0-4 的整數（代表週一到週五）` };
+        }
         if (person.taskScores !== undefined) {
             if (typeof person.taskScores !== 'object' || person.taskScores === null || Array.isArray(person.taskScores)) {
                 return { valid: false, error: `Personnel ${i} taskScores 必須是物件` };
@@ -357,7 +360,7 @@ const getEffectiveScore = (person, taskName) => {
     return 2;                                        // 偏好其他班次
 };
 
-const generateWeeklySchedule = (settings, scheduleDays) => {
+const generateWeeklySchedule = (settings, scheduleDays, cumulativeShifts = new Map()) => {
     const { personnel, tasks } = settings;
     const weeklySchedule = Array(5).fill(null).map(() => Array(tasks.length).fill(null).map(() => []));
     const shiftCounts = new Map(personnel.map(p => [p.name, 0]));
@@ -366,23 +369,21 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         scheduleDays.map((_, i) => [i, new Set()])
     );
 
-    // 取出所有需要填補的 slot，按「輪次（slotIndex）」排序：
-    // 先填每天的第 1 個人（保證每天不空），再填第 2 個、第 3 個...
-    // 每一輪內，各天的順序隨機打亂（避免固定偏好某一天）
-    const maxCount = Math.max(...tasks.map(t => t.count), 1);
-    const slots = [];
+    const workDays = [0, 1, 2, 3, 4].filter(i => scheduleDays[i].shouldSchedule);
+
     // 任務依優先級排序（數字小 = 優先級高，未設定視為 9）
     const tasksByPriority = tasks
         .map((t, i) => ({ ...t, taskIndex: i }))
         .sort((a, b) => (a.priority || 9) - (b.priority || 9));
 
-    // 先把高優先級任務所有 slot 全部填完，才輪到低優先級
+    // 建立 slot 清單：高優先級的所有 slot 排在前面
+    // 同一任務內，以「每天各輪一次」的方式交替，確保每天都有機會被填
+    const slots = [];
     for (const { taskIndex, count } of tasksByPriority) {
+        // 每輪（slotIndex）隨機打亂天的順序，確保不偏向固定某天
         for (let slotIndex = 0; slotIndex < count; slotIndex++) {
-            const workDayIndices = [0, 1, 2, 3, 4]
-                .filter(i => scheduleDays[i].shouldSchedule)
-                .sort(() => Math.random() - 0.5); // 每輪隨機順序
-            for (const dayIndex of workDayIndices) {
+            const shuffledDays = [...workDays].sort(() => Math.random() - 0.5);
+            for (const dayIndex of shuffledDays) {
                 slots.push({ dayIndex, taskIndex });
             }
         }
@@ -401,8 +402,10 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         );
         if (available.length === 0) continue;
 
-        // 第一優先：班次最少；同班次數：技能分（預留）+ 隨機決定
+        // 排序：跨週累積最少 → 本週已排最少 → 技能分 + 隨機
         available.sort((a, b) => {
+            const cumDiff = (cumulativeShifts.get(a.name) || 0) - (cumulativeShifts.get(b.name) || 0);
+            if (cumDiff !== 0) return cumDiff;
             const usedDiff = (shiftCounts.get(a.name) || 0) - (shiftCounts.get(b.name) || 0);
             if (usedDiff !== 0) return usedDiff;
             const scoreA = getEffectiveScore(a, task.name) / 5 * 0.6 + Math.random() * 0.4;
@@ -416,7 +419,20 @@ const generateWeeklySchedule = (settings, scheduleDays) => {
         assigned.add(person.name);
     }
 
-    return weeklySchedule;
+    // 計算每個任務的填補率，方便診斷
+    const fillStats = tasks.map((task, taskIndex) => {
+        const needed = workDays.length * (task.count || 1);
+        const filled = workDays.reduce((sum, dayIndex) => sum + weeklySchedule[dayIndex][taskIndex].length, 0);
+        return { name: task.name, priority: task.priority || 9, needed, filled, ok: filled === needed };
+    });
+
+    const unfilled = fillStats.filter(s => !s.ok);
+    if (unfilled.length > 0) {
+        debugSchedule('未填滿的勤務:', unfilled.map(s => `${s.name}(優先${s.priority}) ${s.filled}/${s.needed}`).join(', '));
+        debugSchedule('人員班次分佈:', Object.fromEntries(shiftCounts));
+    }
+
+    return { weeklySchedule, fillStats, weekShiftCounts: shiftCounts };
 };
 
 const generateScheduleHtml = (fullScheduleData) => {
@@ -943,9 +959,15 @@ app.post('/api/generate-schedule', async (req, res) => {
             return res.status(400).json({ message: validation.error });
         }
 
+        if (!Number.isInteger(numWeeks) || numWeeks < 1 || numWeeks > 52) {
+            return res.status(400).json({ message: 'numWeeks 必須是 1-52 的整數' });
+        }
+        const numWeeksInt = numWeeks;
+
         const fullScheduleData = [];
         const colors = [ { header: '#0284c7', row: '#f0f9ff' }, { header: '#15803d', row: '#f0fdf4' }, { header: '#be185d', row: '#fdf2f8' }, { header: '#86198f', row: '#faf5ff' } ];
-        for (let i = 0; i < numWeeks; i++) {
+        const cumulativeShifts = new Map();
+        for (let i = 0; i < numWeeksInt; i++) {
             const { weekDates, weekDayDates } = getWeekInfo(startWeek, i);
             const years = [...new Set(weekDates.map(d => parseInt(d.substring(0, 4))))];
             const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
@@ -960,8 +982,11 @@ app.post('/api/generate-schedule', async (req, res) => {
                 shouldSchedule: !activeHolidays.includes(date),
                 description: activeHolidays.includes(date) ? originalHolidaysMap.get(date) || '假日' : ''
             }));
-            const weeklySchedule = generateWeeklySchedule(settings, scheduleDays);
-            fullScheduleData.push({ schedule: weeklySchedule, tasks: settings.tasks, dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`, weekDayDates, scheduleDays, color: colors[i % colors.length] });
+            const { weeklySchedule, fillStats, weekShiftCounts } = generateWeeklySchedule(settings, scheduleDays, cumulativeShifts);
+            for (const [name, count] of weekShiftCounts) {
+                cumulativeShifts.set(name, (cumulativeShifts.get(name) || 0) + count);
+            }
+            fullScheduleData.push({ schedule: weeklySchedule, fillStats, tasks: settings.tasks, dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`, weekDayDates, scheduleDays, color: colors[i % colors.length] });
         }
         
         const scheduleHtml = generateScheduleHtml(fullScheduleData);
@@ -1094,6 +1119,14 @@ if (process.env.NODE_ENV !== 'test') {
 
     process.on('SIGINT', async () => {
         debugServer('收到 SIGINT。正在關閉連線...');
+        if (client) {
+            await client.close();
+        }
+        process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+        debugServer('收到 SIGTERM。正在關閉連線...');
         if (client) {
             await client.close();
         }

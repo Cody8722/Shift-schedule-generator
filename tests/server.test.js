@@ -84,3 +84,82 @@ describe('錯誤處理', () => {
         expect(res.status).toBe(404);
     });
 });
+
+describe('輸入驗證邊界條件', () => {
+    test('numWeeks 為 0 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 0 });
+        expect(res.status).toBe(400);
+    });
+
+    test('numWeeks 為 -1 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: -1 });
+        expect(res.status).toBe(400);
+    });
+
+    test('numWeeks 為小數 1.5 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 1.5 });
+        expect(res.status).toBe(400);
+    });
+
+    test('numWeeks 為 53 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 53 });
+        expect(res.status).toBe(400);
+    });
+
+    test('numWeeks 為 52（上限）→ 200', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 52 });
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(52);
+    });
+
+    test('offDays 包含非法值 [5] → 400', async () => {
+        const bad = JSON.parse(JSON.stringify(validSettings));
+        bad.settings.personnel[0].offDays = [5];
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(bad);
+        expect(res.status).toBe(400);
+    });
+
+    test('offDays 包含非法值 [-1] → 400', async () => {
+        const bad = JSON.parse(JSON.stringify(validSettings));
+        bad.settings.personnel[0].offDays = [-1];
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(bad);
+        expect(res.status).toBe(400);
+    });
+
+    test('response 包含 fillStats 陣列', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(validSettings);
+        expect(res.status).toBe(200);
+        expect(res.body.data[0].fillStats).toBeDefined();
+        expect(Array.isArray(res.body.data[0].fillStats)).toBe(true);
+        expect(res.body.data[0].fillStats[0]).toHaveProperty('name');
+        expect(res.body.data[0].fillStats[0]).toHaveProperty('filled');
+        expect(res.body.data[0].fillStats[0]).toHaveProperty('needed');
+    });
+
+    test('多週回應每週都有 fillStats', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 3 });
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(3);
+        for (const week of res.body.data) {
+            expect(Array.isArray(week.fillStats)).toBe(true);
+        }
+    });
+});
