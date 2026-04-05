@@ -349,6 +349,7 @@
         <div class="card p-8 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
             <h2 class="text-2xl font-bold mb-2 text-center">設定新密碼</h2>
             <form id="reset-password-form" onsubmit="return false;">
+                <input type="text" autocomplete="username" style="display:none" aria-hidden="true" />
                 <div class="mb-3">
                     <input id="reset-new-password" type="password" placeholder="新密碼"
                         class="form-input w-full p-3 rounded-md" autocomplete="new-password" />
@@ -2446,7 +2447,9 @@
 
         // 啟動：先試 /api/status，判斷是否需要登入
         const statusResp = await fetch(`${API_BASE_URL}/status`).catch(() => null);
-        if (!resetToken && statusResp?.status === 401) {
+        const statusData = await statusResp?.json().catch(() => null);
+        const needAuth = statusData?.auth_required && !authToken;
+        if (!resetToken && needAuth) {
             showLoginModal();
         } else if (!resetToken) {
             await initApp();
