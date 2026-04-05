@@ -344,6 +344,27 @@
         </div>
     </div>
 
+    <!-- 重設密碼 Modal -->
+    <div id="reset-password-modal" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center z-[100] hidden">
+        <div class="card p-8 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
+            <h2 class="text-2xl font-bold mb-2 text-center">設定新密碼</h2>
+            <form id="reset-password-form" onsubmit="return false;">
+                <div class="mb-3">
+                    <input id="reset-new-password" type="password" placeholder="新密碼"
+                        class="form-input w-full p-3 rounded-md" autocomplete="new-password" />
+                </div>
+                <div class="mb-4">
+                    <input id="reset-confirm-password" type="password" placeholder="確認新密碼"
+                        class="form-input w-full p-3 rounded-md" autocomplete="new-password" />
+                </div>
+                <p id="reset-error-msg" class="text-red-500 text-sm text-center mb-3 hidden"></p>
+                <button id="reset-submit-btn" type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-md transition">
+                    確認重設
+                </button>
+            </form>
+        </div>
+    </div>
+
     <div id="personnel-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
         <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
             <h3 class="text-2xl font-bold mb-4">進階設定: <span id="modal-personnel-name"></span></h3>
@@ -2384,11 +2405,50 @@
         loginSubmitBtn?.addEventListener('click', doLogin);
         document.getElementById('forgot-password-btn')?.addEventListener('click', doForgotPassword);
 
+        // --- 重設密碼流程 ---
+        const resetToken = new URLSearchParams(location.search).get('reset_token');
+        if (resetToken) {
+            const resetModal = document.getElementById('reset-password-modal');
+            resetModal?.classList.remove('hidden');
+            document.getElementById('reset-password-form')?.addEventListener('submit', async () => {
+                const newPwd = document.getElementById('reset-new-password')?.value || '';
+                const confirmPwd = document.getElementById('reset-confirm-password')?.value || '';
+                const errEl = document.getElementById('reset-error-msg');
+                if (newPwd !== confirmPwd) {
+                    errEl.textContent = '兩次密碼不一致'; errEl.classList.remove('hidden'); return;
+                }
+                if (!newPwd) {
+                    errEl.textContent = '請輸入新密碼'; errEl.classList.remove('hidden'); return;
+                }
+                const btn = document.getElementById('reset-submit-btn');
+                btn.disabled = true; btn.textContent = '重設中...';
+                try {
+                    const resp = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token: resetToken, new_password: newPwd }),
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) {
+                        errEl.textContent = data.message || '重設失敗'; errEl.classList.remove('hidden');
+                    } else {
+                        resetModal.classList.add('hidden');
+                        history.replaceState({}, '', location.pathname); // 清除 URL query
+                        showLoginModal(data.message); // 顯示「密碼已重設，請重新登入」
+                    }
+                } catch {
+                    errEl.textContent = '無法連線到伺服器'; errEl.classList.remove('hidden');
+                } finally {
+                    btn.disabled = false; btn.textContent = '確認重設';
+                }
+            });
+        }
+
         // 啟動：先試 /api/status，判斷是否需要登入
         const statusResp = await fetch(`${API_BASE_URL}/status`).catch(() => null);
-        if (statusResp?.status === 401) {
+        if (!resetToken && statusResp?.status === 401) {
             showLoginModal();
-        } else {
+        } else if (!resetToken) {
             await initApp();
         }
     });
