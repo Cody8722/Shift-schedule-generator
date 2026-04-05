@@ -229,6 +229,7 @@
                         </button>
                         <div class="accordion-content">
                             <div class="space-y-2 mb-3" id="task-list"></div>
+                            <div id="capacity-status" class="text-sm p-2 rounded-md mt-2"></div>
                             <div class="flex gap-2">
                                 <input type="text" id="new-task-name" class="form-input flex-grow p-2 rounded-md" placeholder="勤務名稱">
                                 <input type="number" id="new-task-count" class="form-input w-20 p-2 rounded-md" placeholder="人數" value="1" min="1" title="每天需要幾人">
@@ -298,6 +299,7 @@
                         </div>
                     </div>
                     <div id="schedule-output" class="overflow-x-auto"></div>
+                    <div id="fill-stats-panel" class="mt-4 hidden"></div>
                 </div>
 
                 <div class="card p-4 rounded-lg shadow-md">
@@ -345,7 +347,7 @@
     
 <script>
     const API_BASE_URL = `api`; 
-    let currentTheme = 'light';
+    let currentTheme = localStorage.getItem('theme') || 'light';
     let appState = {
         activeProfile: 'default',
         profiles: {
@@ -489,6 +491,7 @@
         };
 
         const applyTheme = (theme) => {
+            localStorage.setItem('theme', theme);
              const themeIconLight = document.getElementById('theme-icon-light');
              const themeIconDark = document.getElementById('theme-icon-dark');
              if (theme === 'dark') {
@@ -526,6 +529,51 @@
             if (!activeProfile) return;
             await api.put(`profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
         };
+        const updateCapacityStatus = () => {
+            const el = document.getElementById('capacity-status');
+            if (!el) return;
+            const settings = getActiveProfile()?.settings;
+            if (!settings) return;
+            const capacity = (settings.personnel || []).reduce((s, p) => s + (p.maxShifts || 5), 0);
+            const demand = (settings.tasks || []).reduce((s, t) => s + (t.count || 1), 0) * 5;
+            const diff = capacity - demand;
+            if (!capacity && !demand) { el.textContent = ''; return; }
+            if (diff >= 0) {
+                el.className = 'text-sm p-2 rounded-md mt-2 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+                el.textContent = `容量 ${capacity} ≥ 需求 ${demand}（每週最多可排滿）`;
+            } else {
+                el.className = 'text-sm p-2 rounded-md mt-2 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+                el.textContent = `⚠️ 容量 ${capacity} < 需求 ${demand}，每週缺少 ${-diff} 個班次，部分勤務將排不滿`;
+            }
+        };
+        const renderFillStats = (weekData) => {
+            const panel = document.getElementById('fill-stats-panel');
+            if (!panel) return;
+            const statsMap = {};
+            for (const week of weekData) {
+                for (const s of (week.fillStats || [])) {
+                    if (!statsMap[s.name]) statsMap[s.name] = { priority: s.priority, needed: 0, filled: 0 };
+                    statsMap[s.name].needed += s.needed;
+                    statsMap[s.name].filled += s.filled;
+                }
+            }
+            const names = Object.keys(statsMap);
+            if (names.length === 0) { panel.classList.add('hidden'); return; }
+            const allOk = names.every(n => statsMap[n].filled === statsMap[n].needed);
+            if (allOk) {
+                panel.className = 'mt-4 text-sm p-2 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+                panel.textContent = '所有勤務已排滿';
+                return;
+            }
+            const rows = names.map(n => {
+                const s = statsMap[n];
+                const pct = s.needed > 0 ? Math.round(s.filled / s.needed * 100) : 100;
+                const color = pct === 100 ? 'text-green-700 dark:text-green-300' : pct >= 50 ? 'text-yellow-700 dark:text-yellow-300' : 'text-red-700 dark:text-red-300';
+                return `<tr class="${color}"><td class="pr-3 py-0.5">${escapeHtml(n)}</td><td class="pr-3">優先 ${s.priority}</td><td class="pr-3">${s.filled} / ${s.needed}</td><td>${pct}%</td></tr>`;
+            }).join('');
+            panel.className = 'mt-4';
+            panel.innerHTML = `<p class="text-sm font-semibold mb-1">勤務填補率</p><table class="text-sm"><thead><tr class="text-muted"><th class="pr-3 text-left font-normal">勤務</th><th class="pr-3 text-left font-normal">優先級</th><th class="pr-3 text-left font-normal">填補/需求</th><th class="text-left font-normal">填補率</th></tr></thead><tbody>${rows}</tbody></table>`;
+        };
         const renderTasks = () => {
             elements.taskList.innerHTML = '';
             const tasks = getActiveProfile()?.settings?.tasks || [];
@@ -540,6 +588,7 @@
                 `;
                 elements.taskList.appendChild(div);
             });
+            updateCapacityStatus();
         };
         const renderPersonnel = () => {
              elements.personnelList.innerHTML = '';
@@ -555,6 +604,7 @@
                 `;
                 elements.personnelList.appendChild(div);
             });
+            updateCapacityStatus();
         };
         const renderProfileSelector = () => {
             elements.profileSelect.innerHTML = '';
@@ -723,6 +773,7 @@
                     generatedData = response.data;
                     currentScheduleName = null; // 清除班表名稱（這是新生成的班表）
                     displaySchedule(response.html);
+                    renderFillStats(response.data);
                 } else {
                     elements.outputContainer.classList.add('hidden');
                 }
