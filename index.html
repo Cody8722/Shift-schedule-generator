@@ -322,15 +322,17 @@
         <div class="card p-8 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
             <h2 class="text-2xl font-bold mb-2 text-center">班表系統登入</h2>
             <p class="text-sm text-muted text-center mb-6">請輸入存取密碼</p>
-            <div class="mb-4">
-                <input id="login-password-input" type="password" placeholder="密碼"
-                    class="form-input w-full p-3 rounded-md text-center text-lg tracking-widest"
-                    autocomplete="current-password" />
-            </div>
-            <p id="login-error-msg" class="text-red-500 text-sm text-center mb-3 hidden"></p>
-            <button id="login-submit-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-md transition">
-                登入
-            </button>
+            <form id="login-form" onsubmit="return false;">
+                <div class="mb-4">
+                    <input id="login-password-input" type="password" placeholder="密碼"
+                        class="form-input w-full p-3 rounded-md text-center text-lg tracking-widest"
+                        autocomplete="current-password" />
+                </div>
+                <p id="login-error-msg" class="text-red-500 text-sm text-center mb-3 hidden"></p>
+                <button id="login-submit-btn" type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-md transition">
+                    登入
+                </button>
+            </form>
         </div>
     </div>
 
@@ -2346,8 +2348,8 @@
             }
         };
 
+        document.getElementById('login-form')?.addEventListener('submit', doLogin);
         loginSubmitBtn?.addEventListener('click', doLogin);
-        loginPasswordInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 
         // 啟動：先試 /api/status，判斷是否需要登入
         const statusResp = await fetch(`${API_BASE_URL}/status`).catch(() => null);
