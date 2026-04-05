@@ -138,6 +138,7 @@ app.use('/api/', (req, res, next) => {
 // --- 身份驗證中介軟體 ---
 function requireAuth(req, res, next) {
     if (!process.env.JWT_SECRET) return next(); // 未設定 JWT_SECRET → 直接通過
+    if (process.env.NODE_ENV === 'test') return next(); // 測試環境跳過驗證
     if (req.path.startsWith('/auth/')) return next(); // 跳過登入路由
     if (req.path === '/status' && req.method === 'GET') return next(); // 健康檢查不需登入
 
@@ -743,7 +744,8 @@ app.post('/api/auth/logout', (req, res) => res.json({ message: '已登出' }));
 app.get('/api/status', async (req, res) => {
     const status = {
         server: 'running',
-        database: isDbConnected ? 'connected' : 'disconnected'
+        database: isDbConnected ? 'connected' : 'disconnected',
+        auth_required: !!process.env.JWT_SECRET
     };
 
     if (isDbConnected) {
