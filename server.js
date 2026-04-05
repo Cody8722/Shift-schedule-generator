@@ -1,6 +1,7 @@
 // --- 模組引入 ---
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs').promises; // 引入 fs 模組
 const { MongoClient, ServerApiVersion } = require('mongodb');
@@ -44,6 +45,10 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'scheduleApp';
 const CONFIG_ID = 'main_config';
 
+// --- 驗證 Session 管理 ---
+// token → { expiry: timestamp }（僅在設定 ACCESS_PASSWORD 時使用）
+const activeSessions = new Map();
+
 // --- 安全性設定 ---
 // 安全的 Profile 名稱格式：字母、數字、中文、底線、連字號，1-50 字符
 const SAFE_PROFILE_NAME_REGEX = /^[a-zA-Z0-9_\u4e00-\u9fa5-]{1,50}$/;
@@ -82,18 +87,76 @@ if (MONGODB_URI) {
 // 當應用程式部署在反向代理(如 Zeabur)後面時需要此設定
 app.set('trust proxy', 1);
 
-app.use(cors());
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-const apiLimiter = rateLimit({
+// --- 速率限制（分層）---
+const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 200,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: '登入嘗試次數過多，請於 15 分鐘後再試。'
+});
+
+const readLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
     standardHeaders: true,
     legacyHeaders: false,
     message: '來自此 IP 的請求過多，請於 15 分鐘後再試。'
 });
-app.use('/api/', apiLimiter);
+
+const writeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: '來自此 IP 的請求過多，請於 15 分鐘後再試。'
+});
+
+const generateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: '產生班表次數過多，請於 15 分鐘後再試。'
+});
+
+// 依 HTTP 方法套用速率限制（auth 路由例外，由 authLimiter 單獨處理）
+app.use('/api/', (req, res, next) => {
+    if (req.path.startsWith('/auth/')) return next();
+    if (req.method === 'GET') return readLimiter(req, res, next);
+    return writeLimiter(req, res, next);
+});
+
+// --- 身份驗證中介軟體 ---
+function requireAuth(req, res, next) {
+    if (!process.env.ACCESS_PASSWORD) return next(); // 未設定密碼 → 直接通過
+    if (req.path.startsWith('/auth/')) return next(); // 跳過登入路由
+    if (req.path === '/status' && req.method === 'GET') return next(); // 健康檢查不需登入
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: '請先登入' });
+    }
+    const token = authHeader.slice(7);
+    const session = activeSessions.get(token);
+    if (!session || Date.now() > session.expiry) {
+        activeSessions.delete(token);
+        return res.status(401).json({ message: '登入已過期，請重新登入' });
+    }
+    session.expiry = Date.now() + 24 * 60 * 60 * 1000; // 延長有效期
+    next();
+}
+
+app.use('/api/', requireAuth);
 
 // --- 安全輔助函式 ---
 const escapeHtml = (unsafe) => {
@@ -517,6 +580,29 @@ const generateScheduleHtml = (fullScheduleData) => {
     });
     return html;
 };
+
+// --- 身份驗證路由 ---
+app.post('/api/auth/login', authLimiter, (req, res) => {
+    if (!process.env.ACCESS_PASSWORD) {
+        return res.json({ token: null, message: '系統未設定密碼，無需登入' });
+    }
+    const { password } = req.body;
+    if (!password || password !== process.env.ACCESS_PASSWORD) {
+        return res.status(401).json({ message: '密碼錯誤' });
+    }
+    const token = crypto.randomBytes(32).toString('hex');
+    activeSessions.set(token, { expiry: Date.now() + 24 * 60 * 60 * 1000 });
+    debugServer('新登入，session 已建立');
+    res.json({ token });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+        activeSessions.delete(authHeader.slice(7));
+    }
+    res.json({ message: '已登出' });
+});
 
 // --- API 路由 ---
 app.get('/api/status', async (req, res) => {
@@ -950,7 +1036,7 @@ app.delete('/api/schedules/:name', async (req, res) => {
     }
 });
 
-app.post('/api/generate-schedule', async (req, res) => {
+app.post('/api/generate-schedule', generateLimiter, async (req, res) => {
     try {
         const { settings, startWeek, numWeeks, activeHolidays } = req.body;
 

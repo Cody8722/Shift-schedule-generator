@@ -317,6 +317,23 @@
         </footer>
     </div>
 
+    <!-- 登入 Modal -->
+    <div id="login-modal" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center z-[100] hidden">
+        <div class="card p-8 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
+            <h2 class="text-2xl font-bold mb-2 text-center">班表系統登入</h2>
+            <p class="text-sm text-muted text-center mb-6">請輸入存取密碼</p>
+            <div class="mb-4">
+                <input id="login-password-input" type="password" placeholder="密碼"
+                    class="form-input w-full p-3 rounded-md text-center text-lg tracking-widest"
+                    autocomplete="current-password" />
+            </div>
+            <p id="login-error-msg" class="text-red-500 text-sm text-center mb-3 hidden"></p>
+            <button id="login-submit-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-md transition">
+                登入
+            </button>
+        </div>
+    </div>
+
     <div id="personnel-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
         <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
             <h3 class="text-2xl font-bold mb-4">進階設定: <span id="modal-personnel-name"></span></h3>
@@ -346,8 +363,26 @@
     </div>
     
 <script>
-    const API_BASE_URL = `api`; 
+    const API_BASE_URL = `api`;
     let currentTheme = localStorage.getItem('theme') || 'light';
+    let authToken = sessionStorage.getItem('authToken') || null;
+
+    const getAuthHeaders = () => authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+
+    const showLoginModal = (errorMsg) => {
+        const modal = document.getElementById('login-modal');
+        const errEl = document.getElementById('login-error-msg');
+        if (modal) modal.classList.remove('hidden');
+        if (errEl) {
+            if (errorMsg) { errEl.textContent = errorMsg; errEl.classList.remove('hidden'); }
+            else errEl.classList.add('hidden');
+        }
+        document.getElementById('login-password-input')?.focus();
+    };
+
+    const hideLoginModal = () => {
+        document.getElementById('login-modal')?.classList.add('hidden');
+    };
     let appState = {
         activeProfile: 'default',
         profiles: {
@@ -423,10 +458,19 @@
             modalHolidaySaveBtn: document.getElementById('modal-holiday-save-btn'),
         };
         
+        const handleAuthError = () => {
+            authToken = null;
+            sessionStorage.removeItem('authToken');
+            showLoginModal('登入已過期，請重新登入');
+        };
+
         const api = {
             get: async (endpoint) => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/${endpoint}`);
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+                        headers: { ...getAuthHeaders() },
+                    });
+                    if (response.status === 401) { handleAuthError(); return null; }
                     if (!response.ok) {
                         const errData = await response.json().catch(() => ({ message: response.statusText }));
                         throw new Error(errData.message || `HTTP error! status: ${response.status}`);
@@ -442,9 +486,10 @@
                 try {
                     const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
                         body: JSON.stringify(body),
                     });
+                    if (response.status === 401) { handleAuthError(); return null; }
                     if (!response.ok) {
                          const errData = await response.json().catch(() => ({ message: response.statusText }));
                          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
@@ -460,10 +505,11 @@
                 try {
                     const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
                         body: JSON.stringify(body),
                     });
-                     if (!response.ok) {
+                    if (response.status === 401) { handleAuthError(); return null; }
+                    if (!response.ok) {
                          const errData = await response.json().catch(() => ({ message: response.statusText }));
                          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
@@ -475,9 +521,13 @@
                 }
             },
             delete: async (endpoint) => {
-                 try {
-                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, { method: 'DELETE' });
-                     if (!response.ok) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+                        method: 'DELETE',
+                        headers: { ...getAuthHeaders() },
+                    });
+                    if (response.status === 401) { handleAuthError(); return null; }
+                    if (!response.ok) {
                          const errData = await response.json().catch(() => ({ message: response.statusText }));
                          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
@@ -2264,7 +2314,48 @@
         elements.startWeekInput.addEventListener('change', debouncedUpdateHolidays);
         elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
 
-        initApp();
+        // --- 登入邏輯 ---
+        const loginModal = document.getElementById('login-modal');
+        const loginSubmitBtn = document.getElementById('login-submit-btn');
+        const loginPasswordInput = document.getElementById('login-password-input');
+
+        const doLogin = async () => {
+            const password = loginPasswordInput?.value || '';
+            loginSubmitBtn.disabled = true;
+            loginSubmitBtn.textContent = '登入中...';
+            try {
+                const resp = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    showLoginModal(data.message || '密碼錯誤');
+                } else {
+                    authToken = data.token; // null 代表系統未設定密碼
+                    if (authToken) sessionStorage.setItem('authToken', authToken);
+                    hideLoginModal();
+                    await initApp();
+                }
+            } catch {
+                showLoginModal('無法連線到伺服器');
+            } finally {
+                loginSubmitBtn.disabled = false;
+                loginSubmitBtn.textContent = '登入';
+            }
+        };
+
+        loginSubmitBtn?.addEventListener('click', doLogin);
+        loginPasswordInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+
+        // 啟動：先試 /api/status，判斷是否需要登入
+        const statusResp = await fetch(`${API_BASE_URL}/status`).catch(() => null);
+        if (statusResp?.status === 401) {
+            showLoginModal();
+        } else {
+            await initApp();
+        }
     });
 </script>
 </body>
