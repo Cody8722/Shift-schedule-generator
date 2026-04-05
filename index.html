@@ -321,17 +321,25 @@
     <div id="login-modal" class="fixed inset-0 bg-gray-900 bg-opacity-90 flex items-center justify-center z-[100] hidden">
         <div class="card p-8 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
             <h2 class="text-2xl font-bold mb-2 text-center">班表系統登入</h2>
-            <p class="text-sm text-muted text-center mb-6">請輸入存取密碼</p>
+            <p class="text-sm text-muted text-center mb-6">請使用您的帳號登入</p>
             <form id="login-form" onsubmit="return false;">
+                <div class="mb-3">
+                    <input id="login-email-input" type="email" placeholder="Email"
+                        class="form-input w-full p-3 rounded-md"
+                        autocomplete="username" />
+                </div>
                 <div class="mb-4">
                     <input id="login-password-input" type="password" placeholder="密碼"
-                        class="form-input w-full p-3 rounded-md text-center text-lg tracking-widest"
+                        class="form-input w-full p-3 rounded-md"
                         autocomplete="current-password" />
                 </div>
                 <p id="login-error-msg" class="text-red-500 text-sm text-center mb-3 hidden"></p>
                 <button id="login-submit-btn" type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-md transition">
                     登入
                 </button>
+                <p class="text-center mt-3 text-sm text-muted">
+                    <button type="button" id="forgot-password-btn" class="text-blue-500 hover:underline">忘記密碼？</button>
+                </p>
             </form>
         </div>
     </div>
@@ -2322,20 +2330,22 @@
         const loginPasswordInput = document.getElementById('login-password-input');
 
         const doLogin = async () => {
+            const email = document.getElementById('login-email-input')?.value?.trim() || '';
             const password = loginPasswordInput?.value || '';
+            if (!email || !password) { showLoginModal('請輸入 Email 和密碼'); return; }
             loginSubmitBtn.disabled = true;
             loginSubmitBtn.textContent = '登入中...';
             try {
                 const resp = await fetch(`${API_BASE_URL}/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password }),
+                    body: JSON.stringify({ email, password }),
                 });
                 const data = await resp.json();
                 if (!resp.ok) {
-                    showLoginModal(data.message || '密碼錯誤');
+                    showLoginModal(data.error || data.message || '帳號或密碼錯誤');
                 } else {
-                    authToken = data.token; // null 代表系統未設定密碼
+                    authToken = data.token;
                     if (authToken) sessionStorage.setItem('authToken', authToken);
                     hideLoginModal();
                     await initApp();
@@ -2348,8 +2358,31 @@
             }
         };
 
+        const doForgotPassword = async () => {
+            const email = document.getElementById('login-email-input')?.value?.trim() || '';
+            if (!email) { showLoginModal('請先輸入 Email'); return; }
+            const btn = document.getElementById('forgot-password-btn');
+            btn.disabled = true;
+            btn.textContent = '寄送中...';
+            try {
+                const resp = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email }),
+                });
+                const data = await resp.json();
+                showLoginModal(data.message || data.error || '');
+            } catch {
+                showLoginModal('無法連線到伺服器');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '忘記密碼？';
+            }
+        };
+
         document.getElementById('login-form')?.addEventListener('submit', doLogin);
         loginSubmitBtn?.addEventListener('click', doLogin);
+        document.getElementById('forgot-password-btn')?.addEventListener('click', doForgotPassword);
 
         // 啟動：先試 /api/status，判斷是否需要登入
         const statusResp = await fetch(`${API_BASE_URL}/status`).catch(() => null);

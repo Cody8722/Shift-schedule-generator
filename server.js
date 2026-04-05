@@ -1,8 +1,8 @@
 // --- 模組引入 ---
 const express = require('express');
 const cors = require('cors');
-const crypto = require('crypto');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const fs = require('fs').promises; // 引入 fs 模組
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const rateLimit = require('express-rate-limit');
@@ -44,10 +44,7 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'scheduleApp';
 const CONFIG_ID = 'main_config';
-
-// --- 驗證 Session 管理 ---
-// token → { expiry: timestamp }（僅在設定 ACCESS_PASSWORD 時使用）
-const activeSessions = new Map();
+const ACCOUNTING_API_URL = process.env.ACCOUNTING_API_URL || 'http://localhost:5001';
 
 // --- 安全性設定 ---
 // 安全的 Profile 名稱格式：字母、數字、中文、底線、連字號，1-50 字符
@@ -138,7 +135,7 @@ app.use('/api/', (req, res, next) => {
 
 // --- 身份驗證中介軟體 ---
 function requireAuth(req, res, next) {
-    if (!process.env.ACCESS_PASSWORD) return next(); // 未設定密碼 → 直接通過
+    if (!process.env.JWT_SECRET) return next(); // 未設定 JWT_SECRET → 直接通過
     if (req.path.startsWith('/auth/')) return next(); // 跳過登入路由
     if (req.path === '/status' && req.method === 'GET') return next(); // 健康檢查不需登入
 
@@ -147,13 +144,12 @@ function requireAuth(req, res, next) {
         return res.status(401).json({ message: '請先登入' });
     }
     const token = authHeader.slice(7);
-    const session = activeSessions.get(token);
-    if (!session || Date.now() > session.expiry) {
-        activeSessions.delete(token);
+    try {
+        req.user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+        next();
+    } catch {
         return res.status(401).json({ message: '登入已過期，請重新登入' });
     }
-    session.expiry = Date.now() + 24 * 60 * 60 * 1000; // 延長有效期
-    next();
 }
 
 app.use('/api/', requireAuth);
@@ -581,28 +577,24 @@ const generateScheduleHtml = (fullScheduleData) => {
     return html;
 };
 
-// --- 身份驗證路由 ---
-app.post('/api/auth/login', authLimiter, (req, res) => {
-    if (!process.env.ACCESS_PASSWORD) {
-        return res.json({ token: null, message: '系統未設定密碼，無需登入' });
+// --- 身份驗證路由（proxy 至 accounting system）---
+const proxyAuth = async (req, res, path) => {
+    try {
+        const resp = await fetch(`${ACCOUNTING_API_URL}${path}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body),
+        });
+        const data = await resp.json();
+        res.status(resp.status).json(data);
+    } catch {
+        res.status(503).json({ message: '認證服務無法連線，請確認 accounting system 已啟動' });
     }
-    const { password } = req.body;
-    if (!password || password !== process.env.ACCESS_PASSWORD) {
-        return res.status(401).json({ message: '密碼錯誤' });
-    }
-    const token = crypto.randomBytes(32).toString('hex');
-    activeSessions.set(token, { expiry: Date.now() + 24 * 60 * 60 * 1000 });
-    debugServer('新登入，session 已建立');
-    res.json({ token });
-});
+};
 
-app.post('/api/auth/logout', (req, res) => {
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-        activeSessions.delete(authHeader.slice(7));
-    }
-    res.json({ message: '已登出' });
-});
+app.post('/api/auth/login', authLimiter, (req, res) => proxyAuth(req, res, '/api/auth/login'));
+app.post('/api/auth/forgot-password', authLimiter, (req, res) => proxyAuth(req, res, '/api/auth/forgot-password'));
+app.post('/api/auth/logout', (req, res) => res.json({ message: '已登出' }));
 
 // --- API 路由 ---
 app.get('/api/status', async (req, res) => {
