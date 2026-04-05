@@ -40,8 +40,10 @@
 
 現有端點清單（不可在無討論下移除）：
 ```
-POST   /api/auth/login   (無需 token；設定 ACCESS_PASSWORD 後需要密碼)
-POST   /api/auth/logout
+POST   /api/auth/login          (無需 token；body: { email, password })
+POST   /api/auth/logout         (client-side only)
+POST   /api/auth/forgot-password (無需 token；body: { email })
+POST   /api/auth/reset-password  (無需 token；body: { token, new_password })
 GET    /api/status
 GET    /api/holidays/:year
 POST   /api/holidays/reseed
