@@ -138,7 +138,6 @@ app.use('/api/', (req, res, next) => {
 // --- 身份驗證中介軟體 ---
 function requireAuth(req, res, next) {
     if (!process.env.JWT_SECRET) return next(); // 未設定 JWT_SECRET → 直接通過
-    if (process.env.NODE_ENV === 'test') return next(); // 測試環境跳過驗證
     if (req.path.startsWith('/auth/')) return next(); // 跳過登入路由
     if (req.path === '/status' && req.method === 'GET') return next(); // 健康檢查不需登入
 
@@ -395,7 +394,7 @@ const getHolidaysForYear = async (year) => {
         const resp = await fetch(`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${year}.json`);
         if (resp.ok) {
             const data = await resp.json();
-            const docs = data.map(h => ({ _id: h.date, name: h.description || '國定假日', isHoliday: h.isHoliday }));
+            const docs = data.map(h => ({ _id: h.date, name: h.description || '國定假日', isHoliday: h.isHoliday, source: 'cdn' }));
             await holidaysCollection.insertMany(docs, { ordered: false }).catch(() => {});
             const holidayMap = new Map();
             data.filter(h => h.isHoliday).forEach(h => holidayMap.set(h.date, h.description || '國定假日'));
@@ -415,7 +414,7 @@ const refreshHolidaysFromCDN = async () => {
     const currentYear = new Date().getFullYear();
     for (const year of [currentYear, currentYear + 1]) {
         try {
-            await holidaysCollection.deleteMany({ _id: { $regex: `^${year}` } });
+            await holidaysCollection.deleteMany({ _id: { $regex: `^${year}` }, source: 'cdn' });
             holidaysCache.delete(year);
             await getHolidaysForYear(year);
             debugDb(`已自動更新 ${year} 年假日資料`);
@@ -529,7 +528,11 @@ const generateWeeklySchedule = (settings, scheduleDays, cumulativeShifts = new M
     for (const { taskIndex, count } of tasksByPriority) {
         // 每輪（slotIndex）隨機打亂天的順序，確保不偏向固定某天
         for (let slotIndex = 0; slotIndex < count; slotIndex++) {
-            const shuffledDays = [...workDays].sort(() => Math.random() - 0.5);
+            const shuffledDays = [...workDays];
+            for (let i = shuffledDays.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffledDays[i], shuffledDays[j]] = [shuffledDays[j], shuffledDays[i]];
+            }
             for (const dayIndex of shuffledDays) {
                 slots.push({ dayIndex, taskIndex });
             }
@@ -711,14 +714,14 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
                     { _id: user._id },
                     { $set: { password_reset_token: token, password_reset_expires: expires } }
                 );
-                const origin = req.headers.origin || `http://localhost:${PORT}`;
-                const resetUrl = `${origin}?reset_token=${token}`;
+                const APP_URL = process.env.APP_URL || process.env.CORS_ORIGIN || `http://localhost:${PORT}`;
+                const resetUrl = `${APP_URL}?reset_token=${token}`;
                 const sent = await sendResetEmail(user.email, resetUrl);
-                if (!sent) return res.status(500).json({ message: '郵件服務未設定或發送失敗，請聯繫管理員' });
-                debugServer(`密碼重設信已寄送: ${user.email}`);
+                if (!sent) debugServer(`SMTP 發送失敗（密碼重設）: ${user.email}`);
+                else debugServer(`密碼重設信已寄送: ${user.email}`);
             }
         }
-        // 無論 email 存不存在都回 200（防帳號列舉）
+        // 無論 email 存不存在、SMTP 是否成功，都回 200（防帳號列舉）
         res.json({ message: '若此 Email 已註冊，重設連結已寄出' });
     } catch (e) {
         debugServer('忘記密碼失敗:', e);
@@ -733,6 +736,7 @@ app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
         if (typeof token !== 'string' || typeof new_password !== 'string')
             return res.status(400).json({ message: '請提供 token 和新密碼' });
         if (!token || !new_password) return res.status(400).json({ message: '請提供 token 和新密碼' });
+        if (new_password.length < 8) return res.status(400).json({ message: '密碼至少需 8 字元' });
 
         const user = await usersCollection.findOne({ password_reset_token: token });
         if (!user) return res.status(400).json({ message: '連結無效或已過期' });
@@ -1205,6 +1209,14 @@ app.post('/api/generate-schedule', generateLimiter, async (req, res) => {
         }
         const numWeeksInt = numWeeks;
 
+        if (typeof startWeek !== 'string' || !/^\d{4}-W\d{1,2}$/.test(startWeek)) {
+            return res.status(400).json({ message: 'startWeek 格式必須是 YYYY-Wnn' });
+        }
+        const resolvedHolidays = activeHolidays === undefined ? [] : activeHolidays;
+        if (!Array.isArray(resolvedHolidays) || !resolvedHolidays.every(d => typeof d === 'string')) {
+            return res.status(400).json({ message: 'activeHolidays 必須是字串陣列' });
+        }
+
         const fullScheduleData = [];
         const colors = [ { header: '#0284c7', row: '#f0f9ff' }, { header: '#15803d', row: '#f0fdf4' }, { header: '#be185d', row: '#fdf2f8' }, { header: '#86198f', row: '#faf5ff' } ];
         const cumulativeShifts = new Map();
@@ -1220,8 +1232,8 @@ app.post('/api/generate-schedule', generateLimiter, async (req, res) => {
             });
             const scheduleDays = weekDates.map(date => ({
                 date,
-                shouldSchedule: !activeHolidays.includes(date),
-                description: activeHolidays.includes(date) ? originalHolidaysMap.get(date) || '假日' : ''
+                shouldSchedule: !resolvedHolidays.includes(date),
+                description: resolvedHolidays.includes(date) ? originalHolidaysMap.get(date) || '假日' : ''
             }));
             const { weeklySchedule, fillStats, weekShiftCounts } = generateWeeklySchedule(settings, scheduleDays, cumulativeShifts);
             for (const [name, count] of weekShiftCounts) {

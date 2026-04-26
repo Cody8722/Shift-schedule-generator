@@ -5,6 +5,7 @@
 
 const request = require('supertest');
 process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = ''; // 測試環境不驗 JWT，透過 !JWT_SECRET bypass
 const app = require('../server');
 
 const validSettings = {
