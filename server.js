@@ -700,7 +700,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) return res.status(400).json({ message: '請提供 Email' });
+        if (typeof email !== 'string' || !email) return res.status(400).json({ message: '請提供 Email' });
 
         if (usersCollection) {
             const user = await usersCollection.findOne({ email: email.trim().toLowerCase() });
@@ -726,7 +726,7 @@ app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
     }
 });
 
-app.post('/api/auth/reset-password', async (req, res) => {
+app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
     if (!usersCollection) return res.status(503).json({ message: '資料庫未連線' });
     try {
         const { token, new_password } = req.body;
@@ -986,7 +986,6 @@ app.post('/api/profiles', async (req, res) => {
     try {
         const { name } = req.body;
 
-        // 驗證 Profile 名稱
         const validation = validateProfileName(name);
         if (!validation.valid) {
             return res.status(400).json({ message: validation.error });

@@ -1002,10 +1002,6 @@
 
             const personnel = getActiveProfile().settings.personnel || [];
 
-            // Debug: 顯示人員數量和定位
-            console.log(`📋 側邊欄載入 ${personnel.length} 位人員`);
-            console.log('📌 側邊欄定位:', sidebar.style.position, 'top:', sidebar.style.top);
-
             personnel.forEach(person => {
                 const personElement = document.createElement('div');
                 personElement.className = 'bg-white border border-gray-300 rounded px-3 py-2 cursor-move hover:bg-blue-50 hover:border-blue-400 transition-colors';
