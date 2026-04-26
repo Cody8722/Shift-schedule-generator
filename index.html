@@ -66,6 +66,12 @@
         .btn-primary:hover { background-color: var(--primary-hover); }
         .btn-danger { background-color: var(--danger-color); }
         .btn-danger:hover { background-color: var(--danger-hover); }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        @media (max-width: 767px) {
+            #edit-personnel-sidebar { display: none !important; }
+            #schedule-output { overflow-x: auto !important; }
+        }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .fade-in { animation: fadeIn 0.5s ease-out forwards; }
@@ -103,7 +109,8 @@
         .schedule-table {
             border-collapse: separate;
             border-spacing: 0;
-            width: 100%;
+            width: max-content;
+            min-width: 100%;
             border: 1px solid var(--border-light);
             border-radius: 0.75rem;
             overflow: hidden;
@@ -122,6 +129,16 @@
         .schedule-table tbody tr:last-child td { border-bottom: none; }
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
+        .dark .schedule-table tbody td { background-color: var(--card-bg-dark); color: var(--text-dark); }
+        .dark .schedule-table tbody td.holiday-cell { background-color: #4b5563; color: #d1d5db; }
+        .dark .schedule-table tbody td.editable-cell:hover { background-color: #1e3a5f; }
+        .dark #edit-personnel-sidebar { background-color: var(--card-bg-dark) !important; border-color: var(--border-dark) !important; color: var(--text-dark); }
+        .dark #edit-personnel-sidebar input { background-color: var(--bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark #edit-personnel-sidebar > div > div { background-color: var(--bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark #edit-personnel-sidebar > div > div:hover { background-color: #1e3a5f; border-color: #3b82f6; }
+        .dark .person-tag { background-color: #1e3a5f; color: #93c5fd; }
+        .dark .weekly-stats-card { background-color: var(--card-bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark .weekly-stats-card .text-gray-700 { color: #d1d5db; }
 
         /* 列印模式：使用減法，明確隱藏不需要的 UI 元素 */
         @media print {
@@ -286,7 +303,7 @@
                 </div>
             </div>
 
-            <div class="lg:col-span-2 space-y-6">
+            <div class="lg:col-span-2 space-y-6 min-w-0">
                 <div id="output-container" class="card p-4 rounded-lg shadow-md hidden" style="transition: opacity 0.3s;">
                     <div class="flex flex-wrap justify-between items-center mb-4">
                         <h2 class="text-2xl font-bold">班表結果</h2>
@@ -313,7 +330,7 @@
                 <div id="status-indicator" class="w-3 h-3 rounded-full bg-gray-400 transition-colors"></div>
                 <p id="status-text" class="text-xs">正在檢查連線...</p>
             </div>
-            <p>班表產生器 Pro &copy; 2024. All Rights Reserved.</p>
+            <p>班表產生器 Pro &copy; <span id="footer-year"></span>. All Rights Reserved.</p>
         </footer>
     </div>
 
@@ -396,7 +413,8 @@
     
 <script>
     const API_BASE_URL = `api`;
-    let currentTheme = localStorage.getItem('theme') || 'light';
+    const _savedTheme = localStorage.getItem('theme');
+    let currentTheme = _savedTheme || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     let authToken = sessionStorage.getItem('authToken') || null;
 
     const getAuthHeaders = () => authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
@@ -441,6 +459,8 @@
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
     };
+
+    document.getElementById('footer-year').textContent = new Date().getFullYear();
 
     document.addEventListener('DOMContentLoaded', async () => {
         const elements = {
@@ -663,9 +683,9 @@
                 const div = document.createElement('div');
                 div.className = 'flex items-center gap-2';
                 div.innerHTML = `
-                    <input type="text" value="${escapeHtml(task.name)}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
-                    <input type="number" value="${escapeHtml(task.count)}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count" title="每天需要幾人">
-                    <input type="number" value="${escapeHtml(task.priority || 9)}" class="form-input w-16 p-1 rounded-md text-center" min="1" max="9" data-index="${index}" data-field="priority" title="優先級（1=最優先，9=最低）">
+                    <input type="text" value="${escapeHtml(task.name)}" class="form-input flex-grow min-w-0 p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${escapeHtml(task.count)}" class="form-input w-14 p-1 rounded-md" min="1" data-index="${index}" data-field="count" title="每天需要幾人">
+                    <input type="number" value="${escapeHtml(task.priority || 9)}" class="form-input w-12 p-1 rounded-md text-center" min="1" max="9" data-index="${index}" data-field="priority" title="優先級（1=最優先，9=最低）">
                     <button class="remove-task text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
                 `;
                 elements.taskList.appendChild(div);
@@ -679,8 +699,8 @@
                 const div = document.createElement('div');
                 div.className = 'flex items-center gap-2';
                 div.innerHTML = `
-                    <input type="text" value="${escapeHtml(person.name)}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
-                    <input type="number" value="${escapeHtml(person.maxShifts || 5)}" class="form-input w-24 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
+                    <input type="text" value="${escapeHtml(person.name)}" class="form-input flex-grow min-w-0 p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${escapeHtml(person.maxShifts || 5)}" class="form-input w-16 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
                     <button class="advanced-settings-btn text-blue-500 hover:text-blue-700 p-1" data-index="${index}">⚙️</button>
                     <button class="remove-personnel text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
                 `;
@@ -921,7 +941,7 @@
 
             // 創建班表容器
             const scheduleContainer = document.createElement('div');
-            scheduleContainer.className = 'flex-1';
+            scheduleContainer.className = 'flex-1 min-w-0';
             scheduleContainer.style.overflowX = 'auto'; // 只讓班表橫向滾動
 
             editingData.forEach((weekData, weekIndex) => {
@@ -969,6 +989,7 @@
 
         function createPersonnelSidebar() {
             const sidebar = document.createElement('div');
+            sidebar.id = 'edit-personnel-sidebar';
             sidebar.className = 'w-64 bg-gray-50 border border-gray-200 rounded-lg p-4';
 
             // 使用 sticky 定位，讓側邊欄在滾動時保持在視窗中可見
@@ -1149,7 +1170,7 @@
 
             // 創建統計容器
             const statsContainer = document.createElement('div');
-            statsContainer.className = 'mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
+            statsContainer.className = 'mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 weekly-stats-card';
 
             const title = document.createElement('div');
             title.className = 'font-semibold text-gray-700 mb-2 text-sm';
