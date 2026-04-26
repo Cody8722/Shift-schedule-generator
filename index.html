@@ -142,10 +142,7 @@
 
         /* 列印模式：使用減法，明確隱藏不需要的 UI 元素 */
         @media print {
-            /* 隱藏導航列 */
-            nav {
-                display: none !important;
-            }
+
 
             /* 隱藏標題區域（包含主題切換按鈕） */
             header {
@@ -190,21 +187,6 @@
     </style>
 </head>
 <body class="theme-light">
-    <!-- 統一導航列 -->
-    <nav class="bg-indigo-600 text-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex-shrink-0">
-                    <span class="text-xl font-bold">🛠️ 工具集</span>
-                </div>
-                <div class="flex space-x-2 sm:space-x-4">
-                    <a href="https://shift-schedule-generators.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium bg-indigo-800" title="班表工具">📅 <span class="hidden sm:inline">班表工具</span></a>
-                    <a href="https://zip.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-indigo-700 transition" title="壓縮工具">📦 <span class="hidden sm:inline">壓縮工具</span></a>
-                    <a href="https://mongo-updater-project.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-indigo-700 transition" title="中控台">🔧 <span class="hidden sm:inline">中控台</span></a>
-                </div>
-            </div>
-        </div>
-    </nav>
 
     <div class="container mx-auto p-4 md:p-8">
         
