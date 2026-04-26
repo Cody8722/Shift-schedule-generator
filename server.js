@@ -410,6 +410,21 @@ const getHolidaysForYear = async (year) => {
     return new Map();
 };
 
+const refreshHolidaysFromCDN = async () => {
+    if (!isDbConnected) return;
+    const currentYear = new Date().getFullYear();
+    for (const year of [currentYear, currentYear + 1]) {
+        try {
+            await holidaysCollection.deleteMany({ _id: { $regex: `^${year}` } });
+            holidaysCache.delete(year);
+            await getHolidaysForYear(year);
+            debugDb(`已自動更新 ${year} 年假日資料`);
+        } catch (e) {
+            debugDb(`自動更新 ${year} 年假日資料失敗:`, e.message);
+        }
+    }
+};
+
 const seedHolidays = async () => {
     try {
         const count = await holidaysCollection.countDocuments();
@@ -1270,6 +1285,8 @@ const startServer = async () => {
         if (isDbConnected) {
             await ensureConfigDocument();
             await seedHolidays();
+            await refreshHolidaysFromCDN();
+            setInterval(refreshHolidaysFromCDN, 24 * 60 * 60 * 1000);
         }
         
         app.listen(PORT, () => {
