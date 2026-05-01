@@ -1130,14 +1130,18 @@ app.post('/api/schedules', async (req, res) => {
             return res.status(400).json({ message: '班表數據必須是非空數組' });
         }
 
-        // 使用原子操作避免競態條件
-        // 直接在更新時獲取 activeProfile，而不是分兩步
-        const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
-        if (!config || !config.activeProfile) {
-            return res.status(500).json({ message: '無法獲取作用中的設定檔' });
+        // 優先使用請求帶來的 profile，向下兼容未帶 profile 的舊呼叫
+        let activeProfile = req.body.profile || null;
+        if (activeProfile) {
+            const pv = validateProfileName(activeProfile);
+            if (!pv.valid) return res.status(400).json({ message: pv.error });
+        } else {
+            const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
+            if (!config || !config.activeProfile) {
+                return res.status(500).json({ message: '無法獲取作用中的設定檔' });
+            }
+            activeProfile = config.activeProfile;
         }
-
-        const activeProfile = config.activeProfile;
         const result = await configCollection.updateOne(
             { _id: CONFIG_ID },
             { $set: { [`profiles.${activeProfile}.schedules.${name}`]: data } }
@@ -1163,7 +1167,14 @@ app.get('/api/schedules/:name', async (req, res) => {
         }
 
         const config = await configCollection.findOne({ _id: CONFIG_ID });
-        const scheduleData = config.profiles[config.activeProfile]?.schedules?.[name];
+        let activeProfile = req.query.profile || null;
+        if (activeProfile) {
+            const pv = validateProfileName(activeProfile);
+            if (!pv.valid) return res.status(400).json({ message: pv.error });
+        } else {
+            activeProfile = config.activeProfile;
+        }
+        const scheduleData = config.profiles[activeProfile]?.schedules?.[name];
         if (!scheduleData) return res.status(404).json({ message: '找不到班表' });
         res.json(scheduleData);
     } catch (error) {
@@ -1184,7 +1195,13 @@ app.delete('/api/schedules/:name', async (req, res) => {
         }
 
         const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
-        const activeProfile = config.activeProfile;
+        let activeProfile = req.query.profile || null;
+        if (activeProfile) {
+            const pv = validateProfileName(activeProfile);
+            if (!pv.valid) return res.status(400).json({ message: pv.error });
+        } else {
+            activeProfile = config.activeProfile;
+        }
         const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } });
         if (result.modifiedCount === 0) throw new Error('刪除班表失敗');
         debugDb(`班表已刪除: "${name}"`);

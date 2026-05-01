@@ -779,7 +779,12 @@
             await checkConnectionStatus();
             const data = await api.get('profiles');
             if (data && data.profiles) {
-                appState.activeProfile = data.activeProfile;
+                // 優先使用 sessionStorage 裡的 per-tab 選擇，避免多分頁互相干擾
+                const savedProfile = sessionStorage.getItem('activeProfile');
+                appState.activeProfile = (savedProfile && data.profiles[savedProfile])
+                    ? savedProfile
+                    : data.activeProfile;
+                sessionStorage.setItem('activeProfile', appState.activeProfile);
                 appState.profiles = data.profiles;
                 renderAll();
             }
@@ -1784,7 +1789,8 @@
                 try {
                     const result = await api.post('schedules', {
                         name: currentScheduleName,
-                        data: editingData
+                        data: editingData,
+                        profile: appState.activeProfile
                     });
                     if (result) {
                         // API 成功後才更新本地狀態
@@ -2092,10 +2098,12 @@
 
         elements.profileSelect.addEventListener('change', async (e) => {
             const newProfileName = e.target.value;
-            const result = await api.put('profiles/active', { name: newProfileName });
-            if (result) {
-                appState.activeProfile = newProfileName;
-                renderAll();
+            appState.activeProfile = newProfileName;
+            sessionStorage.setItem('activeProfile', newProfileName);
+            renderAll();
+            // 非同步通知後端更新全域預設值，失敗不影響本分頁操作
+            api.put('profiles/active', { name: newProfileName }).catch(() => {});
+            {
                 // 清除所有班表相關狀態
                 generatedData = null;
                 currentScheduleName = null;
@@ -2238,7 +2246,7 @@
             if (!generatedData) return alert('請先產生班表！');
             const name = prompt('請為此班表命名 (例如: 2024-W35):');
             if (name && name.trim()) {
-                const result = await api.post('schedules', { name: name.trim(), data: generatedData });
+                const result = await api.post('schedules', { name: name.trim(), data: generatedData, profile: appState.activeProfile });
                 if (result) {
                     getActiveProfile().schedules[name.trim()] = generatedData;
                     currentScheduleName = name.trim(); // 設置當前班表名稱
@@ -2254,7 +2262,7 @@
             const btn = e.target.closest('.delete-schedule-btn');
             if (link) {
                 const name = link.dataset.name;
-                const scheduleData = await api.get(`schedules/${name}`);
+                const scheduleData = await api.get(`schedules/${name}?profile=${encodeURIComponent(appState.activeProfile)}`);
                 if (scheduleData) {
                     generatedData = scheduleData;
                     currentScheduleName = name; // 設置當前班表名稱
@@ -2266,7 +2274,7 @@
             } else if (btn) {
                  const name = btn.dataset.name;
                  if (confirm(`確定要刪除班表「${name}」嗎？`)) {
-                     const result = await api.delete(`schedules/${name}`);
+                     const result = await api.delete(`schedules/${name}?profile=${encodeURIComponent(appState.activeProfile)}`);
                      if (result) {
                          delete getActiveProfile().schedules[name];
                          renderSavedSchedules();
