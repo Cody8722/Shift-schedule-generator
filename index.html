@@ -497,6 +497,72 @@
         });
     }
 
+    const MAX_HISTORY = 20;
+    let editUndoStack = [];
+    let editRedoStack = [];
+    let settingsUndoStack = [];
+    let settingsRedoStack = [];
+    let _historyLock = false;
+
+    function updateUndoRedoBtns() {
+        const u = document.getElementById('undo-edit-btn');
+        const r = document.getElementById('redo-edit-btn');
+        if (u) u.disabled = editUndoStack.length === 0;
+        if (r) r.disabled = editRedoStack.length === 0;
+    }
+
+    function pushEditHistory() {
+        if (_historyLock || !editingData) return;
+        editUndoStack.push(JSON.stringify(editingData));
+        if (editUndoStack.length > MAX_HISTORY) editUndoStack.shift();
+        editRedoStack = [];
+        updateUndoRedoBtns();
+    }
+    function undoEdit() {
+        if (!editUndoStack.length) return;
+        editRedoStack.push(JSON.stringify(editingData));
+        editingData = JSON.parse(editUndoStack.pop());
+        renderEditableSchedule();
+        hasUnsavedChanges = editUndoStack.length > 0;
+        updateUndoRedoBtns();
+        showToast('已復原', 'info', 1500);
+    }
+    function redoEdit() {
+        if (!editRedoStack.length) return;
+        editUndoStack.push(JSON.stringify(editingData));
+        editingData = JSON.parse(editRedoStack.pop());
+        renderEditableSchedule();
+        hasUnsavedChanges = true;
+        updateUndoRedoBtns();
+        showToast('已重做', 'info', 1500);
+    }
+
+    function pushSettingsHistory() {
+        const profile = appState.profiles[appState.activeProfile];
+        if (!profile) return;
+        settingsUndoStack.push(JSON.stringify(profile.settings));
+        if (settingsUndoStack.length > MAX_HISTORY) settingsUndoStack.shift();
+        settingsRedoStack = [];
+    }
+    async function undoSettings() {
+        if (!settingsUndoStack.length) return;
+        const profile = appState.profiles[appState.activeProfile];
+        settingsRedoStack.push(JSON.stringify(profile.settings));
+        profile.settings = JSON.parse(settingsUndoStack.pop());
+        renderAll();
+        await saveSettings();
+        showToast('已復原設定', 'info', 1500);
+    }
+    async function redoSettings() {
+        if (!settingsRedoStack.length) return;
+        const profile = appState.profiles[appState.activeProfile];
+        settingsUndoStack.push(JSON.stringify(profile.settings));
+        profile.settings = JSON.parse(settingsRedoStack.pop());
+        renderAll();
+        await saveSettings();
+        showToast('已重做設定', 'info', 1500);
+    }
+
     const getAuthHeaders = () => authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
 
     const showLoginModal = (errorMsg) => {
@@ -906,6 +972,7 @@
         };
         
         const handleSettingsChange = async (updateFunction) => {
+            pushSettingsHistory();
             updateFunction();
             renderAll();
             await saveSettings();
@@ -996,6 +1063,7 @@
             // 深拷貝數據用於編輯
             editingData = JSON.parse(JSON.stringify(generatedData));
             hasUnsavedChanges = false;
+            editUndoStack = []; editRedoStack = [];
 
             // 重新渲染為可編輯模式
             renderEditableSchedule();
@@ -1056,7 +1124,11 @@
                     <span class="text-blue-700 font-medium">✏️ 編輯模式</span>
                     <span id="edit-status" class="text-sm text-gray-600"></span>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
+                    <button id="undo-edit-btn" title="復原 (Ctrl+Z)" disabled
+                        class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">↩ 復原</button>
+                    <button id="redo-edit-btn" title="重做 (Ctrl+Y)" disabled
+                        class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">↪ 重做</button>
                     <button id="save-edits-btn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400" disabled>
                         💾 儲存修改
                     </button>
@@ -1074,6 +1146,8 @@
                 document.getElementById('save-edits-btn').addEventListener('click', saveEdits);
                 document.getElementById('cancel-edits-btn').addEventListener('click', cancelEdits);
                 document.getElementById('exit-edit-mode-btn').addEventListener('click', exitEditMode);
+                document.getElementById('undo-edit-btn').addEventListener('click', undoEdit);
+                document.getElementById('redo-edit-btn').addEventListener('click', redoEdit);
             }, 0);
 
             return toolbar;
@@ -1657,6 +1731,10 @@
                 return; // 不允許放置
             }
 
+            // 拖放前先記錄完整狀態（鎖定避免 addPersonToCell 內部重複 push）
+            pushEditHistory();
+            _historyLock = true;
+
             // 檢查是否從其他格子拖拽
             if (draggedFromCell) {
                 const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex, 10);
@@ -1679,6 +1757,7 @@
 
             // 添加到新位置（addPersonToCell 內部會更新新週的統計）
             addPersonToCell(weekIndex, dayIndex, taskIndex, draggedPerson);
+            _historyLock = false;
 
             // 使用 requestAnimationFrame 確保在所有渲染完成後恢復滾動位置
             requestAnimationFrame(() => {
@@ -1692,6 +1771,7 @@
         }
 
         function addPersonToCell(weekIndex, dayIndex, taskIndex, personName) {
+            pushEditHistory();
             const personnelList = editingData[weekIndex].schedule[dayIndex][taskIndex];
 
             // 檢查是否已在此勤務中
@@ -1741,6 +1821,7 @@
         }
 
         function removePersonFromCell(weekIndex, dayIndex, taskIndex, personIndex) {
+            pushEditHistory();
             // 保存當前滾動位置
             const scrollY = window.scrollY;
             const scrollX = window.scrollX;
@@ -2209,6 +2290,8 @@
                 if (!ok) { e.target.value = appState.activeProfile; return; }
                 hasUnsavedChanges = false;
             }
+            editUndoStack = []; editRedoStack = [];
+            settingsUndoStack = []; settingsRedoStack = [];
             const newProfileName = e.target.value;
             appState.activeProfile = newProfileName;
             sessionStorage.setItem('activeProfile', newProfileName);
@@ -2565,6 +2648,21 @@
                 }
             });
         }
+
+        // 全域鍵盤快捷鍵：Ctrl/Cmd+Z 復原，Ctrl/Cmd+Y 或 Ctrl/Cmd+Shift+Z 重做
+        document.addEventListener('keydown', (e) => {
+            const mod = navigator.platform.toUpperCase().includes('MAC') ? e.metaKey : e.ctrlKey;
+            if (!mod) return;
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
+            if (e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                editingData !== null ? undoEdit() : undoSettings();
+            } else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) {
+                e.preventDefault();
+                editingData !== null ? redoEdit() : redoSettings();
+            }
+        });
 
         // 啟動：先試 /api/status，判斷是否需要登入
         const statusResp = await fetch(`${API_BASE_URL}/status`).catch(() => null);
