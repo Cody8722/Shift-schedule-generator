@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智慧排班系統</title>
+    <script>
+        tailwind = { config: { darkMode: 'class' } };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -2705,6 +2708,21 @@
     });
 </script>
 <div id="toast-container" class="fixed bottom-5 right-5 flex flex-col gap-2 z-[9999] pointer-events-none"></div>
+<!-- Tailwind safelist：強迫 CDN 編譯動態注入的 class，此 div 不顯示 -->
+<div aria-hidden="true" style="display:none"
+    class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200
+           bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200
+           bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200
+           bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200
+           bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200
+           bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200
+           bg-white dark:bg-gray-800 bg-gray-50 dark:bg-gray-700 bg-gray-100
+           border-gray-200 dark:border-gray-600
+           bg-amber-50 dark:bg-amber-900 border-amber-300 dark:border-amber-600
+           text-amber-800 dark:text-amber-200
+           text-green-600 dark:text-green-400 text-red-500 dark:text-red-400
+           text-gray-700 dark:text-gray-300 text-gray-500 dark:text-gray-400">
+</div>
 </body>
 </html>
 
