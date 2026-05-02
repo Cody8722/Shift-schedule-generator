@@ -3,8 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const path = require('path');
-const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
 const fs = require('fs').promises; // 引入 fs 模組
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const rateLimit = require('express-rate-limit');
@@ -58,7 +56,6 @@ let client;
 let db;
 let configCollection;
 let holidaysCollection;
-let usersCollection = null; // accounting_db.users（共用帳號）
 let isDbConnected = false;
 
 if (MONGODB_URI) {
@@ -89,21 +86,13 @@ app.set('trust proxy', 1);
 const corsOptions = {
     origin: process.env.CORS_ORIGIN || '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type'],
 };
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 // --- 速率限制（分層）---
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: '登入嘗試次數過多，請於 15 分鐘後再試。'
-});
-
 const readLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 300,
@@ -128,33 +117,11 @@ const generateLimiter = rateLimit({
     message: '產生班表次數過多，請於 15 分鐘後再試。'
 });
 
-// 依 HTTP 方法套用速率限制（auth 路由例外，由 authLimiter 單獨處理）
+// 依 HTTP 方法套用速率限制
 app.use('/api/', (req, res, next) => {
-    if (req.path.startsWith('/auth/')) return next();
     if (req.method === 'GET') return readLimiter(req, res, next);
     return writeLimiter(req, res, next);
 });
-
-// --- 身份驗證中介軟體 ---
-function requireAuth(req, res, next) {
-    if (!process.env.JWT_SECRET) return next(); // 未設定 JWT_SECRET → 直接通過
-    if (req.path.startsWith('/auth/')) return next(); // 跳過登入路由
-    if (req.path === '/status' && req.method === 'GET') return next(); // 健康檢查不需登入
-
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: '請先登入' });
-    }
-    const token = authHeader.slice(7);
-    try {
-        req.user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-        next();
-    } catch {
-        return res.status(401).json({ message: '登入已過期，請重新登入' });
-    }
-}
-
-app.use('/api/', requireAuth);
 
 // --- 安全輔助函式 ---
 const escapeHtml = (unsafe) => {
@@ -241,76 +208,6 @@ const validateSettings = (settings) => {
 
     return { valid: true };
 };
-
-// --- 密碼 PBKDF2-SHA256（相容 passlib 格式）---
-// 格式：$pbkdf2-sha256$<rounds>$<ab64_salt>$<ab64_hash>
-// ab64 = 標準 base64，但 '+' 換成 '.'，無 '=' padding
-const ab64decode = s => {
-    s = s.replace(/\./g, '+');
-    while (s.length % 4) s += '=';
-    return Buffer.from(s, 'base64');
-};
-const ab64encode = buf => buf.toString('base64').replace(/\+/g, '.').replace(/=/g, '');
-
-function verifyPasslibPbkdf2(password, storedHash) {
-    try {
-        const parts = storedHash.split('$');
-        if (parts.length < 5 || parts[1] !== 'pbkdf2-sha256') return false;
-        const rounds = parseInt(parts[2]);
-        const salt = ab64decode(parts[3]);
-        const expected = ab64decode(parts[4]);
-        const derived = crypto.pbkdf2Sync(password, salt, rounds, expected.length, 'sha256');
-        return crypto.timingSafeEqual(derived, expected);
-    } catch { return false; }
-}
-
-function hashPasslibPbkdf2(password) {
-    const salt = crypto.randomBytes(16);
-    const hash = crypto.pbkdf2Sync(password, salt, 29000, 32, 'sha256');
-    return `$pbkdf2-sha256$29000$${ab64encode(salt)}$${ab64encode(hash)}`;
-}
-
-// --- Email（忘記密碼）---
-function createMailTransporter() {
-    if (!process.env.SMTP_USERNAME || !process.env.SMTP_PASSWORD) return null;
-    return nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 587,
-        secure: false,
-        auth: { user: process.env.SMTP_USERNAME, pass: process.env.SMTP_PASSWORD },
-    });
-}
-
-async function sendResetEmail(toEmail, resetUrl) {
-    const transporter = createMailTransporter();
-    if (!transporter) { debugServer('SMTP 未設定，無法寄送密碼重設信'); return false; }
-    const fromName = process.env.SMTP_FROM_NAME || '排班系統 - 系統通知';
-    try {
-        await transporter.sendMail({
-            from: `"${fromName}" <${process.env.SMTP_USERNAME}>`,
-            to: toEmail,
-            subject: '排班系統 — 密碼重設',
-            html: `
-            <div style="font-family:sans-serif;max-width:480px;margin:0 auto;">
-                <h2 style="color:#0284c7;">密碼重設</h2>
-                <p>我們收到了您的密碼重設請求。請點擊下方按鈕重設密碼：</p>
-                <a href="${resetUrl}"
-                   style="display:inline-block;padding:12px 24px;background:#0284c7;color:#fff;
-                          border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0;">
-                    重設密碼
-                </a>
-                <p style="color:#6b7280;font-size:0.875rem;">
-                    此連結將在 1 小時後失效。若非您本人操作，請忽略此信件。
-                </p>
-            </div>`,
-        });
-        debugServer(`密碼重設信已寄送至: ${toEmail}`);
-        return true;
-    } catch (e) {
-        debugServer('寄送密碼重設信失敗:', e.message);
-        return false;
-    }
-}
 
 // --- 輔助函式 ---
 const ensureConfigDocument = async () => {
@@ -668,107 +565,11 @@ const generateScheduleHtml = (fullScheduleData) => {
     return html;
 };
 
-// --- 身份驗證路由（原生實作，共用 accounting_db.users）---
-app.post('/api/auth/login', authLimiter, async (req, res) => {
-    if (!usersCollection) return res.status(503).json({ message: '資料庫未連線' });
-    try {
-        const { email, password } = req.body;
-        if (typeof email !== 'string' || typeof password !== 'string')
-            return res.status(400).json({ message: 'Email 和密碼不能為空' });
-        if (!email || !password) return res.status(400).json({ message: 'Email 和密碼不能為空' });
-
-        const user = await usersCollection.findOne({ email: email.trim().toLowerCase() });
-        if (!user || !user.is_active) return res.status(401).json({ message: 'Email 或密碼錯誤' });
-
-        if (!verifyPasslibPbkdf2(password, user.password_hash))
-            return res.status(401).json({ message: 'Email 或密碼錯誤' });
-
-        await usersCollection.updateOne({ _id: user._id }, { $set: { last_login: new Date() } });
-
-        if (!process.env.JWT_SECRET) return res.status(500).json({ message: 'JWT_SECRET 未設定' });
-
-        const token = jwt.sign(
-            { user_id: String(user._id), email: user.email, name: user.name || '', type: 'access' },
-            process.env.JWT_SECRET,
-            { algorithm: 'HS256', expiresIn: '7d' }
-        );
-        debugServer(`用戶登入: ${user.email}`);
-        res.json({ token, user: { id: String(user._id), email: user.email, name: user.name || '' } });
-    } catch (e) {
-        debugServer('登入失敗:', e);
-        res.status(500).json({ message: '登入失敗，請稍後再試' });
-    }
-});
-
-app.post('/api/auth/forgot-password', authLimiter, async (req, res) => {
-    try {
-        const { email } = req.body;
-        if (typeof email !== 'string' || !email) return res.status(400).json({ message: '請提供 Email' });
-
-        if (usersCollection) {
-            const user = await usersCollection.findOne({ email: email.trim().toLowerCase() });
-            if (user) {
-                const token = crypto.randomBytes(32).toString('hex');
-                const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 小時
-                await usersCollection.updateOne(
-                    { _id: user._id },
-                    { $set: { password_reset_token: token, password_reset_expires: expires } }
-                );
-                const APP_URL = process.env.APP_URL || process.env.CORS_ORIGIN || `http://localhost:${PORT}`;
-                const resetUrl = `${APP_URL}?reset_token=${token}`;
-                const sent = await sendResetEmail(user.email, resetUrl);
-                if (!sent) debugServer(`SMTP 發送失敗（密碼重設）: ${user.email}`);
-                else debugServer(`密碼重設信已寄送: ${user.email}`);
-            }
-        }
-        // 無論 email 存不存在、SMTP 是否成功，都回 200（防帳號列舉）
-        res.json({ message: '若此 Email 已註冊，重設連結已寄出' });
-    } catch (e) {
-        debugServer('忘記密碼失敗:', e);
-        res.status(500).json({ message: '系統錯誤' });
-    }
-});
-
-app.post('/api/auth/reset-password', authLimiter, async (req, res) => {
-    if (!usersCollection) return res.status(503).json({ message: '資料庫未連線' });
-    try {
-        const { token, new_password } = req.body;
-        if (typeof token !== 'string' || typeof new_password !== 'string')
-            return res.status(400).json({ message: '請提供 token 和新密碼' });
-        if (!token || !new_password) return res.status(400).json({ message: '請提供 token 和新密碼' });
-        if (new_password.length < 8) return res.status(400).json({ message: '密碼至少需 8 字元' });
-
-        const user = await usersCollection.findOne({ password_reset_token: token });
-        if (!user) return res.status(400).json({ message: '連結無效或已過期' });
-
-        const expires = user.password_reset_expires;
-        if (!expires || new Date() > new Date(expires))
-            return res.status(400).json({ message: '連結已過期，請重新申請' });
-
-        const newHash = hashPasslibPbkdf2(new_password);
-        await usersCollection.updateOne(
-            { _id: user._id },
-            {
-                $set: { password_hash: newHash, password_last_updated: new Date() },
-                $unset: { password_reset_token: '', password_reset_expires: '' },
-            }
-        );
-        debugServer(`用戶已重設密碼: ${user.email}`);
-        res.json({ message: '密碼已重設，請重新登入' });
-    } catch (e) {
-        debugServer('重設密碼失敗:', e);
-        res.status(500).json({ message: '系統錯誤' });
-    }
-});
-
-app.post('/api/auth/logout', (req, res) => res.json({ message: '已登出' }));
-
 // --- API 路由 ---
 app.get('/api/status', async (req, res) => {
     const status = {
         server: 'running',
         database: isDbConnected ? 'connected' : 'disconnected',
-        auth_required: !!process.env.JWT_SECRET
     };
 
     if (isDbConnected) {
@@ -1307,9 +1108,8 @@ const startServer = async () => {
         db = client.db(DB_NAME);
         configCollection = db.collection('profiles');
         holidaysCollection = db.collection('holidays');
-        usersCollection = client.db('accounting_db').collection('users');
         isDbConnected = true;
-        
+
         if (isDbConnected) {
             await ensureConfigDocument();
             await seedHolidays();
@@ -1371,7 +1171,6 @@ const initTestDb = async () => {
             db = client.db(DB_NAME);
             configCollection = db.collection('profiles');
             holidaysCollection = db.collection('holidays');
-            usersCollection = client.db('accounting_db').collection('users');
             isDbConnected = true;
             await ensureConfigDocument();
             await seedHolidays();
