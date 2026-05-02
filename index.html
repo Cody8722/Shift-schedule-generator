@@ -310,9 +310,15 @@
 
             <div class="lg:col-span-2 space-y-6 min-w-0">
                 <div id="output-container" class="card p-4 rounded-lg shadow-md hidden" style="transition: opacity 0.3s;">
-                    <div class="flex flex-wrap justify-between items-center mb-4">
-                        <h2 class="text-2xl font-bold">班表結果</h2>
-                        <div class="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <div class="flex items-center gap-3">
+                            <h2 class="text-2xl font-bold">班表結果</h2>
+                            <div class="flex gap-1 text-sm">
+                                <button id="view-schedule-btn" class="px-3 py-1 rounded bg-blue-600 text-white text-xs">📅 班表</button>
+                                <button id="view-personnel-btn" class="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs">👥 人員</button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
                             <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
                             <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製</button>
                             <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">Excel</button>
@@ -321,6 +327,7 @@
                         </div>
                     </div>
                     <div id="schedule-output" class="overflow-x-auto"></div>
+                    <div id="personnel-view" class="hidden mt-2 overflow-x-auto"></div>
                     <div id="fill-stats-panel" class="mt-4 hidden"></div>
                 </div>
 
@@ -438,7 +445,18 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Diff Modal -->
+    <div id="diff-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 max-w-2xl mx-auto flex flex-col" style="max-height:80vh">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-lg font-bold">與原始班表的差異</h3>
+                <button id="diff-modal-close" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-2xl leading-none">&times;</button>
+            </div>
+            <div id="diff-modal-content" class="overflow-y-auto flex-1 text-sm"></div>
+        </div>
+    </div>
+
 <script>
     const API_BASE_URL = `api`;
     const _savedTheme = localStorage.getItem('theme');
@@ -561,6 +579,158 @@
         renderAll();
         await saveSettings();
         showToast('已重做設定', 'info', 1500);
+    }
+
+    // ── 草稿自動存 ──
+    const _draftTimer = { id: null };
+    function autoSaveDraft() {
+        clearTimeout(_draftTimer.id);
+        _draftTimer.id = setTimeout(() => {
+            if (!editingData) return;
+            try {
+                localStorage.setItem('schedule_draft', JSON.stringify({
+                    profile: appState.activeProfile,
+                    scheduleName: currentScheduleName,
+                    generatedData,
+                    editingData,
+                    savedAt: Date.now()
+                }));
+            } catch { /* quota exceeded, skip */ }
+        }, 2000);
+    }
+    function clearDraft() {
+        clearTimeout(_draftTimer.id);
+        localStorage.removeItem('schedule_draft');
+    }
+    function showDraftBanner(draft, mins) {
+        const existing = document.getElementById('draft-banner');
+        if (existing) existing.remove();
+        const label = mins < 1 ? '剛才' : `${mins} 分鐘前`;
+        const banner = document.createElement('div');
+        banner.id = 'draft-banner';
+        banner.className = 'mb-4 p-3 bg-amber-50 dark:bg-amber-900 border border-amber-300 dark:border-amber-600 rounded-lg flex items-center justify-between text-sm';
+        banner.innerHTML = `
+            <span class="text-amber-800 dark:text-amber-200">📝 找到 ${label} 的未儲存草稿（設定檔：${escapeHtml(draft.profile)}）</span>
+            <div class="flex gap-2 ml-3 shrink-0">
+                <button id="draft-restore-btn" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-xs">恢復草稿</button>
+                <button id="draft-discard-btn" class="bg-gray-400 hover:bg-gray-500 text-white px-3 py-1 rounded text-xs">捨棄</button>
+            </div>`;
+        const container = document.getElementById('output-container');
+        container.prepend(banner);
+        container.classList.remove('hidden');
+        document.getElementById('draft-restore-btn').addEventListener('click', () => {
+            generatedData = draft.generatedData;
+            editingData = draft.editingData;
+            currentScheduleName = draft.scheduleName;
+            hasUnsavedChanges = true;
+            editUndoStack = []; editRedoStack = [];
+            renderEditableSchedule();
+            banner.remove();
+            clearDraft();
+            showToast('草稿已恢復', 'success');
+        });
+        document.getElementById('draft-discard-btn').addEventListener('click', () => {
+            banner.remove();
+            clearDraft();
+        });
+    }
+
+    // ── 變更摘要 ──
+    function buildDiff(original, current) {
+        const changes = [];
+        const dayNames = ['週一', '週二', '週三', '週四', '週五'];
+        original.forEach((week, wi) => {
+            week.schedule.forEach((daySlots, di) => {
+                if (!week.scheduleDays[di].shouldSchedule) return;
+                daySlots.forEach((origPersons, ti) => {
+                    const currPersons = current[wi]?.schedule[di]?.[ti] || [];
+                    const added   = currPersons.filter(p => !origPersons.includes(p));
+                    const removed = origPersons.filter(p => !currPersons.includes(p));
+                    if (added.length || removed.length) {
+                        changes.push({
+                            label: `第 ${wi + 1} 週 ${week.dateRange} / ${dayNames[di]} / ${week.tasks[ti].name}`,
+                            added,
+                            removed
+                        });
+                    }
+                });
+            });
+        });
+        return changes;
+    }
+    function showDiffModal() {
+        const modal = document.getElementById('diff-modal');
+        const content = document.getElementById('diff-modal-content');
+        if (!modal || !content) return;
+        const changes = buildDiff(generatedData, editingData);
+        if (changes.length === 0) {
+            content.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center py-6">目前無任何修改，班表與原始一致。</p>';
+        } else {
+            content.innerHTML = changes.map(c => `
+                <div class="mb-3 pb-3 border-b border-gray-200 dark:border-gray-600 last:border-0">
+                    <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">${escapeHtml(c.label)}</p>
+                    ${c.added.map(p => `<p class="text-green-600 dark:text-green-400 ml-3">＋ ${escapeHtml(p)}</p>`).join('')}
+                    ${c.removed.map(p => `<p class="text-red-500 dark:text-red-400 ml-3">－ ${escapeHtml(p)}</p>`).join('')}
+                </div>`).join('');
+        }
+        modal.classList.remove('hidden');
+    }
+
+    // ── 人員視圖 ──
+    const TASK_COLORS = [
+        'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+        'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+        'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+        'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+        'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
+        'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
+    ];
+    function renderPersonnelView(data) {
+        const panel = document.getElementById('personnel-view');
+        if (!panel || !data || !data.length) return;
+        const dayNames = ['一', '二', '三', '四', '五'];
+        // 所有任務名稱 → 顏色索引對照
+        const allTasks = data[0].tasks.map(t => t.name);
+        const taskColorMap = {};
+        allTasks.forEach((name, i) => { taskColorMap[name] = TASK_COLORS[i % TASK_COLORS.length]; });
+        // 人員清單（從 profile）
+        const personnel = getActiveProfile()?.settings?.personnel || [];
+        const allPersons = personnel.map(p => p.name);
+        // 收集所有 header 欄：{ label, weekIndex, dayIndex }
+        const cols = [];
+        data.forEach((week, wi) => {
+            week.weekDayDates.forEach((date, di) => {
+                cols.push({ label: `W${wi + 1}<br><span class='text-xs font-normal'>${dayNames[di]}<br>${escapeHtml(date)}</span>`, wi, di, shouldSchedule: week.scheduleDays[di].shouldSchedule });
+            });
+        });
+        // 建立 person → col key → task name
+        const personMap = {};
+        allPersons.forEach(p => { personMap[p] = {}; });
+        data.forEach((week, wi) => {
+            week.schedule.forEach((daySlots, di) => {
+                daySlots.forEach((persons, ti) => {
+                    persons.forEach(p => {
+                        if (!personMap[p]) personMap[p] = {};
+                        personMap[p][`${wi}-${di}`] = week.tasks[ti].name;
+                    });
+                });
+            });
+        });
+        // 渲染表格
+        const thStyle = 'px-2 py-1 text-center text-xs font-medium border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 min-w-[60px]';
+        const tdStyle = 'px-1 py-1 text-center text-xs border border-gray-200 dark:border-gray-600';
+        const header = `<tr><th class="${thStyle} sticky left-0 z-10 bg-gray-50 dark:bg-gray-700 min-w-[80px]">姓名</th>${cols.map(c => `<th class="${thStyle}">${c.shouldSchedule ? c.label : `<span class='text-gray-400'>${c.label}</span>`}</th>`).join('')}</tr>`;
+        const rows = allPersons.map(p => {
+            const cells = cols.map(c => {
+                if (!c.shouldSchedule) return `<td class="${tdStyle} bg-gray-100 dark:bg-gray-800 text-gray-400">—</td>`;
+                const task = personMap[p]?.[`${c.wi}-${c.di}`];
+                return task
+                    ? `<td class="${tdStyle} ${taskColorMap[task] || ''} font-medium">${escapeHtml(task)}</td>`
+                    : `<td class="${tdStyle}"></td>`;
+            }).join('');
+            return `<tr><td class="${tdStyle} sticky left-0 z-10 bg-white dark:bg-gray-800 font-medium">${escapeHtml(p)}</td>${cells}</tr>`;
+        }).join('');
+        panel.innerHTML = `<table class="border-collapse text-sm w-max"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
     }
 
     const getAuthHeaders = () => authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
@@ -969,6 +1139,17 @@
             debouncedUpdateHolidays();
             setInitialAccordionState();
             setInterval(checkConnectionStatus, 30000);
+            // 草稿恢復檢查
+            try {
+                const raw = localStorage.getItem('schedule_draft');
+                if (raw) {
+                    const draft = JSON.parse(raw);
+                    if (draft.profile === appState.activeProfile && draft.editingData) {
+                        const mins = Math.round((Date.now() - draft.savedAt) / 60000);
+                        showDraftBanner(draft, mins);
+                    }
+                }
+            } catch { clearDraft(); }
         };
         
         const handleSettingsChange = async (updateFunction) => {
@@ -1129,6 +1310,8 @@
                         class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">↩ 復原</button>
                     <button id="redo-edit-btn" title="重做 (Ctrl+Y)" disabled
                         class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">↪ 重做</button>
+                    <button id="diff-btn" title="查看與原始班表的差異"
+                        class="px-3 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 text-sm">📋 變更摘要</button>
                     <button id="save-edits-btn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400" disabled>
                         💾 儲存修改
                     </button>
@@ -1148,6 +1331,7 @@
                 document.getElementById('exit-edit-mode-btn').addEventListener('click', exitEditMode);
                 document.getElementById('undo-edit-btn').addEventListener('click', undoEdit);
                 document.getElementById('redo-edit-btn').addEventListener('click', redoEdit);
+                document.getElementById('diff-btn').addEventListener('click', showDiffModal);
             }, 0);
 
             return toolbar;
@@ -1967,6 +2151,7 @@
             document.getElementById('save-edits-btn').disabled = false;
             document.getElementById('edit-status').textContent = '⚠️ 有未儲存的修改';
             document.getElementById('edit-status').classList.add('text-orange-600', 'font-medium');
+            autoSaveDraft();
         }
 
         async function saveEdits() {
@@ -1989,6 +2174,7 @@
                         document.getElementById('edit-status').classList.remove('text-orange-600');
                         document.getElementById('edit-status').classList.add('text-green-600');
 
+                        clearDraft();
                         showToast('班表修改已儲存並同步到雲端！', 'success');
                     } else {
                         showToast('同步到雲端時發生錯誤，請稍後再試。', 'error');
@@ -2007,6 +2193,7 @@
                 document.getElementById('edit-status').classList.remove('text-orange-600');
                 document.getElementById('edit-status').classList.add('text-green-600');
 
+                clearDraft();
                 showToast('班表修改已儲存！', 'success');
             }
         }
@@ -2017,7 +2204,7 @@
                 if (!ok) return;
             }
 
-            // 重新載入原始資料
+            clearDraft();
             editingData = JSON.parse(JSON.stringify(generatedData));
             hasUnsavedChanges = false;
             renderEditableSchedule();
@@ -2029,6 +2216,7 @@
                 if (!ok) return;
             }
 
+            clearDraft();
             // 清理編輯狀態
             editingData = null;
             hasUnsavedChanges = false;
@@ -2648,6 +2836,24 @@
                 }
             });
         }
+
+        document.getElementById('diff-modal-close')?.addEventListener('click', () => {
+            document.getElementById('diff-modal').classList.add('hidden');
+        });
+
+        document.getElementById('view-schedule-btn')?.addEventListener('click', () => {
+            document.getElementById('schedule-output').classList.remove('hidden');
+            document.getElementById('personnel-view').classList.add('hidden');
+            document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
+            document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+        });
+        document.getElementById('view-personnel-btn')?.addEventListener('click', () => {
+            renderPersonnelView(editingData || generatedData);
+            document.getElementById('personnel-view').classList.remove('hidden');
+            document.getElementById('schedule-output').classList.add('hidden');
+            document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
+            document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+        });
 
         // 全域鍵盤快捷鍵：Ctrl/Cmd+Z 復原，Ctrl/Cmd+Y 或 Ctrl/Cmd+Shift+Z 重做
         document.addEventListener('keydown', (e) => {
