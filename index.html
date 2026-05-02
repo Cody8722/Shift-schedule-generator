@@ -540,7 +540,7 @@
         if (!editUndoStack.length) return;
         editRedoStack.push(JSON.stringify(editingData));
         editingData = JSON.parse(editUndoStack.pop());
-        renderEditableSchedule();
+        _renderEditableSchedule();
         hasUnsavedChanges = editUndoStack.length > 0;
         updateUndoRedoBtns();
         showToast('已復原', 'info', 1500);
@@ -549,7 +549,7 @@
         if (!editRedoStack.length) return;
         editUndoStack.push(JSON.stringify(editingData));
         editingData = JSON.parse(editRedoStack.pop());
-        renderEditableSchedule();
+        _renderEditableSchedule();
         hasUnsavedChanges = true;
         updateUndoRedoBtns();
         showToast('已重做', 'info', 1500);
@@ -567,8 +567,8 @@
         const profile = appState.profiles[appState.activeProfile];
         settingsRedoStack.push(JSON.stringify(profile.settings));
         profile.settings = JSON.parse(settingsUndoStack.pop());
-        renderAll();
-        await saveSettings();
+        _renderAll();
+        await _saveSettings();
         showToast('已復原設定', 'info', 1500);
     }
     async function redoSettings() {
@@ -576,8 +576,8 @@
         const profile = appState.profiles[appState.activeProfile];
         settingsUndoStack.push(JSON.stringify(profile.settings));
         profile.settings = JSON.parse(settingsRedoStack.pop());
-        renderAll();
-        await saveSettings();
+        _renderAll();
+        await _saveSettings();
         showToast('已重做設定', 'info', 1500);
     }
 
@@ -624,7 +624,7 @@
             currentScheduleName = draft.scheduleName;
             hasUnsavedChanges = true;
             editUndoStack = []; editRedoStack = [];
-            renderEditableSchedule();
+            _renderEditableSchedule();
             banner.remove();
             clearDraft();
             showToast('草稿已恢復', 'success');
@@ -694,7 +694,7 @@
         const taskColorMap = {};
         allTasks.forEach((name, i) => { taskColorMap[name] = TASK_COLORS[i % TASK_COLORS.length]; });
         // 人員清單（從 profile）
-        const personnel = getActiveProfile()?.settings?.personnel || [];
+        const personnel = appState.profiles[appState.activeProfile]?.settings?.personnel || [];
         const allPersons = personnel.map(p => p.name);
         // 收集所有 header 欄：{ label, weekIndex, dayIndex }
         const cols = [];
@@ -764,6 +764,12 @@
     let generatedData = null;
     let currentScheduleName = null; // 追踪當前載入的班表名稱
     let currentEditingPersonnelIndex = -1;
+    let editingData = null;
+    let hasUnsavedChanges = false;
+    // Proxy refs — assigned inside DOMContentLoaded after functions are defined
+    let _renderEditableSchedule = () => {};
+    let _renderAll = () => {};
+    let _saveSettings = async () => {};
 
     // 安全輔助函式：HTML 轉義（防止 XSS）
     const escapeHtml = (unsafe) => {
@@ -1235,8 +1241,6 @@
 
         // === 可編輯班表系統 ===
         let isEditMode = false;
-        let editingData = null; // 編輯中的暫存資料
-        let hasUnsavedChanges = false;
 
         function enableEditMode() {
             if (!generatedData) return;
@@ -2854,6 +2858,11 @@
             document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
             document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
         });
+
+        // Assign global proxy refs now that all inner functions are defined
+        _renderEditableSchedule = renderEditableSchedule;
+        _renderAll = renderAll;
+        _saveSettings = saveSettings;
 
         // 全域鍵盤快捷鍵：Ctrl/Cmd+Z 復原，Ctrl/Cmd+Y 或 Ctrl/Cmd+Shift+Z 重做
         document.addEventListener('keydown', (e) => {
