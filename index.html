@@ -143,6 +143,12 @@
         .dark .weekly-stats-card { background-color: var(--card-bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
         .dark .weekly-stats-card .text-gray-700 { color: #d1d5db; }
 
+        /* Edit Toolbar */
+        #edit-toolbar { background-color: #eff6ff; border-color: #bfdbfe; }
+        .dark #edit-toolbar { background-color: #1e3a5f; border-color: #1e40af; }
+        .dark #edit-toolbar .edit-toolbar-label { color: #93c5fd; }
+        .dark #edit-toolbar #edit-status { color: #9ca3af; }
+
         /* Personnel View */
         .pv-th { background-color: #f9fafb; border: 1px solid #e5e7eb; }
         .dark .pv-th { background-color: #374151; border-color: #4b5563; color: #f9fafb; }
@@ -1242,10 +1248,11 @@
 
         function createEditToolbar() {
             const toolbar = document.createElement('div');
-            toolbar.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-center justify-between';
+            toolbar.id = 'edit-toolbar';
+            toolbar.className = 'border rounded-lg p-4 mb-4 flex items-center justify-between';
             toolbar.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <span class="text-blue-700 font-medium">✏️ 編輯模式</span>
+                    <span class="edit-toolbar-label text-blue-700 font-medium">✏️ 編輯模式</span>
                     <span id="edit-status" class="text-sm text-gray-600"></span>
                 </div>
                 <div class="flex gap-2 flex-wrap">
