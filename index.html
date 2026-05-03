@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>班表產生器 (雲端資料庫版)</title>
+    <title>智慧排班系統</title>
+    <script>
+        tailwind = { config: { darkMode: 'class' } };
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -66,6 +69,12 @@
         .btn-primary:hover { background-color: var(--primary-hover); }
         .btn-danger { background-color: var(--danger-color); }
         .btn-danger:hover { background-color: var(--danger-hover); }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        @media (max-width: 767px) {
+            #edit-personnel-sidebar { display: none !important; }
+            #schedule-output { overflow-x: auto !important; }
+        }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .fade-in { animation: fadeIn 0.5s ease-out forwards; }
@@ -103,7 +112,8 @@
         .schedule-table {
             border-collapse: separate;
             border-spacing: 0;
-            width: 100%;
+            width: max-content;
+            min-width: 100%;
             border: 1px solid var(--border-light);
             border-radius: 0.75rem;
             overflow: hidden;
@@ -122,13 +132,72 @@
         .schedule-table tbody tr:last-child td { border-bottom: none; }
         .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
         .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
+        .dark .schedule-table tbody td { background-color: var(--card-bg-dark); color: var(--text-dark); }
+        .dark .schedule-table tbody td.holiday-cell { background-color: #4b5563; color: #d1d5db; }
+        .dark .schedule-table tbody td.editable-cell:hover { background-color: #1e3a5f; }
+        .dark #edit-personnel-sidebar { background-color: var(--card-bg-dark) !important; border-color: var(--border-dark) !important; color: var(--text-dark); }
+        .dark #edit-personnel-sidebar input { background-color: var(--bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark #edit-personnel-sidebar > div > div { background-color: var(--bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark #edit-personnel-sidebar > div > div:hover { background-color: #1e3a5f; border-color: #3b82f6; }
+        .dark .person-tag { background-color: #1e3a5f; color: #93c5fd; }
+        .dark .weekly-stats-card { background-color: var(--card-bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark .weekly-stats-card .text-gray-700 { color: #d1d5db; }
+
+        /* Edit Toolbar */
+        #edit-toolbar { background-color: #eff6ff; border-color: #bfdbfe; }
+        .dark #edit-toolbar { background-color: #1e3a5f; border-color: #1e40af; }
+        .dark #edit-toolbar .edit-toolbar-label { color: #93c5fd; }
+        .dark #edit-toolbar #edit-status { color: #9ca3af; }
+
+        /* Personnel View */
+        .pv-th { background-color: #f3f4f6; border: 1px solid #d1d5db; }
+        .dark .pv-th { background-color: #374151; border-color: #6b7280; color: #f9fafb; }
+        .pv-td { border: 1px solid #d1d5db; }
+        .dark .pv-td { border-color: #6b7280; }
+        .pv-name { background-color: #ffffff; border-right: 2px solid #d1d5db; }
+        .dark .pv-name { background-color: #1f2937; border-right-color: #6b7280; color: #f9fafb; }
+        .pv-holiday { background-color: #f3f4f6; color: #9ca3af; }
+        .dark .pv-holiday { background-color: #374151; color: #6b7280; }
+        #personnel-view tbody tr:nth-child(even) .pv-td:not([class*="pv-task"]):not(.pv-holiday),
+        #personnel-view tbody tr:nth-child(even) .pv-name { background-color: #f9fafb; }
+        .dark #personnel-view tbody tr:nth-child(even) .pv-td:not([class*="pv-task"]):not(.pv-holiday),
+        .dark #personnel-view tbody tr:nth-child(even) .pv-name { background-color: #111827; }
+        .pv-task-0 { background-color: #dbeafe; color: #1e40af; }
+        .dark .pv-task-0 { background-color: #1e3a8a; color: #bfdbfe; }
+        .pv-task-1 { background-color: #dcfce7; color: #166534; }
+        .dark .pv-task-1 { background-color: #14532d; color: #bbf7d0; }
+        .pv-task-2 { background-color: #f3e8ff; color: #6b21a8; }
+        .dark .pv-task-2 { background-color: #581c87; color: #e9d5ff; }
+        .pv-task-3 { background-color: #ffedd5; color: #9a3412; }
+        .dark .pv-task-3 { background-color: #7c2d12; color: #fed7aa; }
+        .pv-task-4 { background-color: #fce7f3; color: #9d174d; }
+        .dark .pv-task-4 { background-color: #831843; color: #fbcfe8; }
+        .pv-task-5 { background-color: #ccfbf1; color: #115e59; }
+        .dark .pv-task-5 { background-color: #134e4a; color: #99f6e4; }
+
+        /* Toast */
+        .toast {
+            padding: 12px 18px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            max-width: 320px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            opacity: 0;
+            transform: translateX(40px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+            pointer-events: auto;
+            word-break: break-word;
+        }
+        .toast.show { opacity: 1; transform: translateX(0); }
+        .toast.success { background: #16a34a; }
+        .toast.error   { background: #dc2626; }
+        .toast.warning { background: #d97706; }
+        .toast.info    { background: #2563eb; }
 
         /* 列印模式：使用減法，明確隱藏不需要的 UI 元素 */
         @media print {
-            /* 隱藏導航列 */
-            nav {
-                display: none !important;
-            }
+
 
             /* 隱藏標題區域（包含主題切換按鈕） */
             header {
@@ -173,26 +242,14 @@
     </style>
 </head>
 <body class="theme-light">
-    <!-- 統一導航列 -->
-    <nav class="bg-indigo-600 text-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex-shrink-0">
-                    <span class="text-xl font-bold">🛠️ 工具集</span>
-                </div>
-                <div class="flex space-x-2 sm:space-x-4">
-                    <a href="https://shift-schedule-generators.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium bg-indigo-800" title="班表工具">📅 <span class="hidden sm:inline">班表工具</span></a>
-                    <a href="https://zip.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-indigo-700 transition" title="壓縮工具">📦 <span class="hidden sm:inline">壓縮工具</span></a>
-                    <a href="https://mongo-updater-project.zeabur.app/" class="px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium hover:bg-indigo-700 transition" title="中控台">🔧 <span class="hidden sm:inline">中控台</span></a>
-                </div>
-            </div>
-        </div>
-    </nav>
 
     <div class="container mx-auto p-4 md:p-8">
         
         <header class="flex justify-between items-center mb-8">
-            <h1 class="text-3xl md:text-4xl font-bold text-blue-600 dark:text-blue-400">智慧班表產生器 Pro</h1>
+            <div>
+                <h1 class="text-3xl md:text-4xl font-bold text-blue-600 dark:text-blue-400">智慧排班系統</h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">設定檔：<span id="active-profile-badge" class="font-medium text-blue-500 dark:text-blue-300"></span></p>
+            </div>
             <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
                 <svg id="theme-icon-light" class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.95a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414l-.707.707zm-2.12-10.607a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z"></path></svg>
                 <svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
@@ -229,9 +286,11 @@
                         </button>
                         <div class="accordion-content">
                             <div class="space-y-2 mb-3" id="task-list"></div>
+                            <div id="capacity-status" class="text-sm p-2 rounded-md mt-2"></div>
                             <div class="flex gap-2">
                                 <input type="text" id="new-task-name" class="form-input flex-grow p-2 rounded-md" placeholder="勤務名稱">
-                                <input type="number" id="new-task-count" class="form-input w-24 p-2 rounded-md" placeholder="人數" value="1" min="1">
+                                <input type="number" id="new-task-count" class="form-input w-20 p-2 rounded-md" placeholder="人數" value="1" min="1" title="每天需要幾人">
+                                <input type="number" id="new-task-priority" class="form-input w-16 p-2 rounded-md text-center" placeholder="優先" value="9" min="1" max="9" title="優先級（1=最優先，9=最低）">
                                 <button id="add-task-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold p-2 rounded-md flex-shrink-0">＋</button>
                             </div>
                         </div>
@@ -284,19 +343,28 @@
                 </div>
             </div>
 
-            <div class="lg:col-span-2 space-y-6">
+            <div class="lg:col-span-2 space-y-6 min-w-0">
                 <div id="output-container" class="card p-4 rounded-lg shadow-md hidden" style="transition: opacity 0.3s;">
-                    <div class="flex flex-wrap justify-between items-center mb-4">
-                        <h2 class="text-2xl font-bold">班表結果</h2>
-                        <div class="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <div class="flex items-center gap-3">
+                            <h2 class="text-2xl font-bold">班表結果</h2>
+                            <div class="flex gap-1 text-sm">
+                                <button id="view-schedule-btn" class="px-3 py-1 rounded bg-blue-600 text-white text-xs">📅 班表</button>
+                                <button id="view-personnel-btn" class="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs">👥 人員</button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
                             <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
                             <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製</button>
                             <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">Excel</button>
+                            <button id="export-personnel-excel" class="hidden bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition text-sm">👥 人員 Excel</button>
                             <button id="export-pdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-md transition">📄 PDF（推薦）</button>
                             <button id="export-image-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition text-sm">🖨️ 瀏覽器列印</button>
                         </div>
                     </div>
                     <div id="schedule-output" class="overflow-x-auto"></div>
+                    <div id="personnel-view" class="hidden mt-2 overflow-x-auto"></div>
+                    <div id="fill-stats-panel" class="mt-4 hidden"></div>
                 </div>
 
                 <div class="card p-4 rounded-lg shadow-md">
@@ -310,7 +378,7 @@
                 <div id="status-indicator" class="w-3 h-3 rounded-full bg-gray-400 transition-colors"></div>
                 <p id="status-text" class="text-xs">正在檢查連線...</p>
             </div>
-            <p>班表產生器 Pro &copy; 2024. All Rights Reserved.</p>
+            <p>智慧排班系統 &copy; <span id="footer-year"></span>. All Rights Reserved.</p>
         </footer>
     </div>
 
@@ -331,6 +399,29 @@
             </div>
         </div>
     </div>
+    <!-- Input Modal -->
+    <div id="input-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
+            <h3 id="input-modal-title" class="text-lg font-bold mb-4"></h3>
+            <input id="input-modal-field" type="text" class="form-input w-full p-2 rounded-md mb-4" />
+            <div class="flex justify-end gap-2">
+                <button id="input-modal-cancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">取消</button>
+                <button id="input-modal-confirm" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
+            <p id="confirm-modal-message" class="text-base mb-6 whitespace-pre-wrap"></p>
+            <div class="flex justify-end gap-2">
+                <button id="confirm-modal-cancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">取消</button>
+                <button id="confirm-modal-ok" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md transition">確認</button>
+            </div>
+        </div>
+    </div>
+
      <div id="holiday-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
         <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
             <h3 class="text-2xl font-bold mb-4">假日排休設定</h3>
@@ -341,10 +432,322 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Diff Modal -->
+    <div id="diff-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 max-w-2xl mx-auto flex flex-col" style="max-height:80vh">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-lg font-bold">與原始班表的差異</h3>
+                <button id="diff-modal-close" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-2xl leading-none">&times;</button>
+            </div>
+            <div id="diff-modal-content" class="overflow-y-auto flex-1 text-sm"></div>
+        </div>
+    </div>
+
 <script>
-    const API_BASE_URL = `api`; 
-    let currentTheme = 'light';
+    const API_BASE_URL = `api`;
+    const _savedTheme = localStorage.getItem('theme');
+    let currentTheme = _savedTheme || (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+    function showToast(message, type = 'info', duration = 3000) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add('show'));
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
+    }
+
+    function showInputModal(title, defaultValue = '') {
+        return new Promise((resolve) => {
+            document.getElementById('input-modal-title').textContent = title;
+            const field = document.getElementById('input-modal-field');
+            field.value = defaultValue;
+            document.getElementById('input-modal').classList.remove('hidden');
+            setTimeout(() => { field.focus(); field.select(); }, 50);
+            const onConfirm = () => { cleanup(); resolve(field.value.trim() || null); };
+            const onCancel = () => { cleanup(); resolve(null); };
+            const onKeydown = (e) => { if (e.key === 'Enter') onConfirm(); if (e.key === 'Escape') onCancel(); };
+            function cleanup() {
+                document.getElementById('input-modal').classList.add('hidden');
+                document.getElementById('input-modal-confirm').removeEventListener('click', onConfirm);
+                document.getElementById('input-modal-cancel').removeEventListener('click', onCancel);
+                field.removeEventListener('keydown', onKeydown);
+            }
+            document.getElementById('input-modal-confirm').addEventListener('click', onConfirm);
+            document.getElementById('input-modal-cancel').addEventListener('click', onCancel);
+            field.addEventListener('keydown', onKeydown);
+        });
+    }
+
+    function showConfirm(message) {
+        return new Promise((resolve) => {
+            document.getElementById('confirm-modal-message').textContent = message;
+            document.getElementById('confirm-modal').classList.remove('hidden');
+            const onOk = () => { cleanup(); resolve(true); };
+            const onCancel = () => { cleanup(); resolve(false); };
+            function cleanup() {
+                document.getElementById('confirm-modal').classList.add('hidden');
+                document.getElementById('confirm-modal-ok').removeEventListener('click', onOk);
+                document.getElementById('confirm-modal-cancel').removeEventListener('click', onCancel);
+            }
+            document.getElementById('confirm-modal-ok').addEventListener('click', onOk);
+            document.getElementById('confirm-modal-cancel').addEventListener('click', onCancel);
+        });
+    }
+
+    const MAX_HISTORY = 20;
+    let editUndoStack = [];
+    let editRedoStack = [];
+    let settingsUndoStack = [];
+    let settingsRedoStack = [];
+    let _historyLock = false;
+
+    function updateUndoRedoBtns() {
+        const u = document.getElementById('undo-edit-btn');
+        const r = document.getElementById('redo-edit-btn');
+        if (u) u.disabled = editUndoStack.length === 0;
+        if (r) r.disabled = editRedoStack.length === 0;
+    }
+
+    function pushEditHistory() {
+        if (_historyLock || !editingData) return;
+        editUndoStack.push(JSON.stringify(editingData));
+        if (editUndoStack.length > MAX_HISTORY) editUndoStack.shift();
+        editRedoStack = [];
+        updateUndoRedoBtns();
+    }
+    function undoEdit() {
+        if (!editUndoStack.length) return;
+        editRedoStack.push(JSON.stringify(editingData));
+        editingData = JSON.parse(editUndoStack.pop());
+        _renderEditableSchedule();
+        hasUnsavedChanges = editUndoStack.length > 0;
+        updateUndoRedoBtns();
+        showToast('已復原', 'info', 1500);
+    }
+    function redoEdit() {
+        if (!editRedoStack.length) return;
+        editUndoStack.push(JSON.stringify(editingData));
+        editingData = JSON.parse(editRedoStack.pop());
+        _renderEditableSchedule();
+        hasUnsavedChanges = true;
+        updateUndoRedoBtns();
+        showToast('已重做', 'info', 1500);
+    }
+
+    function pushSettingsHistory() {
+        const profile = appState.profiles[appState.activeProfile];
+        if (!profile) return;
+        settingsUndoStack.push(JSON.stringify(profile.settings));
+        if (settingsUndoStack.length > MAX_HISTORY) settingsUndoStack.shift();
+        settingsRedoStack = [];
+    }
+    async function undoSettings() {
+        if (!settingsUndoStack.length) return;
+        const profile = appState.profiles[appState.activeProfile];
+        settingsRedoStack.push(JSON.stringify(profile.settings));
+        profile.settings = JSON.parse(settingsUndoStack.pop());
+        _renderAll();
+        await _saveSettings();
+        showToast('已復原設定', 'info', 1500);
+    }
+    async function redoSettings() {
+        if (!settingsRedoStack.length) return;
+        const profile = appState.profiles[appState.activeProfile];
+        settingsUndoStack.push(JSON.stringify(profile.settings));
+        profile.settings = JSON.parse(settingsRedoStack.pop());
+        _renderAll();
+        await _saveSettings();
+        showToast('已重做設定', 'info', 1500);
+    }
+
+    // ── 草稿自動存 ──
+    const _draftTimer = { id: null };
+    function autoSaveDraft() {
+        clearTimeout(_draftTimer.id);
+        _draftTimer.id = setTimeout(() => {
+            if (!editingData) return;
+            try {
+                localStorage.setItem('schedule_draft', JSON.stringify({
+                    profile: appState.activeProfile,
+                    scheduleName: currentScheduleName,
+                    generatedData,
+                    editingData,
+                    savedAt: Date.now()
+                }));
+            } catch { /* quota exceeded, skip */ }
+        }, 2000);
+    }
+    function clearDraft() {
+        clearTimeout(_draftTimer.id);
+        localStorage.removeItem('schedule_draft');
+    }
+    function showDraftBanner(draft, mins) {
+        const existing = document.getElementById('draft-banner');
+        if (existing) existing.remove();
+        const label = mins < 1 ? '剛才' : `${mins} 分鐘前`;
+        const banner = document.createElement('div');
+        banner.id = 'draft-banner';
+        banner.className = 'mb-4 p-3 bg-amber-50 dark:bg-amber-900 border border-amber-300 dark:border-amber-600 rounded-lg flex items-center justify-between text-sm';
+        banner.innerHTML = `
+            <span class="text-amber-800 dark:text-amber-200">📝 找到 ${label} 的未儲存草稿（設定檔：${escapeHtml(draft.profile)}）</span>
+            <div class="flex gap-2 ml-3 shrink-0">
+                <button id="draft-restore-btn" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-xs">恢復草稿</button>
+                <button id="draft-discard-btn" class="bg-gray-400 hover:bg-gray-500 text-white px-3 py-1 rounded text-xs">捨棄</button>
+            </div>`;
+        const container = document.getElementById('output-container');
+        container.prepend(banner);
+        container.classList.remove('hidden');
+        document.getElementById('draft-restore-btn').addEventListener('click', () => {
+            generatedData = draft.generatedData;
+            editingData = draft.editingData;
+            currentScheduleName = draft.scheduleName;
+            hasUnsavedChanges = true;
+            editUndoStack = []; editRedoStack = [];
+            _renderEditableSchedule();
+            banner.remove();
+            clearDraft();
+            showToast('草稿已恢復', 'success');
+        });
+        document.getElementById('draft-discard-btn').addEventListener('click', () => {
+            banner.remove();
+            clearDraft();
+        });
+    }
+
+    // ── 變更摘要 ──
+    function buildDiff(original, current) {
+        const changes = [];
+        const dayNames = ['週一', '週二', '週三', '週四', '週五'];
+        original.forEach((week, wi) => {
+            week.schedule.forEach((daySlots, di) => {
+                if (!week.scheduleDays[di].shouldSchedule) return;
+                daySlots.forEach((origPersons, ti) => {
+                    const currPersons = current[wi]?.schedule[di]?.[ti] || [];
+                    const added   = currPersons.filter(p => !origPersons.includes(p));
+                    const removed = origPersons.filter(p => !currPersons.includes(p));
+                    if (added.length || removed.length) {
+                        changes.push({
+                            label: `第 ${wi + 1} 週 ${week.dateRange} / ${dayNames[di]} / ${week.tasks[ti].name}`,
+                            added,
+                            removed
+                        });
+                    }
+                });
+            });
+        });
+        return changes;
+    }
+    function showDiffModal() {
+        const modal = document.getElementById('diff-modal');
+        const content = document.getElementById('diff-modal-content');
+        if (!modal || !content) return;
+        const changes = buildDiff(generatedData, editingData);
+        if (changes.length === 0) {
+            content.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-center py-6">目前無任何修改，班表與原始一致。</p>';
+        } else {
+            content.innerHTML = changes.map(c => `
+                <div class="mb-3 pb-3 border-b border-gray-200 dark:border-gray-600 last:border-0">
+                    <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">${escapeHtml(c.label)}</p>
+                    ${c.added.map(p => `<p class="text-green-600 dark:text-green-400 ml-3">＋ ${escapeHtml(p)}</p>`).join('')}
+                    ${c.removed.map(p => `<p class="text-red-500 dark:text-red-400 ml-3">－ ${escapeHtml(p)}</p>`).join('')}
+                </div>`).join('');
+        }
+        modal.classList.remove('hidden');
+    }
+
+    // ── 人員視圖 ──
+    const TASK_COLORS = ['pv-task-0', 'pv-task-1', 'pv-task-2', 'pv-task-3', 'pv-task-4', 'pv-task-5'];
+    function renderPersonnelView(data) {
+        const panel = document.getElementById('personnel-view');
+        if (!panel || !data || !data.length) return;
+        const dayNames = ['一', '二', '三', '四', '五'];
+        // 所有任務名稱 → 顏色索引對照
+        const allTasks = data[0].tasks.map(t => t.name);
+        const taskColorMap = {};
+        allTasks.forEach((name, i) => { taskColorMap[name] = TASK_COLORS[i % TASK_COLORS.length]; });
+        // 人員清單（從 profile）
+        const personnel = appState.profiles[appState.activeProfile]?.settings?.personnel || [];
+        const allPersons = personnel.map(p => p.name);
+        // 收集所有 header 欄：{ label, weekIndex, dayIndex }
+        const cols = [];
+        data.forEach((week, wi) => {
+            week.weekDayDates.forEach((date, di) => {
+                cols.push({ label: `W${wi + 1}<br><span class='text-xs font-normal'>${dayNames[di]}<br>${escapeHtml(date)}</span>`, wi, di, shouldSchedule: week.scheduleDays[di].shouldSchedule });
+            });
+        });
+        // 建立 person → col key → task name
+        const personMap = {};
+        allPersons.forEach(p => { personMap[p] = {}; });
+        data.forEach((week, wi) => {
+            week.schedule.forEach((daySlots, di) => {
+                daySlots.forEach((persons, ti) => {
+                    persons.forEach(p => {
+                        if (!personMap[p]) personMap[p] = {};
+                        personMap[p][`${wi}-${di}`] = week.tasks[ti].name;
+                    });
+                });
+            });
+        });
+        // 渲染表格
+        const thStyle = 'px-2 py-1 text-center text-xs font-medium pv-th min-w-[60px]';
+        const tdStyle = 'px-1 py-1 text-center text-xs pv-td';
+        const header = `<tr><th class="${thStyle} sticky left-0 z-10 min-w-[80px]">姓名</th>${cols.map(c => `<th class="${thStyle}">${c.shouldSchedule ? c.label : `<span class='text-gray-400'>${c.label}</span>`}</th>`).join('')}</tr>`;
+        const rows = allPersons.map(p => {
+            const cells = cols.map(c => {
+                if (!c.shouldSchedule) return `<td class="${tdStyle} pv-holiday">—</td>`;
+                const task = personMap[p]?.[`${c.wi}-${c.di}`];
+                return task
+                    ? `<td class="${tdStyle} ${taskColorMap[task] || ''} font-medium">${escapeHtml(task)}</td>`
+                    : `<td class="${tdStyle}"></td>`;
+            }).join('');
+            return `<tr><td class="${tdStyle} sticky left-0 z-10 pv-name font-medium">${escapeHtml(p)}</td>${cells}</tr>`;
+        }).join('');
+        panel.innerHTML = `<table class="border-collapse text-sm w-max"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function exportPersonnelExcel() {
+        const data = editingData || generatedData;
+        if (!data) return;
+        const dayNames = ['一', '二', '三', '四', '五'];
+        const personnel = appState.profiles[appState.activeProfile]?.settings?.personnel || [];
+        const allPersons = personnel.map(p => p.name);
+        const cols = [];
+        data.forEach((week, wi) => {
+            week.weekDayDates.forEach((date, di) => {
+                cols.push({ label: `W${wi + 1}${dayNames[di]}(${date})`, wi, di, shouldSchedule: week.scheduleDays[di].shouldSchedule });
+            });
+        });
+        const personMap = {};
+        allPersons.forEach(p => { personMap[p] = {}; });
+        data.forEach((week, wi) => {
+            week.schedule.forEach((daySlots, di) => {
+                daySlots.forEach((persons, ti) => {
+                    persons.forEach(p => {
+                        if (!personMap[p]) personMap[p] = {};
+                        personMap[p][`${wi}-${di}`] = week.tasks[ti].name;
+                    });
+                });
+            });
+        });
+        const header = ['姓名', ...cols.map(c => c.label)];
+        const wsData = [header, ...allPersons.map(p => [
+            p,
+            ...cols.map(c => c.shouldSchedule ? (personMap[p]?.[`${c.wi}-${c.di}`] || '') : '假日')
+        ])];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{ wch: 10 }, ...cols.map(() => ({ wch: 12 }))];
+        XLSX.utils.book_append_sheet(wb, ws, '人員班表');
+        XLSX.writeFile(wb, '人員班表.xlsx');
+    }
+
     let appState = {
         activeProfile: 'default',
         profiles: {
@@ -360,6 +763,12 @@
     let generatedData = null;
     let currentScheduleName = null; // 追踪當前載入的班表名稱
     let currentEditingPersonnelIndex = -1;
+    let editingData = null;
+    let hasUnsavedChanges = false;
+    // Proxy refs — assigned inside DOMContentLoaded after functions are defined
+    let _renderEditableSchedule = () => {};
+    let _renderAll = () => {};
+    let _saveSettings = async () => {};
 
     // 安全輔助函式：HTML 轉義（防止 XSS）
     const escapeHtml = (unsafe) => {
@@ -372,7 +781,9 @@
             .replace(/'/g, "&#039;");
     };
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('footer-year').textContent = new Date().getFullYear();
+
+    document.addEventListener('DOMContentLoaded', async () => {
         const elements = {
             profileSelect: document.getElementById('profile-select'),
             newProfileBtn: document.getElementById('new-profile-btn'),
@@ -431,7 +842,7 @@
                     return await response.json();
                 } catch (error) {
                     console.error(`Fetch error for ${endpoint}:`, error);
-                    alert(`無法讀取資料: ${error.message}`);
+                    showToast(`無法讀取資料: ${error.message}`, 'error');
                     return null;
                 }
             },
@@ -449,7 +860,7 @@
                     return await response.json();
                 } catch (error) {
                     console.error(`POST error for ${endpoint}:`, error);
-                    alert(`操作失敗: ${error.message}`);
+                    showToast(`操作失敗: ${error.message}`, 'error');
                     return null;
                 }
             },
@@ -460,34 +871,37 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(body),
                     });
-                     if (!response.ok) {
+                    if (!response.ok) {
                          const errData = await response.json().catch(() => ({ message: response.statusText }));
                          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
                     return await response.json();
                 } catch (error) {
                     console.error(`PUT error for ${endpoint}:`, error);
-                    alert(`操作失敗: ${error.message}`);
+                    showToast(`操作失敗: ${error.message}`, 'error');
                     return null;
                 }
             },
             delete: async (endpoint) => {
-                 try {
-                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, { method: 'DELETE' });
-                     if (!response.ok) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+                        method: 'DELETE',
+                    });
+                    if (!response.ok) {
                          const errData = await response.json().catch(() => ({ message: response.statusText }));
                          throw new Error(errData.message || `HTTP error! status: ${response.status}`);
                     }
                     return await response.json();
                 } catch (error) {
                     console.error(`DELETE error for ${endpoint}:`, error);
-                    alert(`操作失敗: ${error.message}`);
+                    showToast(`操作失敗: ${error.message}`, 'error');
                     return null;
                 }
             }
         };
 
         const applyTheme = (theme) => {
+            localStorage.setItem('theme', theme);
              const themeIconLight = document.getElementById('theme-icon-light');
              const themeIconDark = document.getElementById('theme-icon-dark');
              if (theme === 'dark') {
@@ -525,6 +939,51 @@
             if (!activeProfile) return;
             await api.put(`profiles/${appState.activeProfile}`, { settings: activeProfile.settings });
         };
+        const updateCapacityStatus = () => {
+            const el = document.getElementById('capacity-status');
+            if (!el) return;
+            const settings = getActiveProfile()?.settings;
+            if (!settings) return;
+            const capacity = (settings.personnel || []).reduce((s, p) => s + (p.maxShifts || 5), 0);
+            const demand = (settings.tasks || []).reduce((s, t) => s + (t.count || 1), 0) * 5;
+            const diff = capacity - demand;
+            if (!capacity && !demand) { el.textContent = ''; return; }
+            if (diff >= 0) {
+                el.className = 'text-sm p-2 rounded-md mt-2 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+                el.textContent = `容量 ${capacity} ≥ 需求 ${demand}（每週最多可排滿）`;
+            } else {
+                el.className = 'text-sm p-2 rounded-md mt-2 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+                el.textContent = `⚠️ 容量 ${capacity} < 需求 ${demand}，每週缺少 ${-diff} 個班次，部分勤務將排不滿`;
+            }
+        };
+        const renderFillStats = (weekData) => {
+            const panel = document.getElementById('fill-stats-panel');
+            if (!panel) return;
+            const statsMap = {};
+            for (const week of weekData) {
+                for (const s of (week.fillStats || [])) {
+                    if (!statsMap[s.name]) statsMap[s.name] = { priority: s.priority, needed: 0, filled: 0 };
+                    statsMap[s.name].needed += s.needed;
+                    statsMap[s.name].filled += s.filled;
+                }
+            }
+            const names = Object.keys(statsMap);
+            if (names.length === 0) { panel.classList.add('hidden'); return; }
+            const allOk = names.every(n => statsMap[n].filled === statsMap[n].needed);
+            if (allOk) {
+                panel.className = 'mt-4 text-sm p-2 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+                panel.textContent = '所有勤務已排滿';
+                return;
+            }
+            const rows = names.map(n => {
+                const s = statsMap[n];
+                const pct = s.needed > 0 ? Math.round(s.filled / s.needed * 100) : 100;
+                const color = pct === 100 ? 'text-green-700 dark:text-green-300' : pct >= 50 ? 'text-yellow-700 dark:text-yellow-300' : 'text-red-700 dark:text-red-300';
+                return `<tr class="${color}"><td class="pr-3 py-0.5">${escapeHtml(n)}</td><td class="pr-3">優先 ${s.priority}</td><td class="pr-3">${s.filled} / ${s.needed}</td><td>${pct}%</td></tr>`;
+            }).join('');
+            panel.className = 'mt-4';
+            panel.innerHTML = `<p class="text-sm font-semibold mb-1">勤務填補率</p><table class="text-sm"><thead><tr class="text-muted"><th class="pr-3 text-left font-normal">勤務</th><th class="pr-3 text-left font-normal">優先級</th><th class="pr-3 text-left font-normal">填補/需求</th><th class="text-left font-normal">填補率</th></tr></thead><tbody>${rows}</tbody></table>`;
+        };
         const renderTasks = () => {
             elements.taskList.innerHTML = '';
             const tasks = getActiveProfile()?.settings?.tasks || [];
@@ -532,12 +991,14 @@
                 const div = document.createElement('div');
                 div.className = 'flex items-center gap-2';
                 div.innerHTML = `
-                    <input type="text" value="${escapeHtml(task.name)}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
-                    <input type="number" value="${escapeHtml(task.count)}" class="form-input w-20 p-1 rounded-md" min="1" data-index="${index}" data-field="count">
+                    <input type="text" value="${escapeHtml(task.name)}" class="form-input flex-grow min-w-0 p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${escapeHtml(task.count)}" class="form-input w-14 p-1 rounded-md" min="1" data-index="${index}" data-field="count" title="每天需要幾人">
+                    <input type="number" value="${escapeHtml(task.priority || 9)}" class="form-input w-12 p-1 rounded-md text-center" min="1" max="9" data-index="${index}" data-field="priority" title="優先級（1=最優先，9=最低）">
                     <button class="remove-task text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
                 `;
                 elements.taskList.appendChild(div);
             });
+            updateCapacityStatus();
         };
         const renderPersonnel = () => {
              elements.personnelList.innerHTML = '';
@@ -546,13 +1007,14 @@
                 const div = document.createElement('div');
                 div.className = 'flex items-center gap-2';
                 div.innerHTML = `
-                    <input type="text" value="${escapeHtml(person.name)}" class="form-input flex-grow p-1 rounded-md" data-index="${index}" data-field="name">
-                    <input type="number" value="${escapeHtml(person.maxShifts || 5)}" class="form-input w-24 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
+                    <input type="text" value="${escapeHtml(person.name)}" class="form-input flex-grow min-w-0 p-1 rounded-md" data-index="${index}" data-field="name">
+                    <input type="number" value="${escapeHtml(person.maxShifts || 5)}" class="form-input w-16 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
                     <button class="advanced-settings-btn text-blue-500 hover:text-blue-700 p-1" data-index="${index}">⚙️</button>
                     <button class="remove-personnel text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
                 `;
                 elements.personnelList.appendChild(div);
             });
+            updateCapacityStatus();
         };
         const renderProfileSelector = () => {
             elements.profileSelect.innerHTML = '';
@@ -562,11 +1024,16 @@
                 if (name === appState.activeProfile) option.selected = true;
                 elements.profileSelect.appendChild(option);
             });
+            const badge = document.getElementById('active-profile-badge');
+            if (badge) badge.textContent = appState.activeProfile;
         };
         const renderSavedSchedules = () => {
-            elements.savedSchedulesList.innerHTML = '<li class="text-gray-500">無 (尚未儲存任何班表)</li>';
             const schedules = getActiveProfile()?.schedules;
             const scheduleNames = schedules ? Object.keys(schedules) : [];
+            if (scheduleNames.length === 0) {
+                elements.savedSchedulesList.innerHTML = '<li class="text-gray-400 dark:text-gray-500 text-center py-3 text-sm">尚無儲存的班表<br><span class="text-xs">產生班表後點擊「儲存班表」</span></li>';
+                return;
+            }
             if (scheduleNames.length > 0) {
                 elements.savedSchedulesList.innerHTML = '';
                 scheduleNames.forEach(name => {
@@ -643,7 +1110,12 @@
             await checkConnectionStatus();
             const data = await api.get('profiles');
             if (data && data.profiles) {
-                appState.activeProfile = data.activeProfile;
+                // 優先使用 sessionStorage 裡的 per-tab 選擇，避免多分頁互相干擾
+                const savedProfile = sessionStorage.getItem('activeProfile');
+                appState.activeProfile = (savedProfile && data.profiles[savedProfile])
+                    ? savedProfile
+                    : data.activeProfile;
+                sessionStorage.setItem('activeProfile', appState.activeProfile);
                 appState.profiles = data.profiles;
                 renderAll();
             }
@@ -659,9 +1131,21 @@
             debouncedUpdateHolidays();
             setInitialAccordionState();
             setInterval(checkConnectionStatus, 30000);
+            // 草稿恢復檢查
+            try {
+                const raw = localStorage.getItem('schedule_draft');
+                if (raw) {
+                    const draft = JSON.parse(raw);
+                    if (draft.profile === appState.activeProfile && draft.editingData) {
+                        const mins = Math.round((Date.now() - draft.savedAt) / 60000);
+                        showDraftBanner(draft, mins);
+                    }
+                }
+            } catch { clearDraft(); }
         };
         
         const handleSettingsChange = async (updateFunction) => {
+            pushSettingsHistory();
             updateFunction();
             renderAll();
             await saveSettings();
@@ -697,11 +1181,13 @@
         async function generateFullSchedule() {
             const settings = getActiveProfile().settings;
             if (!settings.personnel?.length || !settings.tasks?.length) {
-                return alert('請先設定勤務與人員！');
+                showToast('請先設定勤務與人員！', 'warning');
+                return;
             }
             const startWeek = elements.startWeekInput.value;
             if (!startWeek) {
-                return alert('請選擇開始週！');
+                showToast('請選擇開始週！', 'warning');
+                return;
             }
 
             const activeHolidays = Array.from(activeHolidayDates);
@@ -721,6 +1207,7 @@
                     generatedData = response.data;
                     currentScheduleName = null; // 清除班表名稱（這是新生成的班表）
                     displaySchedule(response.html);
+                    renderFillStats(response.data);
                 } else {
                     elements.outputContainer.classList.add('hidden');
                 }
@@ -736,12 +1223,15 @@
             elements.outputContainer.classList.remove('hidden');
             // 啟用編輯模式
             enableEditMode();
+            // 若目前在人員 tab，用新資料重新渲染（停留在人員 tab）
+            const isPersonnelActive = !document.getElementById('personnel-view').classList.contains('hidden');
+            if (isPersonnelActive) {
+                renderPersonnelView(editingData || generatedData);
+            }
         }
 
         // === 可編輯班表系統 ===
         let isEditMode = false;
-        let editingData = null; // 編輯中的暫存資料
-        let hasUnsavedChanges = false;
 
         function enableEditMode() {
             if (!generatedData) return;
@@ -749,6 +1239,7 @@
             // 深拷貝數據用於編輯
             editingData = JSON.parse(JSON.stringify(generatedData));
             hasUnsavedChanges = false;
+            editUndoStack = []; editRedoStack = [];
 
             // 重新渲染為可編輯模式
             renderEditableSchedule();
@@ -786,7 +1277,7 @@
 
             // 創建班表容器
             const scheduleContainer = document.createElement('div');
-            scheduleContainer.className = 'flex-1';
+            scheduleContainer.className = 'flex-1 min-w-0';
             scheduleContainer.style.overflowX = 'auto'; // 只讓班表橫向滾動
 
             editingData.forEach((weekData, weekIndex) => {
@@ -803,13 +1294,20 @@
 
         function createEditToolbar() {
             const toolbar = document.createElement('div');
-            toolbar.className = 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 flex items-center justify-between';
+            toolbar.id = 'edit-toolbar';
+            toolbar.className = 'border rounded-lg p-4 mb-4 flex items-center justify-between';
             toolbar.innerHTML = `
                 <div class="flex items-center gap-4">
-                    <span class="text-blue-700 font-medium">✏️ 編輯模式</span>
+                    <span class="edit-toolbar-label text-blue-700 font-medium">✏️ 編輯模式</span>
                     <span id="edit-status" class="text-sm text-gray-600"></span>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
+                    <button id="undo-edit-btn" title="復原 (Ctrl+Z)" disabled
+                        class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">↩ 復原</button>
+                    <button id="redo-edit-btn" title="重做 (Ctrl+Y)" disabled
+                        class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">↪ 重做</button>
+                    <button id="diff-btn" title="查看與原始班表的差異"
+                        class="px-3 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 text-sm">📋 變更摘要</button>
                     <button id="save-edits-btn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400" disabled>
                         💾 儲存修改
                     </button>
@@ -827,6 +1325,9 @@
                 document.getElementById('save-edits-btn').addEventListener('click', saveEdits);
                 document.getElementById('cancel-edits-btn').addEventListener('click', cancelEdits);
                 document.getElementById('exit-edit-mode-btn').addEventListener('click', exitEditMode);
+                document.getElementById('undo-edit-btn').addEventListener('click', undoEdit);
+                document.getElementById('redo-edit-btn').addEventListener('click', redoEdit);
+                document.getElementById('diff-btn').addEventListener('click', showDiffModal);
             }, 0);
 
             return toolbar;
@@ -834,6 +1335,7 @@
 
         function createPersonnelSidebar() {
             const sidebar = document.createElement('div');
+            sidebar.id = 'edit-personnel-sidebar';
             sidebar.className = 'w-64 bg-gray-50 border border-gray-200 rounded-lg p-4';
 
             // 使用 sticky 定位，讓側邊欄在滾動時保持在視窗中可見
@@ -863,10 +1365,6 @@
             personnelList.style.minHeight = '0'; // 重要：允許 flex 子元素縮小
 
             const personnel = getActiveProfile().settings.personnel || [];
-
-            // Debug: 顯示人員數量和定位
-            console.log(`📋 側邊欄載入 ${personnel.length} 位人員`);
-            console.log('📌 側邊欄定位:', sidebar.style.position, 'top:', sidebar.style.top);
 
             personnel.forEach(person => {
                 const personElement = document.createElement('div');
@@ -1014,7 +1512,7 @@
 
             // 創建統計容器
             const statsContainer = document.createElement('div');
-            statsContainer.className = 'mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200';
+            statsContainer.className = 'mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 weekly-stats-card';
 
             const title = document.createElement('div');
             title.className = 'font-semibold text-gray-700 mb-2 text-sm';
@@ -1413,6 +1911,10 @@
                 return; // 不允許放置
             }
 
+            // 拖放前先記錄完整狀態（鎖定避免 addPersonToCell 內部重複 push）
+            pushEditHistory();
+            _historyLock = true;
+
             // 檢查是否從其他格子拖拽
             if (draggedFromCell) {
                 const fromWeekIndex = parseInt(draggedFromCell.dataset.weekIndex, 10);
@@ -1435,6 +1937,7 @@
 
             // 添加到新位置（addPersonToCell 內部會更新新週的統計）
             addPersonToCell(weekIndex, dayIndex, taskIndex, draggedPerson);
+            _historyLock = false;
 
             // 使用 requestAnimationFrame 確保在所有渲染完成後恢復滾動位置
             requestAnimationFrame(() => {
@@ -1448,11 +1951,12 @@
         }
 
         function addPersonToCell(weekIndex, dayIndex, taskIndex, personName) {
+            pushEditHistory();
             const personnelList = editingData[weekIndex].schedule[dayIndex][taskIndex];
 
             // 檢查是否已在此勤務中
             if (personnelList.includes(personName)) {
-                alert(`❌ ${personName} 已在此勤務中`);
+                showToast(`${personName} 已在此勤務中`, 'warning');
                 return;
             }
 
@@ -1464,7 +1968,7 @@
                 if (i !== taskIndex && allTasksThisDay[i].includes(personName)) {
                     const conflictTaskName = tasks[i].name;
                     const currentTaskName = tasks[taskIndex].name;
-                    alert(`❌ 排班衝突！\n\n${personName} 在當天已被分配到「${conflictTaskName}」勤務，\n無法同時分配到「${currentTaskName}」勤務。`);
+                    showToast(`排班衝突：${personName} 當天已在「${conflictTaskName}」，無法同時排入「${currentTaskName}」`, 'warning', 4000);
                     return;
                 }
             }
@@ -1497,6 +2001,7 @@
         }
 
         function removePersonFromCell(weekIndex, dayIndex, taskIndex, personIndex) {
+            pushEditHistory();
             // 保存當前滾動位置
             const scrollY = window.scrollY;
             const scrollX = window.scrollX;
@@ -1642,6 +2147,7 @@
             document.getElementById('save-edits-btn').disabled = false;
             document.getElementById('edit-status').textContent = '⚠️ 有未儲存的修改';
             document.getElementById('edit-status').classList.add('text-orange-600', 'font-medium');
+            autoSaveDraft();
         }
 
         async function saveEdits() {
@@ -1650,7 +2156,8 @@
                 try {
                     const result = await api.post('schedules', {
                         name: currentScheduleName,
-                        data: editingData
+                        data: editingData,
+                        profile: appState.activeProfile
                     });
                     if (result) {
                         // API 成功後才更新本地狀態
@@ -1663,13 +2170,14 @@
                         document.getElementById('edit-status').classList.remove('text-orange-600');
                         document.getElementById('edit-status').classList.add('text-green-600');
 
-                        alert('班表修改已儲存並同步到雲端！');
+                        clearDraft();
+                        showToast('班表修改已儲存並同步到雲端！', 'success');
                     } else {
-                        alert('同步到雲端時發生錯誤，請稍後再試。');
+                        showToast('同步到雲端時發生錯誤，請稍後再試。', 'error');
                     }
                 } catch (error) {
                     console.error('同步班表到雲端失敗:', error);
-                    alert('同步到雲端時發生錯誤，請稍後再試。');
+                    showToast('同步到雲端時發生錯誤，請稍後再試。', 'error');
                 }
             } else {
                 // 未命名的班表，只保存到本地
@@ -1681,26 +2189,30 @@
                 document.getElementById('edit-status').classList.remove('text-orange-600');
                 document.getElementById('edit-status').classList.add('text-green-600');
 
-                alert('班表修改已儲存！');
+                clearDraft();
+                showToast('班表修改已儲存！', 'success');
             }
         }
 
-        function cancelEdits() {
-            if (hasUnsavedChanges && !confirm('確定要放棄所有未儲存的修改嗎？')) {
-                return;
+        async function cancelEdits() {
+            if (hasUnsavedChanges) {
+                const ok = await showConfirm('確定要放棄所有未儲存的修改嗎？');
+                if (!ok) return;
             }
 
-            // 重新載入原始資料
+            clearDraft();
             editingData = JSON.parse(JSON.stringify(generatedData));
             hasUnsavedChanges = false;
             renderEditableSchedule();
         }
 
-        function exitEditMode() {
-            if (hasUnsavedChanges && !confirm('有未儲存的修改，確定要離開編輯模式嗎？')) {
-                return;
+        async function exitEditMode() {
+            if (hasUnsavedChanges) {
+                const ok = await showConfirm('有未儲存的修改，確定要離開編輯模式嗎？');
+                if (!ok) return;
             }
 
+            clearDraft();
             // 清理編輯狀態
             editingData = null;
             hasUnsavedChanges = false;
@@ -1714,7 +2226,7 @@
                 }
             }).catch(error => {
                 console.error('渲染班表失敗:', error);
-                alert('無法載入預覽模式，請重新整理頁面');
+                showToast('無法載入預覽模式，請重新整理頁面', 'error');
             });
         }
 
@@ -1740,7 +2252,7 @@
                 window.print();
             } catch (err) {
                 console.error("列印失敗:", err);
-                alert('列印失敗，請稍後再試');
+                showToast('列印失敗，請稍後再試', 'error');
             }
         }
 
@@ -1759,7 +2271,7 @@
                 await new Promise(resolve => setTimeout(resolve, 100));
             } catch (err) {
                 console.error("載入預覽 HTML 失敗:", err);
-                alert('無法載入班表，請稍後再試');
+                showToast('無法載入班表，請稍後再試', 'error');
                 return;
             }
 
@@ -1885,7 +2397,7 @@
                 pdf.save('班表.pdf');
             } catch (err) {
                 console.error("html2canvas failed:", err);
-                alert('PDF 導出失敗，請稍後再試');
+                showToast('PDF 導出失敗，請稍後再試', 'error');
                 if (document.body.contains(container)) document.body.removeChild(container);
                 if (document.head.contains(style)) document.head.removeChild(style);
             }
@@ -1894,10 +2406,12 @@
         elements.addTaskBtn.addEventListener('click', () => {
             const name = elements.newTaskNameInput.value.trim();
             const count = parseInt(elements.newTaskCountInput.value, 10) || 1;
+            const priority = parseInt(document.getElementById('new-task-priority').value, 10) || 9;
             if (name) {
-                handleSettingsChange(() => getActiveProfile().settings.tasks.push({ name, count }));
+                handleSettingsChange(() => getActiveProfile().settings.tasks.push({ name, count, priority }));
                 elements.newTaskNameInput.value = '';
                 elements.newTaskCountInput.value = '1';
+                document.getElementById('new-task-priority').value = '9';
             }
         });
 
@@ -1906,6 +2420,7 @@
                 const { index, field } = e.target.dataset;
                 let value = e.target.type === 'number' ? parseInt(e.target.value, 10) : e.target.value.trim();
                 if (e.target.type === 'number' && (isNaN(value) || value < 1)) value = 1;
+                if (field === 'priority' && value > 9) value = 9;
                 handleSettingsChange(() => getActiveProfile().settings.tasks[index][field] = value);
             }
         });
@@ -1954,11 +2469,20 @@
         });
 
         elements.profileSelect.addEventListener('change', async (e) => {
+            if (hasUnsavedChanges) {
+                const ok = await showConfirm('班表有未儲存的修改，切換設定檔將會遺失這些修改，確定要繼續？');
+                if (!ok) { e.target.value = appState.activeProfile; return; }
+                hasUnsavedChanges = false;
+            }
+            editUndoStack = []; editRedoStack = [];
+            settingsUndoStack = []; settingsRedoStack = [];
             const newProfileName = e.target.value;
-            const result = await api.put('profiles/active', { name: newProfileName });
-            if (result) {
-                appState.activeProfile = newProfileName;
-                renderAll();
+            appState.activeProfile = newProfileName;
+            sessionStorage.setItem('activeProfile', newProfileName);
+            renderAll();
+            // 非同步通知後端更新全域預設值，失敗不影響本分頁操作
+            api.put('profiles/active', { name: newProfileName }).catch(() => {});
+            {
                 // 清除所有班表相關狀態
                 generatedData = null;
                 currentScheduleName = null;
@@ -1969,28 +2493,29 @@
         });
 
         elements.newProfileBtn.addEventListener('click', async () => {
-            const name = prompt('請輸入新的設定檔名稱:');
-            if (name && name.trim()) {
-                if (appState.profiles[name.trim()]) return alert('該名稱已存在！');
-                const result = await api.post('profiles', { name: name.trim() });
+            const name = await showInputModal('新增設定檔', '');
+            if (name) {
+                if (appState.profiles[name]) { showToast('該名稱已存在！', 'warning'); return; }
+                const result = await api.post('profiles', { name });
                 if (result) await initApp();
             }
         });
 
         elements.renameProfileBtn.addEventListener('click', async () => {
             const oldName = appState.activeProfile;
-            const newName = prompt(`請為「${oldName}」輸入新名稱:`, oldName);
-            if (newName && newName.trim() && newName.trim() !== oldName) {
-                if (appState.profiles[newName.trim()]) return alert('該名稱已存在！');
-                const result = await api.put(`profiles/${oldName}/rename`, { newName: newName.trim() });
-                 if (result) await initApp();
+            const newName = await showInputModal(`重新命名「${oldName}」`, oldName);
+            if (newName && newName !== oldName) {
+                if (appState.profiles[newName]) { showToast('該名稱已存在！', 'warning'); return; }
+                const result = await api.put(`profiles/${oldName}/rename`, { newName });
+                if (result) await initApp();
             }
         });
 
         elements.deleteProfileBtn.addEventListener('click', async () => {
             const nameToDelete = appState.activeProfile;
-            if (Object.keys(appState.profiles).length <= 1) return alert('至少需保留一個設定檔！');
-            if (confirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`)) {
+            if (Object.keys(appState.profiles).length <= 1) { showToast('至少需保留一個設定檔！', 'warning'); return; }
+            const ok = await showConfirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`);
+            if (ok) {
                 const result = await api.delete(`profiles/${nameToDelete}`);
                 if (result) await initApp();
             }
@@ -2024,7 +2549,7 @@
                         if (!importedData.settings || !importedData.settings.tasks || !importedData.settings.personnel) {
                             throw new Error("檔案缺少必要的 settings 欄位");
                         }
-                        if (confirm('這將會覆蓋您目前的設定與已儲存班表，確定要匯入嗎？')) {
+                        if (await showConfirm('這將會覆蓋您目前的設定與已儲存班表，確定要匯入嗎？')) {
                             const activeProfile = getActiveProfile();
                             activeProfile.settings = importedData.settings;
                             activeProfile.schedules = importedData.schedules || {};
@@ -2038,7 +2563,7 @@
                             renderAll();
                         }
                     } catch (err) {
-                        alert(`檔案格式錯誤: ${err.message}`);
+                        showToast(`檔案格式錯誤: ${err.message}`, 'error', 4000);
                     }
                 };
                 reader.readAsText(file);
@@ -2064,7 +2589,7 @@
                 });
                 textContent += '\n';
             });
-            navigator.clipboard.writeText(textContent).then(() => alert('班表已複製！')).catch(() => alert('複製失敗！'));
+            navigator.clipboard.writeText(textContent).then(() => showToast('班表已複製！', 'success')).catch(() => showToast('複製失敗！', 'error'));
         });
 
         elements.exportExcelBtn.addEventListener('click', () => {
@@ -2098,15 +2623,15 @@
         elements.exportImagePdfBtn.addEventListener('click', printSchedule);
 
         elements.saveScheduleBtn.addEventListener('click', async () => {
-            if (!generatedData) return alert('請先產生班表！');
-            const name = prompt('請為此班表命名 (例如: 2024-W35):');
-            if (name && name.trim()) {
-                const result = await api.post('schedules', { name: name.trim(), data: generatedData });
+            if (!generatedData) { showToast('請先產生班表！', 'warning'); return; }
+            const name = await showInputModal('儲存班表', '');
+            if (name) {
+                const result = await api.post('schedules', { name, data: generatedData, profile: appState.activeProfile });
                 if (result) {
-                    getActiveProfile().schedules[name.trim()] = generatedData;
-                    currentScheduleName = name.trim(); // 設置當前班表名稱
+                    getActiveProfile().schedules[name] = generatedData;
+                    currentScheduleName = name;
                     renderSavedSchedules();
-                    alert('班表已儲存！');
+                    showToast('班表已儲存！', 'success');
                 }
             }
         });
@@ -2117,7 +2642,7 @@
             const btn = e.target.closest('.delete-schedule-btn');
             if (link) {
                 const name = link.dataset.name;
-                const scheduleData = await api.get(`schedules/${name}`);
+                const scheduleData = await api.get(`schedules/${name}?profile=${encodeURIComponent(appState.activeProfile)}`);
                 if (scheduleData) {
                     generatedData = scheduleData;
                     currentScheduleName = name; // 設置當前班表名稱
@@ -2128,8 +2653,9 @@
                 }
             } else if (btn) {
                  const name = btn.dataset.name;
-                 if (confirm(`確定要刪除班表「${name}」嗎？`)) {
-                     const result = await api.delete(`schedules/${name}`);
+                 const ok = await showConfirm(`確定要刪除班表「${name}」嗎？`);
+                 if (ok) {
+                     const result = await api.delete(`schedules/${name}?profile=${encodeURIComponent(appState.activeProfile)}`);
                      if (result) {
                          delete getActiveProfile().schedules[name];
                          renderSavedSchedules();
@@ -2208,9 +2734,71 @@
         elements.startWeekInput.addEventListener('change', debouncedUpdateHolidays);
         elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
 
-        initApp();
+        document.getElementById('diff-modal-close')?.addEventListener('click', () => {
+            document.getElementById('diff-modal').classList.add('hidden');
+        });
+
+        const personnelExcelBtn = document.getElementById('export-personnel-excel');
+        const scheduleExcelBtn = document.getElementById('export-excel');
+
+        document.getElementById('view-schedule-btn')?.addEventListener('click', () => {
+            document.getElementById('schedule-output').classList.remove('hidden');
+            document.getElementById('personnel-view').classList.add('hidden');
+            document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
+            document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+            scheduleExcelBtn?.classList.remove('hidden');
+            personnelExcelBtn?.classList.add('hidden');
+        });
+        document.getElementById('view-personnel-btn')?.addEventListener('click', () => {
+            renderPersonnelView(editingData || generatedData);
+            document.getElementById('personnel-view').classList.remove('hidden');
+            document.getElementById('schedule-output').classList.add('hidden');
+            document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
+            document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+            scheduleExcelBtn?.classList.add('hidden');
+            personnelExcelBtn?.classList.remove('hidden');
+        });
+        personnelExcelBtn?.addEventListener('click', exportPersonnelExcel);
+
+        // Assign global proxy refs now that all inner functions are defined
+        _renderEditableSchedule = renderEditableSchedule;
+        _renderAll = renderAll;
+        _saveSettings = saveSettings;
+
+        // 全域鍵盤快捷鍵：Ctrl/Cmd+Z 復原，Ctrl/Cmd+Y 或 Ctrl/Cmd+Shift+Z 重做
+        document.addEventListener('keydown', (e) => {
+            const mod = navigator.platform.toUpperCase().includes('MAC') ? e.metaKey : e.ctrlKey;
+            if (!mod) return;
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
+            if (e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                editingData !== null ? undoEdit() : undoSettings();
+            } else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) {
+                e.preventDefault();
+                editingData !== null ? redoEdit() : redoSettings();
+            }
+        });
+
+        await initApp();
     });
 </script>
+<div id="toast-container" class="fixed bottom-5 right-5 flex flex-col gap-2 z-[9999] pointer-events-none"></div>
+<!-- Tailwind safelist：強迫 CDN 編譯動態注入的 class，此 div 不顯示 -->
+<div aria-hidden="true" style="display:none"
+    class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200
+           bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200
+           bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200
+           bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200
+           bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200
+           bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200
+           bg-white dark:bg-gray-800 bg-gray-50 dark:bg-gray-700 bg-gray-100
+           border-gray-200 dark:border-gray-600
+           bg-amber-50 dark:bg-amber-900 border-amber-300 dark:border-amber-600
+           text-amber-800 dark:text-amber-200
+           text-green-600 dark:text-green-400 text-red-500 dark:text-red-400
+           text-gray-700 dark:text-gray-300 text-gray-500 dark:text-gray-400">
+</div>
 </body>
 </html>
 

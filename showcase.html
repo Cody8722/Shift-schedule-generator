@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智慧排班表產生器 — Technical Deep Dive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,200;9..144,400;9..144,700&family=JetBrains+Mono:wght@400;500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #070C18;
+  --surface:  #0D1525;
+  --card:     #111C30;
+  --border:   #1E2D45;
+  --gold:     #E8A000;
+  --gold-dim: rgba(232,160,0,0.15);
+  --sky:      #38BDF8;
+  --text:     #D8E4F0;
+  --muted:    #6B82A0;
+  --code-bg:  #050A14;
+  --get:      #10B981;
+  --post:     #38BDF8;
+  --put:      #F59E0B;
+  --del:      #F87171;
+  --radius:   10px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; font-size: 16px; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 300;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* ── NAV ── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(7,12,24,0.88);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-logo {
+  font-family: 'Fraunces', serif;
+  font-size: 1rem;
+  color: var(--gold);
+  letter-spacing: 0.02em;
+}
+.nav-links { display: flex; gap: 1.8rem; list-style: none; }
+.nav-links a {
+  font-size: 0.8rem; font-weight: 400; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted); text-decoration: none;
+  transition: color .2s;
+}
+.nav-links a:hover { color: var(--text); }
+
+/* ── LAYOUT ── */
+.container { max-width: 1060px; margin: 0 auto; padding: 0 2rem; }
+section { padding: 6rem 0; border-bottom: 1px solid var(--border); }
+section:last-of-type { border-bottom: none; }
+
+/* ── LABELS ── */
+.section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--gold); margin-bottom: 1rem; display: block;
+}
+.section-title {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 700; line-height: 1.15;
+  color: #EDF3FA; margin-bottom: 1.5rem;
+}
+.section-desc { color: var(--muted); max-width: 600px; font-size: 1rem; }
+
+/* ── HERO ── */
+#hero {
+  padding-top: 9rem; padding-bottom: 6rem;
+  border-bottom: 1px solid var(--border);
+  position: relative; overflow: hidden;
+}
+.hero-bg {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 50% at 60% 40%, rgba(232,160,0,0.06) 0%, transparent 70%);
+}
+.hero-tag {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--gold); border: 1px solid var(--gold-dim);
+  padding: .3rem .75rem; border-radius: 4px; margin-bottom: 1.5rem;
+}
+.hero-title {
+  font-family: 'Fraunces', serif;
+  font-size: clamp(2.8rem, 7vw, 5.5rem);
+  font-weight: 700; line-height: 1.05;
+  color: #EDF3FA; margin-bottom: .5rem;
+}
+.hero-title em {
+  font-style: italic; color: var(--gold);
+}
+.hero-subtitle {
+  font-size: 1.15rem; color: var(--muted);
+  max-width: 540px; margin-bottom: 2.5rem; font-weight: 300;
+}
+.tech-badges { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: 3rem; }
+.badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; padding: .25rem .65rem;
+  border: 1px solid var(--border);
+  border-radius: 4px; color: var(--muted);
+  background: var(--surface);
+}
+.hero-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; max-width: 480px;
+}
+.stat {
+  background: var(--card); padding: 1.2rem 1.5rem;
+}
+.stat-num {
+  font-family: 'Fraunces', serif; font-size: 2rem;
+  color: var(--gold); line-height: 1;
+}
+.stat-label { font-size: 0.75rem; color: var(--muted); margin-top: .25rem; }
+
+/* ── ARCHITECTURE ── */
+.arch-diagram {
+  margin: 3rem 0; display: flex; align-items: center; gap: 0;
+  overflow-x: auto; padding: 1rem 0;
+}
+.arch-node {
+  flex-shrink: 0; background: var(--card);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1.2rem 1.5rem; text-align: center;
+  min-width: 130px;
+}
+.arch-node.highlight { border-color: var(--gold); background: var(--gold-dim); }
+.arch-node-icon { font-size: 1.5rem; margin-bottom: .4rem; }
+.arch-node-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; color: var(--text); font-weight: 500;
+}
+.arch-node-sub { font-size: 0.7rem; color: var(--muted); margin-top: .2rem; }
+.arch-arrow {
+  flex-shrink: 0; display: flex; flex-direction: column;
+  align-items: center; padding: 0 .5rem; gap: .2rem;
+}
+.arch-arrow-line {
+  width: 48px; height: 1px; background: var(--border); position: relative;
+}
+.arch-arrow-line::after {
+  content: ''; position: absolute; right: -1px; top: -3px;
+  border: 4px solid transparent;
+  border-left-color: var(--border);
+}
+.arch-arrow-label { font-size: 0.62rem; color: var(--muted); white-space: nowrap; }
+.arch-side {
+  margin-top: 2rem; display: flex; align-items: flex-start; gap: 1.5rem;
+  flex-wrap: wrap;
+}
+.arch-side-node {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1rem 1.25rem;
+  font-size: 0.8rem;
+}
+.arch-side-node strong {
+  font-family: 'JetBrains Mono', monospace;
+  display: block; margin-bottom: .3rem; color: var(--sky); font-size: 0.75rem;
+}
+
+/* ── ALGORITHM ── */
+.algo-steps { display: grid; gap: 1.5rem; margin: 2.5rem 0; }
+.algo-step {
+  display: grid; grid-template-columns: 48px 1fr;
+  gap: 1.25rem; align-items: start;
+}
+.step-num {
+  width: 48px; height: 48px;
+  border: 1px solid var(--gold-dim); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fraunces', serif; font-size: 1.1rem; color: var(--gold);
+  flex-shrink: 0;
+}
+.step-content h3 {
+  font-size: 1rem; font-weight: 500; color: #EDF3FA; margin-bottom: .5rem;
+}
+.step-content p { font-size: 0.9rem; color: var(--muted); }
+
+/* ── ALGO VISUAL ── */
+.algo-visual {
+  margin: 3rem 0; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+}
+.algo-visual-header {
+  padding: .75rem 1.25rem; background: var(--card);
+  border-bottom: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--muted);
+}
+.slot-grid { padding: 1.5rem; }
+.slot-week {
+  display: grid; grid-template-columns: 110px repeat(5, 1fr);
+  gap: 6px; margin-bottom: 6px;
+}
+.slot-header {
+  font-size: 0.7rem; color: var(--muted); text-align: center; padding: .3rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+.slot-task-name {
+  font-size: 0.72rem; color: var(--text); display: flex; align-items: center;
+  padding-left: .5rem; gap: .4rem;
+}
+.priority-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.slot-cell {
+  height: 36px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--card); display: flex; align-items: center;
+  justify-content: center; font-size: 0.65rem; color: var(--muted);
+  font-family: 'JetBrains Mono', monospace; overflow: hidden;
+  transition: all .4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.slot-cell.filled-p1 {
+  background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.4);
+  color: #10B981;
+}
+.slot-cell.filled-p8 {
+  background: rgba(56,189,248,0.12); border-color: rgba(56,189,248,0.3);
+  color: #38BDF8;
+}
+.slot-cell.filled-p9 {
+  background: rgba(232,160,0,0.1); border-color: rgba(232,160,0,0.25);
+  color: var(--gold);
+}
+.algo-controls {
+  padding: .75rem 1.25rem; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 1rem;
+}
+.btn-step {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;
+  padding: .4rem .9rem; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--card); color: var(--text);
+  transition: all .15s;
+}
+.btn-step:hover { border-color: var(--gold); color: var(--gold); }
+.btn-step.primary { background: var(--gold-dim); border-color: var(--gold); color: var(--gold); }
+.algo-status {
+  font-size: 0.75rem; color: var(--muted); font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── CODE BLOCKS ── */
+.code-block {
+  margin: 1.5rem 0; border-radius: var(--radius);
+  border: 1px solid var(--border); overflow: hidden;
+}
+.code-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .6rem 1rem; background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.code-filename {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; color: var(--muted);
+}
+.code-copy {
+  font-size: 0.7rem; color: var(--muted); cursor: pointer;
+  background: none; border: none; font-family: 'JetBrains Mono', monospace;
+  transition: color .15s;
+}
+.code-copy:hover { color: var(--gold); }
+pre {
+  background: var(--code-bg); padding: 1.25rem 1.5rem;
+  overflow-x: auto; font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem; line-height: 1.65;
+}
+.kw  { color: #C792EA; } /* keyword */
+.fn  { color: #82AAFF; } /* function */
+.str { color: #C3E88D; } /* string */
+.num { color: #F78C6C; } /* number */
+.cmt { color: #4A5568; font-style: italic; } /* comment */
+.var { color: #EEFFFF; }
+.op  { color: #89DDFF; } /* operator / method */
+
+/* ── API REFERENCE ── */
+.api-group { margin-bottom: 3rem; }
+.api-group-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+  padding-bottom: .75rem; margin-bottom: 1rem;
+}
+.api-endpoint {
+  display: grid; grid-template-columns: 70px 1fr auto;
+  align-items: start; gap: 1rem; padding: 1rem 1.25rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card); margin-bottom: .5rem;
+  transition: border-color .15s;
+}
+.api-endpoint:hover { border-color: rgba(232,160,0,0.3); }
+.method {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; font-weight: 500;
+  padding: .2rem .5rem; border-radius: 4px; text-align: center;
+  letter-spacing: 0.05em;
+}
+.method.get    { background: rgba(16,185,129,0.15); color: var(--get); }
+.method.post   { background: rgba(56,189,248,0.15); color: var(--post); }
+.method.put    { background: rgba(245,158,11,0.15); color: var(--put); }
+.method.delete { background: rgba(248,113,113,0.15); color: var(--del); }
+.endpoint-path {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem; color: var(--text);
+}
+.endpoint-desc { font-size: 0.82rem; color: var(--muted); margin-top: .2rem; }
+.endpoint-badge {
+  font-size: 0.65rem; font-family: 'JetBrains Mono', monospace;
+  padding: .15rem .5rem; border-radius: 4px;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--border); white-space: nowrap;
+}
+
+/* ── API DETAIL CARD ── */
+.api-detail {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; margin: 2rem 0;
+}
+.api-detail-header {
+  padding: 1rem 1.5rem; background: var(--card);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: .75rem;
+}
+.api-detail-body { padding: 1.5rem; }
+.params-table { width: 100%; border-collapse: collapse; margin-top: .75rem; }
+.params-table th {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.68rem;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  text-align: left; padding: .5rem .75rem;
+  border-bottom: 1px solid var(--border);
+}
+.params-table td {
+  font-size: 0.82rem; padding: .65rem .75rem;
+  border-bottom: 1px solid rgba(30,45,69,0.5);
+  vertical-align: top;
+}
+.params-table td:first-child {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem; color: var(--sky);
+}
+.params-table td:nth-child(2) {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; color: #C792EA;
+}
+.params-table td:last-child { color: var(--muted); }
+.required-badge {
+  font-size: 0.6rem; background: rgba(248,113,113,0.15);
+  color: var(--del); padding: .1rem .4rem; border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace; margin-left: .4rem;
+}
+
+/* ── DECISIONS ── */
+.decisions-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem; margin-top: 2.5rem;
+}
+.decision-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.5rem;
+  transition: border-color .2s;
+}
+.decision-card:hover { border-color: rgba(232,160,0,0.35); }
+.decision-icon { font-size: 1.5rem; margin-bottom: .75rem; }
+.decision-title {
+  font-family: 'Fraunces', serif; font-size: 1.05rem;
+  color: #EDF3FA; margin-bottom: .6rem;
+}
+.decision-body { font-size: 0.85rem; color: var(--muted); }
+.decision-body strong { color: var(--text); font-weight: 400; }
+
+/* ── TESTING ── */
+.test-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 1.25rem; margin-top: 2.5rem;
+}
+.test-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.5rem;
+}
+.test-card h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem; color: var(--gold); margin-bottom: 1rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.test-item {
+  display: flex; gap: .75rem; margin-bottom: .75rem; align-items: flex-start;
+  font-size: 0.85rem;
+}
+.test-check { color: var(--get); flex-shrink: 0; font-size: 0.9rem; }
+.test-item-body { color: var(--muted); }
+.test-item-body strong { color: var(--text); font-weight: 400; }
+.cicd-flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+  margin-top: 1.25rem;
+}
+.flow-step {
+  font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+  padding: .35rem .8rem; border-radius: 5px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+}
+.flow-arrow { color: var(--muted); font-size: 0.8rem; }
+
+/* ── FOOTER ── */
+footer {
+  text-align: center; padding: 3rem 2rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; color: var(--muted);
+}
+
+/* ── ANIMATIONS ── */
+.fade-in {
+  opacity: 0; transform: translateY(20px);
+  animation: fadeUp .6s ease forwards;
+}
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in:nth-child(1) { animation-delay: .1s; }
+.fade-in:nth-child(2) { animation-delay: .2s; }
+.fade-in:nth-child(3) { animation-delay: .3s; }
+.fade-in:nth-child(4) { animation-delay: .4s; }
+
+@media (max-width: 640px) {
+  .nav-links { display: none; }
+  .test-grid { grid-template-columns: 1fr; }
+  .hero-stats { grid-template-columns: 1fr 1fr 1fr; }
+  .api-endpoint { grid-template-columns: 60px 1fr; }
+  .endpoint-badge { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <span class="nav-logo">排班表產生器</span>
+  <ul class="nav-links">
+    <li><a href="#architecture">架構</a></li>
+    <li><a href="#algorithm">演算法</a></li>
+    <li><a href="#api">API</a></li>
+    <li><a href="#decisions">技術決策</a></li>
+    <li><a href="#testing">測試</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-bg"></div>
+  <div class="container">
+    <div class="hero-tag">Full-Stack · Node.js · MongoDB · REST API</div>
+    <h1 class="hero-title fade-in">智慧排班表<br><em>產生器</em></h1>
+    <p class="hero-subtitle fade-in">
+      以優先級、公平性、人員限制為核心的企業級排班系統。
+      後端 Express.js REST API，前端純靜態 HTML，部署於 Zeabur。
+    </p>
+    <div class="tech-badges fade-in">
+      <span class="badge">Node.js 18</span>
+      <span class="badge">Express 4</span>
+      <span class="badge">MongoDB Atlas</span>
+      <span class="badge">Vanilla JS</span>
+      <span class="badge">Jest + Supertest</span>
+      <span class="badge">GitHub Actions CI/CD</span>
+      <span class="badge">Docker</span>
+      <span class="badge">Zeabur</span>
+    </div>
+    <div class="hero-stats fade-in">
+      <div class="stat">
+        <div class="stat-num">16</div>
+        <div class="stat-label">REST 端點</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">8</div>
+        <div class="stat-label">自動化測試</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">O(n)</div>
+        <div class="stat-label">排班演算法</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section id="architecture">
+  <div class="container">
+    <span class="section-label">01 — System Architecture</span>
+    <h2 class="section-title">系統架構</h2>
+    <p class="section-desc">
+      三層架構：靜態前端透過 Fetch API 溝通 Express 後端，後端連接 MongoDB Atlas 持久化資料。
+      即使資料庫離線，系統仍可在無 DB 模式下正常產生班表。
+    </p>
+
+    <div class="arch-diagram">
+      <div class="arch-node">
+        <div class="arch-node-icon">🌐</div>
+        <div class="arch-node-name">index.html</div>
+        <div class="arch-node-sub">Vanilla JS SPA</div>
+      </div>
+      <div class="arch-arrow">
+        <div class="arch-arrow-line"></div>
+        <div class="arch-arrow-label">HTTP Fetch</div>
+        <div class="arch-arrow-label">JSON</div>
+      </div>
+      <div class="arch-node highlight">
+        <div class="arch-node-icon">⚙️</div>
+        <div class="arch-node-name">server.js</div>
+        <div class="arch-node-sub">Express.js API</div>
+      </div>
+      <div class="arch-arrow">
+        <div class="arch-arrow-line"></div>
+        <div class="arch-arrow-label">MongoDB</div>
+        <div class="arch-arrow-label">Driver</div>
+      </div>
+      <div class="arch-node">
+        <div class="arch-node-icon">🗄️</div>
+        <div class="arch-node-name">MongoDB Atlas</div>
+        <div class="arch-node-sub">scheduleApp DB</div>
+      </div>
+    </div>
+
+    <div class="arch-side">
+      <div class="arch-side-node">
+        <strong>holidays/*.json</strong>
+        台灣國定假日資料（2025–2027）<br>
+        啟動時載入並快取於記憶體 Map
+      </div>
+      <div class="arch-side-node">
+        <strong>graceful degradation</strong>
+        缺少 MONGODB_URI 時伺服器仍啟動<br>
+        DB 功能停用，排班邏輯不受影響
+      </div>
+      <div class="arch-side-node">
+        <strong>rate limiting</strong>
+        express-rate-limit 防止暴力請求<br>
+        debug namespace 分層日誌輸出
+      </div>
+      <div class="arch-side-node">
+        <strong>input validation</strong>
+        Profile / 班表名稱 Regex 過濾<br>
+        防止注入，validate 在 API 邊界執行
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ALGORITHM -->
+<section id="algorithm">
+  <div class="container">
+    <span class="section-label">02 — Core Algorithm</span>
+    <h2 class="section-title">排班演算法</h2>
+    <p class="section-desc">
+      基於優先級的 Slot-Based 排班，確保高優先勤務先被填滿，
+      並透過跨週累積計數實現長期人員公平分配。
+    </p>
+
+    <div class="algo-steps">
+      <div class="algo-step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <h3>依優先級排序勤務，建立 Slot 清單</h3>
+          <p>將所有勤務依 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">priority</code>（1=最高）升序排列。每個勤務依 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">count × 工作天數</code> 展開為 slot 清單。同一勤務的各輪天序隨機打亂，避免偏向固定某天。高優先勤務的所有 slot 一定排在低優先之前。</p>
+        </div>
+      </div>
+      <div class="algo-step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <h3>三層篩選可用人員</h3>
+          <p>對每個 slot，從人員清單中篩除三類不可用者：① 當天有 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">offDays</code>、② 本週累積班次達 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">maxShifts</code>、③ 當天已被排過（防重複）。</p>
+        </div>
+      </div>
+      <div class="algo-step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <h3>三層排序決定最優人選</h3>
+          <p>可用人員依以下優先序排序，取第一位：<br>
+          ① <strong style="color:var(--text)">跨週累積班次最少</strong>（長期公平）→
+          ② <strong style="color:var(--text)">本週已排次數最少</strong>（單週公平）→
+          ③ <strong style="color:var(--text)">技能分 × 0.6 + 隨機 × 0.4</strong>（偏好 + 不可預測性）</p>
+        </div>
+      </div>
+      <div class="algo-step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <h3>跨週累積追蹤</h3>
+          <p>多週排班時，每週結束後將本週班次計數累加至 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">cumulativeShifts</code> Map，下一週排班時作為第一優先排序依據，確保長期分配均勻。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive demo -->
+    <div class="algo-visual">
+      <div class="algo-visual-header">// 互動演示：點擊「下一步」觀看 slot 填補過程</div>
+      <div class="slot-grid" id="slotGrid">
+        <div class="slot-week">
+          <div></div>
+          <div class="slot-header">Mon</div>
+          <div class="slot-header">Tue</div>
+          <div class="slot-header">Wed</div>
+          <div class="slot-header">Thu</div>
+          <div class="slot-header">Fri</div>
+        </div>
+        <div class="slot-week" id="row-p1">
+          <div class="slot-task-name"><span class="priority-dot" style="background:#10B981"></span>素描教室 ×2</div>
+          <div class="slot-cell" id="c-0-0">—</div>
+          <div class="slot-cell" id="c-0-1">—</div>
+          <div class="slot-cell" id="c-0-2">—</div>
+          <div class="slot-cell" id="c-0-3">—</div>
+          <div class="slot-cell" id="c-0-4">—</div>
+        </div>
+        <div class="slot-week" id="row-p8">
+          <div class="slot-task-name"><span class="priority-dot" style="background:#38BDF8"></span>大鏡子 ×1</div>
+          <div class="slot-cell" id="c-1-0">—</div>
+          <div class="slot-cell" id="c-1-1">—</div>
+          <div class="slot-cell" id="c-1-2">—</div>
+          <div class="slot-cell" id="c-1-3">—</div>
+          <div class="slot-cell" id="c-1-4">—</div>
+        </div>
+        <div class="slot-week" id="row-p9">
+          <div class="slot-task-name"><span class="priority-dot" style="background:var(--gold)"></span>車道 ×1</div>
+          <div class="slot-cell" id="c-2-0">—</div>
+          <div class="slot-cell" id="c-2-1">—</div>
+          <div class="slot-cell" id="c-2-2">—</div>
+          <div class="slot-cell" id="c-2-3">—</div>
+          <div class="slot-cell" id="c-2-4">—</div>
+        </div>
+      </div>
+      <div class="algo-controls">
+        <button class="btn-step" id="btnReset">重置</button>
+        <button class="btn-step primary" id="btnStep">下一步 →</button>
+        <span class="algo-status" id="algoStatus">Step 0 — 等待開始</span>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-filename">server.js — generateWeeklySchedule()</span>
+        <button class="code-copy" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="cmt">// 1. 依優先級建立 slot 清單</span>
+<span class="kw">const</span> <span class="var">tasksByPriority</span> = tasks
+  .<span class="op">map</span>((t, i) => ({ ...t, taskIndex: i }))
+  .<span class="op">sort</span>((a, b) => (a.priority || <span class="num">9</span>) - (b.priority || <span class="num">9</span>));
+
+<span class="kw">const</span> <span class="var">slots</span> = [];
+<span class="kw">for</span> (<span class="kw">const</span> { taskIndex, count } <span class="kw">of</span> tasksByPriority) {
+  <span class="kw">for</span> (<span class="kw">let</span> slotIndex = <span class="num">0</span>; slotIndex &lt; count; slotIndex++) {
+    <span class="kw">const</span> <span class="var">shuffledDays</span> = [...workDays].<span class="op">sort</span>(() => Math.<span class="fn">random</span>() - <span class="num">0.5</span>);
+    <span class="kw">for</span> (<span class="kw">const</span> dayIndex <span class="kw">of</span> shuffledDays) slots.<span class="op">push</span>({ dayIndex, taskIndex });
+  }
+}
+
+<span class="cmt">// 2. 逐一填補 slot</span>
+<span class="kw">for</span> (<span class="kw">const</span> { dayIndex, taskIndex } <span class="kw">of</span> slots) {
+  <span class="kw">const</span> <span class="var">available</span> = personnel.<span class="op">filter</span>(p =>
+    !p.offDays?.<span class="op">includes</span>(dayIndex) &&
+    shiftCounts.<span class="op">get</span>(p.name) &lt; (p.maxShifts || <span class="num">5</span>) &&
+    !assigned.<span class="op">has</span>(p.name)
+  );
+  <span class="kw">if</span> (!available.length) <span class="kw">continue</span>;
+
+  available.<span class="op">sort</span>((a, b) => {
+    <span class="cmt">// ① 跨週累積班次最少優先</span>
+    <span class="kw">const</span> <span class="var">cumDiff</span> = cumulativeShifts.<span class="op">get</span>(a.name) - cumulativeShifts.<span class="op">get</span>(b.name);
+    <span class="kw">if</span> (cumDiff !== <span class="num">0</span>) <span class="kw">return</span> cumDiff;
+    <span class="cmt">// ② 本週已排最少</span>
+    <span class="kw">const</span> <span class="var">usedDiff</span> = shiftCounts.<span class="op">get</span>(a.name) - shiftCounts.<span class="op">get</span>(b.name);
+    <span class="kw">if</span> (usedDiff !== <span class="num">0</span>) <span class="kw">return</span> usedDiff;
+    <span class="cmt">// ③ 技能分 × 0.6 + 隨機 × 0.4</span>
+    <span class="kw">return</span> <span class="fn">getEffectiveScore</span>(b, task.name) - <span class="fn">getEffectiveScore</span>(a, task.name);
+  });
+  <span class="fn">assign</span>(available[<span class="num">0</span>], dayIndex, taskIndex);
+}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- API REFERENCE -->
+<section id="api">
+  <div class="container">
+    <span class="section-label">03 — API Reference</span>
+    <h2 class="section-title">API 端點</h2>
+    <p class="section-desc">16 個 RESTful 端點，統一 JSON 回應格式。所有寫入端點皆驗證輸入並以 Regex 過濾名稱欄位。</p>
+
+    <!-- Core endpoint detail -->
+    <div class="api-detail" style="margin-top:2.5rem">
+      <div class="api-detail-header">
+        <span class="method post">POST</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem">/api/generate-schedule</span>
+        <span style="font-size:.8rem;color:var(--muted);margin-left:.5rem">— 核心端點</span>
+      </div>
+      <div class="api-detail-body">
+        <p style="color:var(--muted);font-size:.85rem;margin-bottom:1.25rem">
+          接受人員設定與時間範圍，執行排班演算法，回傳結構化資料與預渲染 HTML。
+        </p>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Request Body</p>
+        <table class="params-table">
+          <thead><tr><th>欄位</th><th>型別</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr><td>settings<span class="required-badge">必填</span></td><td>object</td><td>包含 personnel 陣列與 tasks 陣列的設定物件</td></tr>
+            <tr><td>settings.personnel</td><td>array</td><td>人員清單，每筆含 name, maxShifts, offDays[], taskScores{}</td></tr>
+            <tr><td>settings.tasks</td><td>array</td><td>勤務清單，每筆含 name, count（每天人數）, priority（1–9）</td></tr>
+            <tr><td>startWeek<span class="required-badge">必填</span></td><td>string</td><td>起始週一日期，格式 YYYY-MM-DD</td></tr>
+            <tr><td>numWeeks<span class="required-badge">必填</span></td><td>number</td><td>要產生幾週的班表</td></tr>
+            <tr><td>activeHolidays</td><td>string[]</td><td>要跳過排班的假日日期陣列</td></tr>
+          </tbody>
+        </table>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:1.25rem 0 .5rem">Response</p>
+        <div class="code-block" style="margin:0">
+          <pre style="padding:.9rem 1.25rem"><span class="op">{</span>
+  <span class="str">"data"</span>: [   <span class="cmt">// 每週一筆</span>
+    <span class="op">{</span>
+      <span class="str">"schedule"</span>: <span class="op">[[</span><span class="str">"陳芊云"</span><span class="op">]</span>, ...<span class="op">]</span>,   <span class="cmt">// [day][task] → names[]</span>
+      <span class="str">"fillStats"</span>: <span class="op">[{</span> <span class="str">"name"</span>: <span class="str">"素描教室"</span>, <span class="str">"filled"</span>: <span class="num">10</span>, <span class="str">"needed"</span>: <span class="num">10</span>, <span class="str">"ok"</span>: <span class="kw">true</span> <span class="op">}]</span>,
+      <span class="str">"dateRange"</span>: <span class="str">"2025-04-07 - 2025-04-11"</span>
+    <span class="op">}</span>
+  <span class="op">]</span>,
+  <span class="str">"html"</span>: <span class="str">"&lt;table ...&gt;...&lt;/table&gt;"</span>  <span class="cmt">// 預渲染班表 HTML</span>
+<span class="op">}</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Endpoint list -->
+    <div class="api-group" style="margin-top:2.5rem">
+      <div class="api-group-title">System</div>
+      <div class="api-endpoint">
+        <span class="method get">GET</span>
+        <div><div class="endpoint-path">/api/status</div><div class="endpoint-desc">伺服器健康檢查，回傳 DB 連線狀態</div></div>
+        <span class="endpoint-badge">health check</span>
+      </div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">Profiles — 排班設定檔</div>
+      <div class="api-endpoint">
+        <span class="method get">GET</span>
+        <div><div class="endpoint-path">/api/profiles</div><div class="endpoint-desc">列出所有設定檔（含 settings 與已儲存班表）</div></div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method post">POST</span>
+        <div><div class="endpoint-path">/api/profiles</div><div class="endpoint-desc">建立新設定檔</div></div>
+        <span class="endpoint-badge">name validated</span>
+      </div>
+      <div class="api-endpoint">
+        <span class="method put">PUT</span>
+        <div><div class="endpoint-path">/api/profiles/active</div><div class="endpoint-desc">切換當前使用的設定檔</div></div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method put">PUT</span>
+        <div><div class="endpoint-path">/api/profiles/:name</div><div class="endpoint-desc">更新設定檔的 settings（人員、勤務）</div></div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method put">PUT</span>
+        <div><div class="endpoint-path">/api/profiles/:name/rename</div><div class="endpoint-desc">重新命名設定檔</div></div>
+        <span class="endpoint-badge">name validated</span>
+      </div>
+      <div class="api-endpoint">
+        <span class="method delete">DELETE</span>
+        <div><div class="endpoint-path">/api/profiles/:name</div><div class="endpoint-desc">刪除設定檔（同時刪除其下所有班表）</div></div>
+      </div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">Schedule Generation — 排班產生</div>
+      <div class="api-endpoint">
+        <span class="method post">POST</span>
+        <div><div class="endpoint-path">/api/generate-schedule</div><div class="endpoint-desc">核心端點：執行演算法，回傳班表資料與 HTML</div></div>
+        <span class="endpoint-badge">core</span>
+      </div>
+      <div class="api-endpoint">
+        <span class="method post">POST</span>
+        <div><div class="endpoint-path">/api/render-schedule</div><div class="endpoint-desc">將已儲存的班表資料重新渲染為 HTML</div></div>
+      </div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">Saved Schedules — 已儲存班表</div>
+      <div class="api-endpoint">
+        <span class="method post">POST</span>
+        <div><div class="endpoint-path">/api/schedules</div><div class="endpoint-desc">儲存當前生成的班表至 MongoDB</div></div>
+        <span class="endpoint-badge">name validated</span>
+      </div>
+      <div class="api-endpoint">
+        <span class="method get">GET</span>
+        <div><div class="endpoint-path">/api/schedules/:name</div><div class="endpoint-desc">載入已儲存的班表</div></div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method delete">DELETE</span>
+        <div><div class="endpoint-path">/api/schedules/:name</div><div class="endpoint-desc">刪除指定班表</div></div>
+      </div>
+    </div>
+
+    <div class="api-group">
+      <div class="api-group-title">Holidays — 假日管理</div>
+      <div class="api-endpoint">
+        <span class="method get">GET</span>
+        <div><div class="endpoint-path">/api/holidays/:year</div><div class="endpoint-desc">取得指定年份台灣國定假日清單（記憶體快取）</div></div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method get">GET</span>
+        <div><div class="endpoint-path">/api/holidays-in-range</div><div class="endpoint-desc">取得特定日期範圍內的假日，供前端週選擇器使用</div></div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method put">PUT</span>
+        <div><div class="endpoint-path">/api/holidays</div><div class="endpoint-desc">覆寫指定年份的假日資料</div></div>
+      </div>
+      <div class="api-endpoint">
+        <span class="method post">POST</span>
+        <div><div class="endpoint-path">/api/holidays/reseed</div><div class="endpoint-desc">從 JSON 檔案重新載入假日資料至 DB</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DECISIONS -->
+<section id="decisions">
+  <div class="container">
+    <span class="section-label">04 — Engineering Decisions</span>
+    <h2 class="section-title">技術決策</h2>
+    <p class="section-desc">五個關鍵設計選擇，每一個背後都有明確的取捨理由。</p>
+    <div class="decisions-grid">
+      <div class="decision-card">
+        <div class="decision-icon">📄</div>
+        <div class="decision-title">Vanilla JS，不用框架</div>
+        <div class="decision-body">
+          系統只有單一頁面，無路由需求。純 HTML + Fetch API 減少打包步驟，
+          <strong>冷啟動時間為零</strong>，且伺服器可直接提供靜態檔案，無需 CDN 或 build pipeline。
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-icon">🔌</div>
+        <div class="decision-title">Graceful DB Degradation</div>
+        <div class="decision-body">
+          缺少 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">MONGODB_URI</code> 時伺服器仍正常啟動，排班核心功能完全可用。
+          <strong>關注點分離</strong>：排班邏輯不依賴資料庫，資料庫只負責持久化。
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-icon">⚖️</div>
+        <div class="decision-title">Slot-Based 而非逐日排班</div>
+        <div class="decision-body">
+          傳統逐日排班會讓高優先勤務在某些天搶不到人。改為
+          <strong>建立全週 slot 清單再依序填補</strong>，保證優先級高的勤務先搶到資源，且各天機會均等。
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-icon">🔒</div>
+        <div class="decision-title">API 邊界驗證</div>
+        <div class="decision-body">
+          所有名稱欄位套用
+          <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">/^[a-zA-Z0-9_\u4e00-\u9fa5-]{1,50}$/</code> Regex，
+          防止 NoSQL injection。<strong>不依賴前端驗證</strong>，後端是唯一信任邊界。
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-icon">📊</div>
+        <div class="decision-title">fillStats 診斷回傳</div>
+        <div class="decision-body">
+          每次排班後額外計算並回傳每個勤務的填補率（filled/needed），
+          讓前端可以<strong>即時顯示哪些勤務排不滿</strong>，而不是讓使用者猜測。
+        </div>
+      </div>
+      <div class="decision-card">
+        <div class="decision-icon">🧠</div>
+        <div class="decision-title">預留技能分系統</div>
+        <div class="decision-body">
+          <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">taskScores</code> 欄位已存入 schema，
+          <code style="color:var(--sky);font-family:'JetBrains Mono',monospace;font-size:.85em">getEffectiveScore()</code> 函數已實作，
+          但 UI 尚未提供輸入介面。<strong>向前兼容：資料模型先行，UI 後補</strong>。
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTING -->
+<section id="testing">
+  <div class="container">
+    <span class="section-label">05 — Testing & CI/CD</span>
+    <h2 class="section-title">測試策略</h2>
+    <p class="section-desc">使用 Jest + Supertest 對 API 層做整合測試，CI/CD 透過 GitHub Actions 自動執行。</p>
+    <div class="test-grid">
+      <div class="test-card">
+        <h3>測試涵蓋項目</h3>
+        <div class="test-item">
+          <span class="test-check">✓</span>
+          <div class="test-item-body"><strong>Health check</strong> — GET /api/status 回傳 200</div>
+        </div>
+        <div class="test-item">
+          <span class="test-check">✓</span>
+          <div class="test-item-body"><strong>合法設定產生班表</strong> — 完整流程端到端</div>
+        </div>
+        <div class="test-item">
+          <span class="test-check">✓</span>
+          <div class="test-item-body"><strong>缺少必填欄位</strong> — tasks / personnel 缺一回 400</div>
+        </div>
+        <div class="test-item">
+          <span class="test-check">✓</span>
+          <div class="test-item-body"><strong>taskScores 驗證</strong> — 超出 0–5 回 400，合法值通過</div>
+        </div>
+        <div class="test-item">
+          <span class="test-check">✓</span>
+          <div class="test-item-body"><strong>Profiles API</strong> — 回傳 200 或 503（DB 離線）</div>
+        </div>
+        <div class="test-item">
+          <span class="test-check">✓</span>
+          <div class="test-item-body"><strong>404 處理</strong> — 未知路由回傳正確格式</div>
+        </div>
+      </div>
+      <div class="test-card">
+        <h3>CI/CD Pipeline</h3>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem">
+          每次 push 到 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace">develop</code> 或 <code style="color:var(--sky);font-family:'JetBrains Mono',monospace">release</code>，或開 PR 到 release 時自動觸發：
+        </p>
+        <div class="cicd-flow">
+          <span class="flow-step">Checkout</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">Node 18</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">npm ci</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">ESLint</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">npm test</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">index.html ✓</span>
+          <span class="flow-arrow">→</span>
+          <span class="flow-step">Docker Build</span>
+        </div>
+        <p style="font-size:.78rem;color:var(--muted);margin-top:1rem">
+          CI 通過後，Zeabur 透過 Git 連線自動部署 release 分支，無需手動操作。
+        </p>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--muted);margin-top:1rem">
+          分支策略：feature/* → develop → release
+        </p>
+      </div>
+    </div>
+
+    <div class="code-block" style="margin-top:2rem">
+      <div class="code-header">
+        <span class="code-filename">tests/server.test.js — 排班產生整合測試</span>
+        <button class="code-copy" onclick="copyCode(this)">copy</button>
+      </div>
+      <pre><span class="fn">it</span>(<span class="str">'合法設定產生班表成功'</span>, <span class="kw">async</span> () => {
+  <span class="kw">const</span> <span class="var">res</span> = <span class="kw">await</span> <span class="fn">request</span>(app).<span class="op">post</span>(<span class="str">'/api/generate-schedule'</span>).<span class="op">send</span>({
+    settings: {
+      personnel: [{ name: <span class="str">'Alice'</span>, maxShifts: <span class="num">5</span>, offDays: [] }],
+      tasks:     [{ name: <span class="str">'Task A'</span>, count: <span class="num">1</span>, priority: <span class="num">1</span> }]
+    },
+    startWeek: <span class="str">'2025-04-07'</span>,
+    numWeeks: <span class="num">1</span>,
+    activeHolidays: []
+  });
+  <span class="fn">expect</span>(res.statusCode).<span class="op">toBe</span>(<span class="num">200</span>);
+  <span class="fn">expect</span>(res.body.data).<span class="op">toHaveLength</span>(<span class="num">1</span>);
+  <span class="fn">expect</span>(res.body.html).<span class="op">toContain</span>(<span class="str">'Alice'</span>);
+});</pre>
+    </div>
+  </div>
+</section>
+
+<footer>
+  智慧排班表產生器 — Technical Showcase &nbsp;·&nbsp;
+  Node.js · Express · MongoDB Atlas · GitHub Actions
+</footer>
+
+<script>
+// ── Algorithm demo ──
+const names = ['芊云','盈萱','紫媛','愷安','亦煖','叡雅','語涵','祈瑋','俞霆'];
+const steps = [
+  { cell: 'c-0-0', cls: 'filled-p1', name: '芊云',  msg: 'Step 1 — 素描教室(P1) Mon: 填入班次最少的人' },
+  { cell: 'c-0-1', cls: 'filled-p1', name: '盈萱',  msg: 'Step 2 — 素描教室(P1) Tue: 排除 offDays，取累積最少' },
+  { cell: 'c-0-2', cls: 'filled-p1', name: '紫媛',  msg: 'Step 3 — 素描教室(P1) Wed' },
+  { cell: 'c-0-3', cls: 'filled-p1', name: '亦煖',  msg: 'Step 4 — 素描教室(P1) Thu' },
+  { cell: 'c-0-4', cls: 'filled-p1', name: '叡雅',  msg: 'Step 5 — 素描教室(P1) Fri: 第一輪完成 ✓' },
+  { cell: 'c-0-0', cls: 'filled-p1', name: '愷安',  msg: 'Step 6 — 素描教室 ×2 Mon: 第二輪（count=2）', append: true },
+  { cell: 'c-0-1', cls: 'filled-p1', name: '祈瑋',  msg: 'Step 7 — 素描教室 ×2 Tue', append: true },
+  { cell: 'c-0-2', cls: 'filled-p1', name: '語涵',  msg: 'Step 8 — 素描教室 ×2 Wed', append: true },
+  { cell: 'c-0-3', cls: 'filled-p1', name: '俞霆',  msg: 'Step 9 — 素描教室 ×2 Thu', append: true },
+  { cell: 'c-0-4', cls: 'filled-p1', name: '芊云',  msg: 'Step 10 — 素描教室全部填滿 ✓ 開始填 P8', append: true },
+  { cell: 'c-1-0', cls: 'filled-p8', name: '盈萱',  msg: 'Step 11 — 大鏡子(P8) Mon: P1 全滿後才輪到 P8' },
+  { cell: 'c-1-1', cls: 'filled-p8', name: '愷安',  msg: 'Step 12 — 大鏡子(P8) Tue' },
+  { cell: 'c-1-2', cls: 'filled-p8', name: '亦煖',  msg: 'Step 13 — 大鏡子(P8) Wed' },
+  { cell: 'c-1-3', cls: 'filled-p8', name: '叡雅',  msg: 'Step 14 — 大鏡子(P8) Thu' },
+  { cell: 'c-1-4', cls: 'filled-p8', name: '紫媛',  msg: 'Step 15 — 大鏡子全部填滿 ✓ 開始填 P9' },
+  { cell: 'c-2-0', cls: 'filled-p9', name: '語涵',  msg: 'Step 16 — 車道(P9) Mon: 容量已減少' },
+  { cell: 'c-2-1', cls: 'filled-p9', name: '俞霆',  msg: 'Step 17 — 車道(P9) Tue: 剩餘可用人員有限' },
+  { cell: 'c-2-2', cls: 'filled-p9', name: '祈瑋',  msg: 'Step 18 — 車道(P9) Wed' },
+  { cell: 'c-2-3', cls: '', name: '',  msg: 'Step 19 — 車道 Thu: 可用人員已達 maxShifts，此 slot 空缺', empty: true },
+  { cell: 'c-2-4', cls: '', name: '',  msg: 'Step 20 — 完成。優先級保障：P1=100% P8=100% P9=60%（容量不足）', empty: true }
+];
+
+let currentStep = -1;
+const cellContents = {};
+
+function resetDemo() {
+  currentStep = -1;
+  for (const { cell } of steps) {
+    const el = document.getElementById(cell);
+    if (!el) continue;
+    el.className = 'slot-cell';
+    el.textContent = '—';
+  }
+  Object.keys(cellContents).forEach(k => delete cellContents[k]);
+  document.getElementById('algoStatus').textContent = 'Step 0 — 等待開始';
+}
+
+function nextStep() {
+  if (currentStep >= steps.length - 1) { resetDemo(); return; }
+  currentStep++;
+  const s = steps[currentStep];
+  const el = document.getElementById(s.cell);
+  if (!el) return;
+  if (s.empty) {
+    el.className = 'slot-cell';
+    el.textContent = '—';
+  } else if (s.append) {
+    if (!cellContents[s.cell]) cellContents[s.cell] = [];
+    cellContents[s.cell].push(s.name);
+    el.className = `slot-cell ${s.cls}`;
+    el.textContent = cellContents[s.cell].join('/');
+  } else {
+    cellContents[s.cell] = [s.name];
+    el.className = `slot-cell ${s.cls}`;
+    el.textContent = s.name;
+  }
+  document.getElementById('algoStatus').textContent = s.msg;
+  if (currentStep === steps.length - 1) {
+    document.getElementById('btnStep').textContent = '重新開始 ↺';
+  } else {
+    document.getElementById('btnStep').textContent = '下一步 →';
+  }
+}
+
+document.getElementById('btnStep').addEventListener('click', nextStep);
+document.getElementById('btnReset').addEventListener('click', resetDemo);
+
+// ── Copy code ──
+function copyCode(btn) {
+  const pre = btn.closest('.code-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.innerText).then(() => {
+    btn.textContent = 'copied!';
+    setTimeout(() => btn.textContent = 'copy', 1500);
+  });
+}
+
+// ── Scroll animations ──
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.style.opacity = '1';
+  });
+}, { threshold: 0.1 });
+document.querySelectorAll('.decision-card, .test-card, .algo-step').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transition = 'opacity .5s ease';
+  observer.observe(el);
+});
+</script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 // --- 模組引入 ---
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs').promises; // 引入 fs 模組
 const { MongoClient, ServerApiVersion } = require('mongodb');
@@ -15,6 +16,27 @@ const debugSchedule = debug('app:schedule');
 
 // --- 快取設定 ---
 const holidaysCache = new Map();
+const iconv = require('iconv-lite');
+
+// 學校行事曆快取（6小時）
+let schoolEventsCache = { data: null, fetchedAt: 0 };
+
+// 自動計算當前學期代碼（民國年+學期，例：1142）
+function getCurrentPeriod() {
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const rocYear = now.getFullYear() - 1911;
+    if (month >= 8) return `${rocYear}1`;
+    if (month === 1) return `${rocYear - 1}1`;
+    return `${rocYear - 1}2`;
+}
+
+// 以 Big5 解碼抓取網頁
+async function fetchBig5(url) {
+    const resp = await fetch(url);
+    const buffer = await resp.arrayBuffer();
+    return iconv.decode(Buffer.from(buffer), 'big5');
+}
 
 // --- 常數設定 ---
 const app = express();
@@ -42,25 +64,64 @@ if (MONGODB_URI) {
             version: ServerApiVersion.v1,
             strict: true,
             deprecationErrors: true,
-        }
+        },
+        // 增加連線逾時設定,處理網路問題
+        connectTimeoutMS: 30000,
+        socketTimeoutMS: 30000,
+        // 增加重試設定
+        retryWrites: true,
+        retryReads: true,
+        maxPoolSize: 10,
+        minPoolSize: 2
     });
 } else {
     debugServer('警告: 未提供 MONGODB_URI 環境變數。資料庫功能將被禁用。');
 }
 
 // --- 中介軟體設定 ---
-app.use(cors());
+// 信任代理設定 (必須在 rate limiter 之前設定)
+// 當應用程式部署在反向代理(如 Zeabur)後面時需要此設定
+app.set('trust proxy', 1);
+
+const corsOptions = {
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type'],
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-const apiLimiter = rateLimit({
+// --- 速率限制（分層）---
+const readLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 200,
+    max: 300,
     standardHeaders: true,
     legacyHeaders: false,
     message: '來自此 IP 的請求過多，請於 15 分鐘後再試。'
 });
-app.use('/api/', apiLimiter);
+
+const writeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: '來自此 IP 的請求過多，請於 15 分鐘後再試。'
+});
+
+const generateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: '產生班表次數過多，請於 15 分鐘後再試。'
+});
+
+// 依 HTTP 方法套用速率限制
+app.use('/api/', (req, res, next) => {
+    if (req.method === 'GET') return readLimiter(req, res, next);
+    return writeLimiter(req, res, next);
+});
 
 // --- 安全輔助函式 ---
 const escapeHtml = (unsafe) => {
@@ -113,6 +174,9 @@ const validateSettings = (settings) => {
         if (typeof task.count !== 'number' || task.count < 1 || task.count > 50) {
             return { valid: false, error: `Task ${i} 人數必須在 1-50 之間` };
         }
+        if (task.priority !== undefined && (typeof task.priority !== 'number' || !Number.isInteger(task.priority) || task.priority < 1 || task.priority > 9)) {
+            return { valid: false, error: `Task ${i} 優先級必須是 1-9 的整數` };
+        }
     }
 
     // 驗證每個 personnel
@@ -126,6 +190,19 @@ const validateSettings = (settings) => {
         }
         if (person.offDays !== undefined && !Array.isArray(person.offDays)) {
             return { valid: false, error: `Personnel ${i} offDays 必須是數組` };
+        }
+        if (person.offDays && !person.offDays.every(d => Number.isInteger(d) && d >= 0 && d <= 4)) {
+            return { valid: false, error: `人員 ${i + 1} 的 offDays 只能包含 0-4 的整數（代表週一到週五）` };
+        }
+        if (person.taskScores !== undefined) {
+            if (typeof person.taskScores !== 'object' || person.taskScores === null || Array.isArray(person.taskScores)) {
+                return { valid: false, error: `Personnel ${i} taskScores 必須是物件` };
+            }
+            for (const [taskName, score] of Object.entries(person.taskScores)) {
+                if (typeof score !== 'number' || !Number.isInteger(score) || score < 0 || score > 5) {
+                    return { valid: false, error: `Personnel ${i} 的 taskScores["${taskName}"] 必須是 0-5 的整數` };
+                }
+            }
         }
     }
 
@@ -187,23 +264,60 @@ const getHolidaysForYear = async (year) => {
         debugDb(`從快取為 ${year} 年讀取假日資料。`);
         return holidaysCache.get(cacheKey);
     }
-    
+
     if (!isDbConnected) return new Map();
 
-    debugDb(`從資料庫讀取 ${year} 年的假日資料...`);
+    // 1. 先查 MongoDB
     try {
         const yearStr = String(year);
+        debugDb(`從資料庫讀取 ${year} 年的假日資料...`);
         const holidays = await holidaysCollection.find({ _id: { $regex: `^${yearStr}` }, isHoliday: true }).toArray();
-        const holidayMap = new Map();
-        holidays.forEach(h => {
-            holidayMap.set(h._id, h.name);
-        });
-        holidaysCache.set(cacheKey, holidayMap);
-        debugDb(`已快取 ${year} 年的 ${holidayMap.size} 個假日項目。`);
-        return holidayMap;
+
+        if (holidays.length > 0) {
+            const holidayMap = new Map();
+            holidays.forEach(h => holidayMap.set(h._id, h.name));
+            holidaysCache.set(cacheKey, holidayMap);
+            debugDb(`已快取 ${year} 年的 ${holidayMap.size} 個假日項目。`);
+            return holidayMap;
+        }
     } catch (error) {
         debugDb(`讀取 ${year} 年假日資料失敗:`, error);
         return new Map();
+    }
+
+    // 2. MongoDB 無資料 → 從 CDN 抓取
+    try {
+        debugDb(`MongoDB 無 ${year} 年假日資料，從 CDN 抓取...`);
+        const resp = await fetch(`https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${year}.json`);
+        if (resp.ok) {
+            const data = await resp.json();
+            const docs = data.map(h => ({ _id: h.date, name: h.description || '國定假日', isHoliday: h.isHoliday, source: 'cdn' }));
+            await holidaysCollection.insertMany(docs, { ordered: false }).catch(() => {});
+            const holidayMap = new Map();
+            data.filter(h => h.isHoliday).forEach(h => holidayMap.set(h.date, h.description || '國定假日'));
+            holidaysCache.set(cacheKey, holidayMap);
+            debugDb(`已從 CDN 取得並快取 ${year} 年假日資料（${holidayMap.size} 個假日）。`);
+            return holidayMap;
+        }
+    } catch (e) {
+        debugDb(`CDN 抓取 ${year} 年假日資料失敗:`, e.message);
+    }
+
+    return new Map();
+};
+
+const refreshHolidaysFromCDN = async () => {
+    if (!isDbConnected) return;
+    const currentYear = new Date().getFullYear();
+    for (const year of [currentYear, currentYear + 1]) {
+        try {
+            await holidaysCollection.deleteMany({ _id: { $regex: `^${year}` }, source: 'cdn' });
+            holidaysCache.delete(year);
+            await getHolidaysForYear(year);
+            debugDb(`已自動更新 ${year} 年假日資料`);
+        } catch (e) {
+            debugDb(`自動更新 ${year} 年假日資料失敗:`, e.message);
+        }
     }
 };
 
@@ -275,42 +389,97 @@ const seedHolidays = async () => {
 };
 
 
-const generateWeeklySchedule = (settings, scheduleDays) => {
+// [預留功能] 技能分數系統 — 目前 UI 尚未提供輸入介面，邏輯保留供日後啟用
+// 計算人員對特定班次的有效技能分 (0-5)
+// 優先使用 taskScores，否則從 preferredTask 推算（向下兼容）
+const getEffectiveScore = (person, taskName) => {
+    if (person.taskScores && typeof person.taskScores === 'object') {
+        const score = person.taskScores[taskName];
+        if (typeof score === 'number') return score;
+        return 1; // taskScores 存在但無此班次的條目 → 低分
+    }
+    if (!person.preferredTask) return 3;             // 無偏好 → 中性
+    if (person.preferredTask === taskName) return 4; // 偏好此班次
+    return 2;                                        // 偏好其他班次
+};
+
+const generateWeeklySchedule = (settings, scheduleDays, cumulativeShifts = new Map()) => {
     const { personnel, tasks } = settings;
-    let availablePersonnel = [...personnel];
     const weeklySchedule = Array(5).fill(null).map(() => Array(tasks.length).fill(null).map(() => []));
     const shiftCounts = new Map(personnel.map(p => [p.name, 0]));
+    // 每天已分配的人（同一天不重複排）
+    const dailyAssigned = new Map(
+        scheduleDays.map((_, i) => [i, new Set()])
+    );
 
-    for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
-        if (!scheduleDays[dayIndex].shouldSchedule) continue;
-        let dailyAvailablePersonnel = availablePersonnel.filter(p =>
-            !p.offDays?.includes(dayIndex) &&
-            (shiftCounts.get(p.name) || 0) < (p.maxShifts || 5)
-        );
-        for (let taskIndex = 0; taskIndex < tasks.length; taskIndex++) {
-            const task = tasks[taskIndex];
-            let preferredPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask === task.name);
-            let otherPersonnel = dailyAvailablePersonnel.filter(p => p.preferredTask !== task.name);
-            for (let i = preferredPersonnel.length - 1; i > 0; i--) {
+    const workDays = [0, 1, 2, 3, 4].filter(i => scheduleDays[i].shouldSchedule);
+
+    // 任務依優先級排序（數字小 = 優先級高，未設定視為 9）
+    const tasksByPriority = tasks
+        .map((t, i) => ({ ...t, taskIndex: i }))
+        .sort((a, b) => (a.priority || 9) - (b.priority || 9));
+
+    // 建立 slot 清單：高優先級的所有 slot 排在前面
+    // 同一任務內，以「每天各輪一次」的方式交替，確保每天都有機會被填
+    const slots = [];
+    for (const { taskIndex, count } of tasksByPriority) {
+        // 每輪（slotIndex）隨機打亂天的順序，確保不偏向固定某天
+        for (let slotIndex = 0; slotIndex < count; slotIndex++) {
+            const shuffledDays = [...workDays];
+            for (let i = shuffledDays.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
-                [preferredPersonnel[i], preferredPersonnel[j]] = [preferredPersonnel[j], preferredPersonnel[i]];
+                [shuffledDays[i], shuffledDays[j]] = [shuffledDays[j], shuffledDays[i]];
             }
-            for (let i = otherPersonnel.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [otherPersonnel[i], otherPersonnel[j]] = [otherPersonnel[j], otherPersonnel[i]];
-            }
-            const combinedPool = [...preferredPersonnel, ...otherPersonnel];
-            for (let i = 0; i < task.count; i++) {
-                if (combinedPool.length > 0) {
-                    const person = combinedPool.shift();
-                    weeklySchedule[dayIndex][taskIndex].push(person.name);
-                    shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
-                    dailyAvailablePersonnel = dailyAvailablePersonnel.filter(p => p.name !== person.name);
-                }
+            for (const dayIndex of shuffledDays) {
+                slots.push({ dayIndex, taskIndex });
             }
         }
     }
-    return weeklySchedule;
+
+    // 逐一填補每個 slot
+    for (const { dayIndex, taskIndex } of slots) {
+        const task = tasks[taskIndex];
+        const assigned = dailyAssigned.get(dayIndex);
+
+        // 可用人員：未超班次上限、非休假、今天尚未被排
+        const available = personnel.filter(p =>
+            !p.offDays?.includes(dayIndex) &&
+            (shiftCounts.get(p.name) || 0) < (p.maxShifts || 5) &&
+            !assigned.has(p.name)
+        );
+        if (available.length === 0) continue;
+
+        // 排序：跨週累積最少 → 本週已排最少 → 技能分 + 隨機
+        available.sort((a, b) => {
+            const cumDiff = (cumulativeShifts.get(a.name) || 0) - (cumulativeShifts.get(b.name) || 0);
+            if (cumDiff !== 0) return cumDiff;
+            const usedDiff = (shiftCounts.get(a.name) || 0) - (shiftCounts.get(b.name) || 0);
+            if (usedDiff !== 0) return usedDiff;
+            const scoreA = getEffectiveScore(a, task.name) / 5 * 0.6 + Math.random() * 0.4;
+            const scoreB = getEffectiveScore(b, task.name) / 5 * 0.6 + Math.random() * 0.4;
+            return scoreB - scoreA;
+        });
+
+        const person = available[0];
+        weeklySchedule[dayIndex][taskIndex].push(person.name);
+        shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
+        assigned.add(person.name);
+    }
+
+    // 計算每個任務的填補率，方便診斷
+    const fillStats = tasks.map((task, taskIndex) => {
+        const needed = workDays.length * (task.count || 1);
+        const filled = workDays.reduce((sum, dayIndex) => sum + weeklySchedule[dayIndex][taskIndex].length, 0);
+        return { name: task.name, priority: task.priority || 9, needed, filled, ok: filled === needed };
+    });
+
+    const unfilled = fillStats.filter(s => !s.ok);
+    if (unfilled.length > 0) {
+        debugSchedule('未填滿的勤務:', unfilled.map(s => `${s.name}(優先${s.priority}) ${s.filled}/${s.needed}`).join(', '));
+        debugSchedule('人員班次分佈:', Object.fromEntries(shiftCounts));
+    }
+
+    return { weeklySchedule, fillStats, weekShiftCounts: shiftCounts };
 };
 
 const generateScheduleHtml = (fullScheduleData) => {
@@ -400,7 +569,7 @@ const generateScheduleHtml = (fullScheduleData) => {
 app.get('/api/status', async (req, res) => {
     const status = {
         server: 'running',
-        database: isDbConnected ? 'connected' : 'disconnected'
+        database: isDbConnected ? 'connected' : 'disconnected',
     };
 
     if (isDbConnected) {
@@ -520,6 +689,78 @@ app.get('/api/holidays-in-range', async (req, res) => {
     }
 });
 
+// --- 學校行事曆 API ---
+app.get('/api/school-events', async (req, res) => {
+    const CACHE_TTL = 6 * 60 * 60 * 1000; // 6小時
+    if (schoolEventsCache.data && Date.now() - schoolEventsCache.fetchedAt < CACHE_TTL) {
+        return res.json(schoolEventsCache.data);
+    }
+
+    try {
+        const BASE = 'https://s44.mingdao.edu.tw/AACourses/Web/';
+        const period = getCurrentPeriod();
+
+        // 抓主頁面，找所有「重要考試」日期
+        const mainHtml = await fetchBig5(`${BASE}eCalendar_view.php`);
+
+        // 從 div 標籤萃取有「重要考試」的 qDate
+        const examDates = new Set();
+        const divTagRegex = /<div[^>]+id="sDB_[^"]*"[^>]*>/g;
+        let tagMatch;
+        while ((tagMatch = divTagRegex.exec(mainHtml)) !== null) {
+            const tag = tagMatch[0];
+            if (!tag.includes('重要考試')) continue;
+            const qDateMatch = tag.match(/qDate="([^"]+)"/);
+            if (qDateMatch) examDates.add(qDateMatch[1]);
+        }
+
+        // 逐日查詢詳細事件，找定期評量／期中考
+        const seen = new Set();
+        const events = [];
+
+        for (const qDate of examDates) {
+            const encoded = encodeURIComponent(qDate);
+            const html = await fetchBig5(`${BASE}eCalendar_list.php?F_sPeriod=${period}&qDate=${encoded}&qDG=&qSpec=`);
+
+            const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/g;
+            let liMatch;
+            while ((liMatch = liRegex.exec(html)) !== null) {
+                const text = liMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+                if ((text.includes('定期評量') || text.includes('期中考')) && !seen.has(text)) {
+                    seen.add(text);
+                    // 解析日期範圍（e.g. "03/25~26 重要考試 說明"）
+                    const rangeMatch = text.match(/^(\d{2})\/(\d{2})(?:~(\d{2}))?/);
+                    const nameMatch = text.match(/重要考試\s+(.+)$/);
+                    if (rangeMatch) {
+                        const year = new Date().getFullYear();
+                        const startDate = `${year}${rangeMatch[1]}${rangeMatch[2]}`;
+                        const endDate = rangeMatch[3]
+                            ? `${year}${rangeMatch[1]}${rangeMatch[3]}`
+                            : startDate;
+                        const fullName = nameMatch ? nameMatch[1].trim() : text;
+                        const ordinalMatch = fullName.match(/第([一二三四五六七八九十]+)次/);
+                        const shortName = ordinalMatch
+                            ? `第${ordinalMatch[1]}次定期評量`
+                            : fullName;
+                        events.push({
+                            startDate,
+                            endDate,
+                            name: shortName,
+                            type: 'exam'
+                        });
+                    }
+                }
+            }
+        }
+
+        schoolEventsCache = { data: events, fetchedAt: Date.now() };
+        res.json(events);
+    } catch (e) {
+        debugServer('抓取學校行事曆失敗:', e);
+        res.status(500).json({ message: '無法取得學校行事曆：' + e.message });
+    }
+});
+
 // --- Profile and Schedule API Routes ---
 app.get('/api/profiles', async (req, res) => {
     if (!isDbConnected) return res.status(503).json({ message: '資料庫未連線' });
@@ -550,7 +791,6 @@ app.post('/api/profiles', async (req, res) => {
     try {
         const { name } = req.body;
 
-        // 驗證 Profile 名稱
         const validation = validateProfileName(name);
         if (!validation.valid) {
             return res.status(400).json({ message: validation.error });
@@ -691,14 +931,18 @@ app.post('/api/schedules', async (req, res) => {
             return res.status(400).json({ message: '班表數據必須是非空數組' });
         }
 
-        // 使用原子操作避免競態條件
-        // 直接在更新時獲取 activeProfile，而不是分兩步
-        const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
-        if (!config || !config.activeProfile) {
-            return res.status(500).json({ message: '無法獲取作用中的設定檔' });
+        // 優先使用請求帶來的 profile，向下兼容未帶 profile 的舊呼叫
+        let activeProfile = req.body.profile || null;
+        if (activeProfile) {
+            const pv = validateProfileName(activeProfile);
+            if (!pv.valid) return res.status(400).json({ message: pv.error });
+        } else {
+            const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
+            if (!config || !config.activeProfile) {
+                return res.status(500).json({ message: '無法獲取作用中的設定檔' });
+            }
+            activeProfile = config.activeProfile;
         }
-
-        const activeProfile = config.activeProfile;
         const result = await configCollection.updateOne(
             { _id: CONFIG_ID },
             { $set: { [`profiles.${activeProfile}.schedules.${name}`]: data } }
@@ -724,7 +968,14 @@ app.get('/api/schedules/:name', async (req, res) => {
         }
 
         const config = await configCollection.findOne({ _id: CONFIG_ID });
-        const scheduleData = config.profiles[config.activeProfile]?.schedules?.[name];
+        let activeProfile = req.query.profile || null;
+        if (activeProfile) {
+            const pv = validateProfileName(activeProfile);
+            if (!pv.valid) return res.status(400).json({ message: pv.error });
+        } else {
+            activeProfile = config.activeProfile;
+        }
+        const scheduleData = config.profiles[activeProfile]?.schedules?.[name];
         if (!scheduleData) return res.status(404).json({ message: '找不到班表' });
         res.json(scheduleData);
     } catch (error) {
@@ -745,7 +996,13 @@ app.delete('/api/schedules/:name', async (req, res) => {
         }
 
         const config = await configCollection.findOne({ _id: CONFIG_ID }, { projection: { activeProfile: 1 } });
-        const activeProfile = config.activeProfile;
+        let activeProfile = req.query.profile || null;
+        if (activeProfile) {
+            const pv = validateProfileName(activeProfile);
+            if (!pv.valid) return res.status(400).json({ message: pv.error });
+        } else {
+            activeProfile = config.activeProfile;
+        }
         const result = await configCollection.updateOne({ _id: CONFIG_ID }, { $unset: { [`profiles.${activeProfile}.schedules.${name}`]: "" } });
         if (result.modifiedCount === 0) throw new Error('刪除班表失敗');
         debugDb(`班表已刪除: "${name}"`);
@@ -756,13 +1013,32 @@ app.delete('/api/schedules/:name', async (req, res) => {
     }
 });
 
-app.post('/api/generate-schedule', async (req, res) => {
+app.post('/api/generate-schedule', generateLimiter, async (req, res) => {
     try {
         const { settings, startWeek, numWeeks, activeHolidays } = req.body;
 
+        const validation = validateSettings(settings);
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+
+        if (!Number.isInteger(numWeeks) || numWeeks < 1 || numWeeks > 52) {
+            return res.status(400).json({ message: 'numWeeks 必須是 1-52 的整數' });
+        }
+        const numWeeksInt = numWeeks;
+
+        if (typeof startWeek !== 'string' || !/^\d{4}-W\d{1,2}$/.test(startWeek)) {
+            return res.status(400).json({ message: 'startWeek 格式必須是 YYYY-Wnn' });
+        }
+        const resolvedHolidays = activeHolidays === undefined ? [] : activeHolidays;
+        if (!Array.isArray(resolvedHolidays) || !resolvedHolidays.every(d => typeof d === 'string')) {
+            return res.status(400).json({ message: 'activeHolidays 必須是字串陣列' });
+        }
+
         const fullScheduleData = [];
         const colors = [ { header: '#0284c7', row: '#f0f9ff' }, { header: '#15803d', row: '#f0fdf4' }, { header: '#be185d', row: '#fdf2f8' }, { header: '#86198f', row: '#faf5ff' } ];
-        for (let i = 0; i < numWeeks; i++) {
+        const cumulativeShifts = new Map();
+        for (let i = 0; i < numWeeksInt; i++) {
             const { weekDates, weekDayDates } = getWeekInfo(startWeek, i);
             const years = [...new Set(weekDates.map(d => parseInt(d.substring(0, 4))))];
             const allHolidayMaps = await Promise.all(years.map(year => getHolidaysForYear(year)));
@@ -774,11 +1050,14 @@ app.post('/api/generate-schedule', async (req, res) => {
             });
             const scheduleDays = weekDates.map(date => ({
                 date,
-                shouldSchedule: !activeHolidays.includes(date),
-                description: activeHolidays.includes(date) ? originalHolidaysMap.get(date) || '假日' : ''
+                shouldSchedule: !resolvedHolidays.includes(date),
+                description: resolvedHolidays.includes(date) ? originalHolidaysMap.get(date) || '假日' : ''
             }));
-            const weeklySchedule = generateWeeklySchedule(settings, scheduleDays);
-            fullScheduleData.push({ schedule: weeklySchedule, tasks: settings.tasks, dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`, weekDayDates, scheduleDays, color: colors[i % colors.length] });
+            const { weeklySchedule, fillStats, weekShiftCounts } = generateWeeklySchedule(settings, scheduleDays, cumulativeShifts);
+            for (const [name, count] of weekShiftCounts) {
+                cumulativeShifts.set(name, (cumulativeShifts.get(name) || 0) + count);
+            }
+            fullScheduleData.push({ schedule: weeklySchedule, fillStats, tasks: settings.tasks, dateRange: `${weekDayDates[0]} - ${weekDayDates[4]}`, weekDayDates, scheduleDays, color: colors[i % colors.length] });
         }
         
         const scheduleHtml = generateScheduleHtml(fullScheduleData);
@@ -808,6 +1087,11 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Favicon 路由 - 防止 404 錯誤
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end(); // 204 No Content
+});
+
 // --- 伺服器啟動函式 ---
 const startServer = async () => {
     if (!client) {
@@ -822,13 +1106,15 @@ const startServer = async () => {
         await client.db("admin").command({ ping: 1 });
         debugDb("成功 Ping 到您的部署。您已成功連線至 MongoDB！");
         db = client.db(DB_NAME);
-        configCollection = db.collection('profiles'); 
+        configCollection = db.collection('profiles');
         holidaysCollection = db.collection('holidays');
         isDbConnected = true;
-        
+
         if (isDbConnected) {
             await ensureConfigDocument();
             await seedHolidays();
+            await refreshHolidaysFromCDN();
+            setInterval(refreshHolidaysFromCDN, 24 * 60 * 60 * 1000);
         }
         
         app.listen(PORT, () => {
@@ -836,6 +1122,39 @@ const startServer = async () => {
         });
     } catch (err) {
         console.error("無法連線到 MongoDB 或啟動伺服器:", err);
+
+        // 提供更詳細的錯誤訊息
+        if (err.code === 8000) {
+            console.error('\n⚠️  MongoDB Atlas 錯誤 (code: 8000)');
+
+            // 檢查是否為儲存空間配額問題
+            if (err.errmsg && err.errmsg.includes('space quota')) {
+                console.error('🚨 儲存空間配額已用盡!');
+                console.error('錯誤訊息:', err.errmsg);
+                console.error('\n解決方案:');
+                console.error('1. 登入 MongoDB Atlas (https://cloud.mongodb.com)');
+                console.error('2. 刪除不需要的資料或集合以釋放空間');
+                console.error('3. 或升級到付費方案以獲得更多儲存空間');
+                console.error('4. 或建立新的免費叢集 (每個帳號可建立一個免費叢集)\n');
+            } else {
+                console.error('可能的原因:');
+                console.error('1. 資料庫認證失敗 - 請檢查 MONGODB_URI 中的使用者名稱和密碼');
+                console.error('2. IP 白名單限制 - 請在 MongoDB Atlas 中將此伺服器的 IP 位址加入白名單');
+                console.error('3. 資料庫存取權限不足 - 請確認使用者具有正確的資料庫權限');
+                console.error('4. 網路連線問題 - 請檢查網路連線是否正常\n');
+            }
+        } else if (err.name === 'MongoNetworkError') {
+            console.error('\n⚠️  MongoDB 網路連線錯誤');
+            console.error('請檢查:');
+            console.error('1. 網路連線是否正常');
+            console.error('2. MongoDB URI 格式是否正確');
+            console.error('3. 防火牆設定是否允許連線\n');
+        } else if (err.name === 'MongoServerError') {
+            console.error('\n⚠️  MongoDB 伺服器錯誤');
+            console.error('錯誤訊息:', err.message);
+            console.error('錯誤代碼:', err.code, '\n');
+        }
+
         isDbConnected = false;
         debugServer('伺服器啟動失敗: %O', err);
         app.listen(PORT, () => {
@@ -873,6 +1192,14 @@ if (process.env.NODE_ENV !== 'test') {
 
     process.on('SIGINT', async () => {
         debugServer('收到 SIGINT。正在關閉連線...');
+        if (client) {
+            await client.close();
+        }
+        process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+        debugServer('收到 SIGTERM。正在關閉連線...');
         if (client) {
             await client.close();
         }

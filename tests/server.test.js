@@ -1,219 +1,166 @@
 /**
- * shift-schedule-generator API Tests
- * 测试排班系统的主要 API 端点
+ * 排班系統 API 測試
+ * 不需要 MongoDB 連線（server 在無 DB 模式下仍可運行）
  */
 
 const request = require('supertest');
-
-// 模拟环境变量
-process.env.MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
-process.env.DB_NAME = process.env.DB_NAME || 'test_scheduleApp';
-
-// 动态导入 server（在设置环境变量后）
+process.env.NODE_ENV = 'test';
+process.env.JWT_SECRET = ''; // 測試環境不驗 JWT，透過 !JWT_SECRET bypass
 const app = require('../server');
 
+const validSettings = {
+    settings: {
+        tasks: [{ name: '早班', count: 1 }],
+        personnel: [
+            { name: '小明', maxShifts: 5, offDays: [], preferredTask: '早班' },
+            { name: '小華', maxShifts: 5, offDays: [], preferredTask: '' }
+        ]
+    },
+    startWeek: '2026-W14',
+    numWeeks: 1,
+    activeHolidays: []
+};
+
 describe('Health Check', () => {
-  test('GET /status should return 200', async () => {
-    const res = await request(app).get('/status');
-    expect([200, 500]).toContain(res.status);
-  });
-
-  test('GET /status should return JSON', async () => {
-    const res = await request(app).get('/status');
-    expect(res.type).toBe('application/json');
-  });
+    test('GET /api/status 回傳 200', async () => {
+        const res = await request(app).get('/api/status');
+        expect(res.status).toBe(200);
+        expect(res.type).toBe('application/json');
+    });
 });
 
-describe('Configuration API', () => {
-  test('GET /api/config should return configuration', async () => {
-    const res = await request(app).get('/api/config');
-    expect([200, 500]).toContain(res.status);
-    if (res.status === 200) {
-      expect(res.body).toBeDefined();
-    }
-  });
+describe('排班產生 API', () => {
+    test('合法設定產生班表成功', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(validSettings);
+        expect(res.status).toBe(200);
+        expect(res.body.data).toBeDefined();
+        expect(res.body.html).toBeDefined();
+    });
 
-  test('POST /api/config without data should handle gracefully', async () => {
-    const res = await request(app)
-      .post('/api/config')
-      .send({})
-      .set('Content-Type', 'application/json');
-    expect([200, 400, 500]).toContain(res.status);
-  });
+    test('缺少 tasks → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ settings: { personnel: [] }, startWeek: '2026-W14', numWeeks: 1 });
+        expect(res.status).toBe(400);
+    });
 
-  test('POST /api/config with valid data', async () => {
-    const validConfig = {
-      tasks: [{ name: 'Morning Shift', duration: 8 }],
-      personnel: [{ name: 'John Doe', id: 'emp001' }]
-    };
-    const res = await request(app)
-      .post('/api/config')
-      .send(validConfig)
-      .set('Content-Type', 'application/json');
-    expect([200, 201, 400, 500]).toContain(res.status);
-  });
+    test('缺少 personnel → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ settings: { tasks: [] }, startWeek: '2026-W14', numWeeks: 1 });
+        expect(res.status).toBe(400);
+    });
+
+    test('taskScores 非法值（超出 0-5）→ 400', async () => {
+        const bad = JSON.parse(JSON.stringify(validSettings));
+        bad.settings.personnel[0].taskScores = { '早班': 9 };
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(bad);
+        expect(res.status).toBe(400);
+    });
+
+    test('taskScores 合法值正常通過', async () => {
+        const good = JSON.parse(JSON.stringify(validSettings));
+        good.settings.personnel[0].taskScores = { '早班': 5 };
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(good);
+        expect(res.status).toBe(200);
+    });
 });
 
-describe('Schedule API', () => {
-  test('GET /api/schedules should return schedules list', async () => {
-    const res = await request(app).get('/api/schedules');
-    expect([200, 500]).toContain(res.status);
-    expect(res.type).toBe('application/json');
-  });
-
-  test('GET /api/schedules/:id with invalid ID', async () => {
-    const res = await request(app).get('/api/schedules/invalid_id_123');
-    expect([400, 404, 500]).toContain(res.status);
-  });
-
-  test('POST /api/schedules without data should fail', async () => {
-    const res = await request(app)
-      .post('/api/schedules')
-      .send({})
-      .set('Content-Type', 'application/json');
-    expect([400, 500]).toContain(res.status);
-  });
-
-  test('POST /api/schedules with valid data', async () => {
-    const validSchedule = {
-      week: '2024-W01',
-      assignments: []
-    };
-    const res = await request(app)
-      .post('/api/schedules')
-      .send(validSchedule)
-      .set('Content-Type', 'application/json');
-    expect([200, 201, 400, 500]).toContain(res.status);
-  });
-
-  test('DELETE /api/schedules/:id with invalid ID', async () => {
-    const res = await request(app).delete('/api/schedules/invalid_id_999');
-    expect([400, 404, 500]).toContain(res.status);
-  });
+describe('Profiles API', () => {
+    test('GET /api/profiles 回傳 200 或 503', async () => {
+        const res = await request(app).get('/api/profiles');
+        expect([200, 503]).toContain(res.status);
+    });
 });
 
-describe('Personnel Management', () => {
-  test('GET /api/personnel should return personnel list', async () => {
-    const res = await request(app).get('/api/personnel');
-    expect([200, 404, 500]).toContain(res.status);
-  });
-
-  test('POST /api/personnel with valid data', async () => {
-    const validPerson = {
-      name: 'Jane Smith',
-      id: 'emp002',
-      skills: ['cashier', 'supervisor']
-    };
-    const res = await request(app)
-      .post('/api/personnel')
-      .send(validPerson)
-      .set('Content-Type', 'application/json');
-    expect([200, 201, 400, 500]).toContain(res.status);
-  });
-
-  test('POST /api/personnel without name should fail', async () => {
-    const invalidPerson = {
-      id: 'emp003'
-      // missing name
-    };
-    const res = await request(app)
-      .post('/api/personnel')
-      .send(invalidPerson)
-      .set('Content-Type', 'application/json');
-    expect([400, 500]).toContain(res.status);
-  });
+describe('錯誤處理', () => {
+    test('不存在路由 → 404', async () => {
+        const res = await request(app).get('/api/nonexistent');
+        expect(res.status).toBe(404);
+    });
 });
 
-describe('Holidays API', () => {
-  test('GET /api/holidays should return holidays list', async () => {
-    const res = await request(app).get('/api/holidays');
-    expect([200, 500]).toContain(res.status);
-  });
+describe('輸入驗證邊界條件', () => {
+    test('numWeeks 為 0 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 0 });
+        expect(res.status).toBe(400);
+    });
 
-  test('POST /api/holidays with valid date', async () => {
-    const validHoliday = {
-      date: '2024-12-25',
-      name: 'Christmas'
-    };
-    const res = await request(app)
-      .post('/api/holidays')
-      .send(validHoliday)
-      .set('Content-Type', 'application/json');
-    expect([200, 201, 400, 500]).toContain(res.status);
-  });
+    test('numWeeks 為 -1 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: -1 });
+        expect(res.status).toBe(400);
+    });
 
-  test('POST /api/holidays with invalid date format', async () => {
-    const invalidHoliday = {
-      date: 'invalid-date',
-      name: 'Test Holiday'
-    };
-    const res = await request(app)
-      .post('/api/holidays')
-      .send(invalidHoliday)
-      .set('Content-Type', 'application/json');
-    expect([400, 500]).toContain(res.status);
-  });
-});
+    test('numWeeks 為小數 1.5 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 1.5 });
+        expect(res.status).toBe(400);
+    });
 
-describe('Input Validation', () => {
-  test('Should reject very long strings', async () => {
-    const longString = 'a'.repeat(10000);
-    const res = await request(app)
-      .post('/api/personnel')
-      .send({ name: longString, id: 'test' })
-      .set('Content-Type', 'application/json');
-    expect([200, 201, 400, 413, 500]).toContain(res.status);
-  });
+    test('numWeeks 為 53 → 400', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 53 });
+        expect(res.status).toBe(400);
+    });
 
-  test('Should handle special characters in input', async () => {
-    const specialChars = {
-      name: '<script>alert("xss")</script>',
-      id: 'test001'
-    };
-    const res = await request(app)
-      .post('/api/personnel')
-      .send(specialChars)
-      .set('Content-Type', 'application/json');
-    expect([200, 201, 400, 500]).toContain(res.status);
-  });
-});
+    test('numWeeks 為 52（上限）→ 200', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 52 });
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(52);
+    });
 
-describe('Rate Limiting', () => {
-  test('API should have rate limiting (check headers)', async () => {
-    const res = await request(app).get('/api/config');
-    // 检查是否有 rate limit headers
-    // 如果没有，也不会失败，只是记录
-    if (res.headers['x-ratelimit-limit']) {
-      expect(res.headers).toHaveProperty('x-ratelimit-limit');
-    }
-  });
-});
+    test('offDays 包含非法值 [5] → 400', async () => {
+        const bad = JSON.parse(JSON.stringify(validSettings));
+        bad.settings.personnel[0].offDays = [5];
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(bad);
+        expect(res.status).toBe(400);
+    });
 
-describe('CORS', () => {
-  test('Should have CORS headers', async () => {
-    const res = await request(app)
-      .options('/status')
-      .set('Origin', 'http://localhost:3000');
-    expect([200, 204]).toContain(res.status);
-  });
-});
+    test('offDays 包含非法值 [-1] → 400', async () => {
+        const bad = JSON.parse(JSON.stringify(validSettings));
+        bad.settings.personnel[0].offDays = [-1];
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(bad);
+        expect(res.status).toBe(400);
+    });
 
-describe('Error Handling', () => {
-  test('GET /nonexistent should return 404', async () => {
-    const res = await request(app).get('/api/nonexistent');
-    expect(res.status).toBe(404);
-  });
+    test('response 包含 fillStats 陣列', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send(validSettings);
+        expect(res.status).toBe(200);
+        expect(res.body.data[0].fillStats).toBeDefined();
+        expect(Array.isArray(res.body.data[0].fillStats)).toBe(true);
+        expect(res.body.data[0].fillStats[0]).toHaveProperty('name');
+        expect(res.body.data[0].fillStats[0]).toHaveProperty('filled');
+        expect(res.body.data[0].fillStats[0]).toHaveProperty('needed');
+    });
 
-  test('Malformed JSON should be rejected', async () => {
-    const res = await request(app)
-      .post('/api/config')
-      .send('{"invalid": json}')
-      .set('Content-Type', 'application/json');
-    expect([400, 500]).toContain(res.status);
-  });
-
-  test('Unsupported HTTP method should return 405 or 404', async () => {
-    const res = await request(app).patch('/api/config');
-    expect([404, 405, 500]).toContain(res.status);
-  });
+    test('多週回應每週都有 fillStats', async () => {
+        const res = await request(app)
+            .post('/api/generate-schedule')
+            .send({ ...validSettings, numWeeks: 3 });
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(3);
+        for (const week of res.body.data) {
+            expect(Array.isArray(week.fillStats)).toBe(true);
+        }
+    });
 });
