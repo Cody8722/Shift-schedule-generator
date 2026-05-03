@@ -357,6 +357,7 @@
                             <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
                             <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製</button>
                             <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">Excel</button>
+                            <button id="export-personnel-excel" class="hidden bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition text-sm">👥 人員 Excel</button>
                             <button id="export-pdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-md transition">📄 PDF（推薦）</button>
                             <button id="export-image-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition text-sm">🖨️ 瀏覽器列印</button>
                         </div>
@@ -709,6 +710,42 @@
             return `<tr><td class="${tdStyle} sticky left-0 z-10 pv-name font-medium">${escapeHtml(p)}</td>${cells}</tr>`;
         }).join('');
         panel.innerHTML = `<table class="border-collapse text-sm w-max"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function exportPersonnelExcel() {
+        const data = editingData || generatedData;
+        if (!data) return;
+        const dayNames = ['一', '二', '三', '四', '五'];
+        const personnel = appState.profiles[appState.activeProfile]?.settings?.personnel || [];
+        const allPersons = personnel.map(p => p.name);
+        const cols = [];
+        data.forEach((week, wi) => {
+            week.weekDayDates.forEach((date, di) => {
+                cols.push({ label: `W${wi + 1}${dayNames[di]}(${date})`, wi, di, shouldSchedule: week.scheduleDays[di].shouldSchedule });
+            });
+        });
+        const personMap = {};
+        allPersons.forEach(p => { personMap[p] = {}; });
+        data.forEach((week, wi) => {
+            week.schedule.forEach((daySlots, di) => {
+                daySlots.forEach((persons, ti) => {
+                    persons.forEach(p => {
+                        if (!personMap[p]) personMap[p] = {};
+                        personMap[p][`${wi}-${di}`] = week.tasks[ti].name;
+                    });
+                });
+            });
+        });
+        const header = ['姓名', ...cols.map(c => c.label)];
+        const wsData = [header, ...allPersons.map(p => [
+            p,
+            ...cols.map(c => c.shouldSchedule ? (personMap[p]?.[`${c.wi}-${c.di}`] || '') : '假日')
+        ])];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!cols'] = [{ wch: 10 }, ...cols.map(() => ({ wch: 12 }))];
+        XLSX.utils.book_append_sheet(wb, ws, '人員班表');
+        XLSX.writeFile(wb, '人員班表.xlsx');
     }
 
     let appState = {
@@ -2701,11 +2738,16 @@
             document.getElementById('diff-modal').classList.add('hidden');
         });
 
+        const personnelExcelBtn = document.getElementById('export-personnel-excel');
+        const scheduleExcelBtn = document.getElementById('export-excel');
+
         document.getElementById('view-schedule-btn')?.addEventListener('click', () => {
             document.getElementById('schedule-output').classList.remove('hidden');
             document.getElementById('personnel-view').classList.add('hidden');
             document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
             document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+            scheduleExcelBtn?.classList.remove('hidden');
+            personnelExcelBtn?.classList.add('hidden');
         });
         document.getElementById('view-personnel-btn')?.addEventListener('click', () => {
             renderPersonnelView(editingData || generatedData);
@@ -2713,7 +2755,10 @@
             document.getElementById('schedule-output').classList.add('hidden');
             document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
             document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+            scheduleExcelBtn?.classList.add('hidden');
+            personnelExcelBtn?.classList.remove('hidden');
         });
+        personnelExcelBtn?.addEventListener('click', exportPersonnelExcel);
 
         // Assign global proxy refs now that all inner functions are defined
         _renderEditableSchedule = renderEditableSchedule;
