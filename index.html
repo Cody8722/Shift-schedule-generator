@@ -150,14 +150,18 @@
         .dark #edit-toolbar #edit-status { color: #9ca3af; }
 
         /* Personnel View */
-        .pv-th { background-color: #f9fafb; border: 1px solid #e5e7eb; }
-        .dark .pv-th { background-color: #374151; border-color: #4b5563; color: #f9fafb; }
-        .pv-td { border: 1px solid #e5e7eb; }
-        .dark .pv-td { border-color: #4b5563; }
-        .pv-name { background-color: #ffffff; }
-        .dark .pv-name { background-color: #1f2937; color: #f9fafb; }
+        .pv-th { background-color: #f3f4f6; border: 1px solid #d1d5db; }
+        .dark .pv-th { background-color: #374151; border-color: #6b7280; color: #f9fafb; }
+        .pv-td { border: 1px solid #d1d5db; }
+        .dark .pv-td { border-color: #6b7280; }
+        .pv-name { background-color: #ffffff; border-right: 2px solid #d1d5db; }
+        .dark .pv-name { background-color: #1f2937; border-right-color: #6b7280; color: #f9fafb; }
         .pv-holiday { background-color: #f3f4f6; color: #9ca3af; }
-        .dark .pv-holiday { background-color: #1f2937; color: #6b7280; }
+        .dark .pv-holiday { background-color: #374151; color: #6b7280; }
+        #personnel-view tbody tr:nth-child(even) .pv-td:not([class*="pv-task"]):not(.pv-holiday),
+        #personnel-view tbody tr:nth-child(even) .pv-name { background-color: #f9fafb; }
+        .dark #personnel-view tbody tr:nth-child(even) .pv-td:not([class*="pv-task"]):not(.pv-holiday),
+        .dark #personnel-view tbody tr:nth-child(even) .pv-name { background-color: #111827; }
         .pv-task-0 { background-color: #dbeafe; color: #1e40af; }
         .dark .pv-task-0 { background-color: #1e3a8a; color: #bfdbfe; }
         .pv-task-1 { background-color: #dcfce7; color: #166534; }
