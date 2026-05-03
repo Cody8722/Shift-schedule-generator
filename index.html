@@ -1184,13 +1184,13 @@
         function displaySchedule(scheduleHtml) {
             elements.scheduleOutput.innerHTML = scheduleHtml;
             elements.outputContainer.classList.remove('hidden');
-            // 切回班表 tab（避免使用者停在人員 tab 看到舊資料）
-            elements.scheduleOutput.classList.remove('hidden');
-            document.getElementById('personnel-view').classList.add('hidden');
-            document.getElementById('view-schedule-btn').className = 'px-3 py-1 rounded bg-blue-600 text-white text-xs';
-            document.getElementById('view-personnel-btn').className = 'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
             // 啟用編輯模式
             enableEditMode();
+            // 若目前在人員 tab，用新資料重新渲染（停留在人員 tab）
+            const isPersonnelActive = !document.getElementById('personnel-view').classList.contains('hidden');
+            if (isPersonnelActive) {
+                renderPersonnelView(editingData || generatedData);
+            }
         }
 
         // === 可編輯班表系統 ===
