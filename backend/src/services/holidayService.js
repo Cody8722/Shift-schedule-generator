@@ -119,8 +119,7 @@ const seedHolidays = async () => {
     }
 
     debugDb('假日資料庫為空，開始從 JSON 檔案植入初始資料...');
-    // 相對於 holidayService.js 的位置找到 holidays 目錄（v2/backend/src/services/ → v2/holidays/）
-    const holidayDir = path.join(__dirname, '../../../../holidays');
+    const holidayDir = path.join(__dirname, '../../../holidays');
 
     try {
       await fs.access(holidayDir);
