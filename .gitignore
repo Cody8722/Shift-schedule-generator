@@ -11,3 +11,4 @@ database_backup_*.json
 這個檔案包含您的資料庫密碼，絕對不能上傳到 GitHub
 .env
 nul
+v2/backend/.env
