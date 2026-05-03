@@ -143,6 +143,28 @@
         .dark .weekly-stats-card { background-color: var(--card-bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
         .dark .weekly-stats-card .text-gray-700 { color: #d1d5db; }
 
+        /* Personnel View */
+        .pv-th { background-color: #f9fafb; border: 1px solid #e5e7eb; }
+        .dark .pv-th { background-color: #374151; border-color: #4b5563; color: #f9fafb; }
+        .pv-td { border: 1px solid #e5e7eb; }
+        .dark .pv-td { border-color: #4b5563; }
+        .pv-name { background-color: #ffffff; }
+        .dark .pv-name { background-color: #1f2937; color: #f9fafb; }
+        .pv-holiday { background-color: #f3f4f6; color: #9ca3af; }
+        .dark .pv-holiday { background-color: #1f2937; color: #6b7280; }
+        .pv-task-0 { background-color: #dbeafe; color: #1e40af; }
+        .dark .pv-task-0 { background-color: #1e3a8a; color: #bfdbfe; }
+        .pv-task-1 { background-color: #dcfce7; color: #166534; }
+        .dark .pv-task-1 { background-color: #14532d; color: #bbf7d0; }
+        .pv-task-2 { background-color: #f3e8ff; color: #6b21a8; }
+        .dark .pv-task-2 { background-color: #581c87; color: #e9d5ff; }
+        .pv-task-3 { background-color: #ffedd5; color: #9a3412; }
+        .dark .pv-task-3 { background-color: #7c2d12; color: #fed7aa; }
+        .pv-task-4 { background-color: #fce7f3; color: #9d174d; }
+        .dark .pv-task-4 { background-color: #831843; color: #fbcfe8; }
+        .pv-task-5 { background-color: #ccfbf1; color: #115e59; }
+        .dark .pv-task-5 { background-color: #134e4a; color: #99f6e4; }
+
         /* Toast */
         .toast {
             padding: 12px 18px;
@@ -630,14 +652,7 @@
     }
 
     // ── 人員視圖 ──
-    const TASK_COLORS = [
-        'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-        'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-        'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-        'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-        'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200',
-        'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
-    ];
+    const TASK_COLORS = ['pv-task-0', 'pv-task-1', 'pv-task-2', 'pv-task-3', 'pv-task-4', 'pv-task-5'];
     function renderPersonnelView(data) {
         const panel = document.getElementById('personnel-view');
         if (!panel || !data || !data.length) return;
@@ -670,18 +685,18 @@
             });
         });
         // 渲染表格
-        const thStyle = 'px-2 py-1 text-center text-xs font-medium border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 min-w-[60px]';
-        const tdStyle = 'px-1 py-1 text-center text-xs border border-gray-200 dark:border-gray-600';
-        const header = `<tr><th class="${thStyle} sticky left-0 z-10 bg-gray-50 dark:bg-gray-700 min-w-[80px]">姓名</th>${cols.map(c => `<th class="${thStyle}">${c.shouldSchedule ? c.label : `<span class='text-gray-400'>${c.label}</span>`}</th>`).join('')}</tr>`;
+        const thStyle = 'px-2 py-1 text-center text-xs font-medium pv-th min-w-[60px]';
+        const tdStyle = 'px-1 py-1 text-center text-xs pv-td';
+        const header = `<tr><th class="${thStyle} sticky left-0 z-10 min-w-[80px]">姓名</th>${cols.map(c => `<th class="${thStyle}">${c.shouldSchedule ? c.label : `<span class='text-gray-400'>${c.label}</span>`}</th>`).join('')}</tr>`;
         const rows = allPersons.map(p => {
             const cells = cols.map(c => {
-                if (!c.shouldSchedule) return `<td class="${tdStyle} bg-gray-100 dark:bg-gray-800 text-gray-400">—</td>`;
+                if (!c.shouldSchedule) return `<td class="${tdStyle} pv-holiday">—</td>`;
                 const task = personMap[p]?.[`${c.wi}-${c.di}`];
                 return task
                     ? `<td class="${tdStyle} ${taskColorMap[task] || ''} font-medium">${escapeHtml(task)}</td>`
                     : `<td class="${tdStyle}"></td>`;
             }).join('');
-            return `<tr><td class="${tdStyle} sticky left-0 z-10 bg-white dark:bg-gray-800 font-medium">${escapeHtml(p)}</td>${cells}</tr>`;
+            return `<tr><td class="${tdStyle} sticky left-0 z-10 pv-name font-medium">${escapeHtml(p)}</td>${cells}</tr>`;
         }).join('');
         panel.innerHTML = `<table class="border-collapse text-sm w-max"><thead>${header}</thead><tbody>${rows}</tbody></table>`;
     }
