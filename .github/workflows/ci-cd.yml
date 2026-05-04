@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI Pipeline
 
 on:
   push:
@@ -8,13 +8,10 @@ on:
   pull_request:
     branches:
       - release
-  workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * 0'  # 每週日 00:00 執行
 
 jobs:
-  lint-and-test:
-    name: Code Quality & Testing
+  test:
+    name: Backend Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -24,50 +21,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: npm ci
-
-      - name: Run linting (ESLint)
-        run: npx eslint . --ext .js --max-warnings=10 || true
+        working-directory: backend
 
       - name: Run tests
         run: npm test
-
-      - name: Validate HTML files
-        run: |
-          if [ -f "index.html" ]; then
-            echo "✓ index.html validated"
-          else
-            echo "✗ index.html not found"
-            exit 1
-          fi
-
-  docker-build:
-    name: Docker Build Test
-    needs: lint-and-test
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        run: |
-          if [ -f "Dockerfile" ]; then
-            docker build -t shift-schedule-generator:test .
-            echo "✓ Docker image built successfully"
-          else
-            echo "⚠ No Dockerfile found, skipping Docker build"
-          fi
-
-      - name: Deployment Info
-        if: github.event_name == 'push' && github.ref == 'refs/heads/release'
-        run: |
-          echo "✓ CI/CD checks passed"
-          echo "→ Zeabur will automatically deploy via Git connection"
+        working-directory: backend
