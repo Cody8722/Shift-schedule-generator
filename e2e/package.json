@@ -1,0 +1,14 @@
+{
+  "name": "schedule-e2e",
+  "version": "1.0.0",
+  "description": "E2E tests for 智慧排班系統 — @playwright/test 1.59.1",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "dependencies": {
+    "@playwright/test": "1.59.1"
+  }
+}
