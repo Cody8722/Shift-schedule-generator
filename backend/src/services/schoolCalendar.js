@@ -6,28 +6,6 @@ const debugServer = debug('app:server');
 // 學校行事曆快取（6小時）
 let schoolEventsCache = { data: null, fetchedAt: 0 };
 
-// 自動計算當前學期代碼（民國年+學期，例：1142）
-const getCurrentPeriod = () => {
-  const now = new Date();
-  const month = now.getMonth() + 1;
-  const rocYear = now.getFullYear() - 1911;
-  if (month >= 8) return `${rocYear}1`;
-  if (month === 1) return `${rocYear - 1}1`;
-  return `${rocYear - 1}2`;
-};
-
-// 依學期代碼與月份推算西元年（避免跨年學期用錯年份）
-const getYearForMonth = (month, period) => {
-  const rocYear = parseInt(period.slice(0, -1)); // '1142' → 114
-  const semester = parseInt(period.slice(-1));   // 1 或 2
-  const baseYear = rocYear + 1911;               // 114 → 2025
-  if (semester === 1) {
-    // 第一學期：9–12 月在 baseYear，1 月在 baseYear+1
-    return month >= 8 ? baseYear : baseYear + 1;
-  }
-  // 第二學期：2–7 月都在 baseYear+1
-  return baseYear + 1;
-};
 
 // 以 Big5 解碼抓取網頁（8 秒 timeout）
 const fetchBig5 = async (url) => {
@@ -49,77 +27,48 @@ const getSchoolEvents = async () => {
   }
 
   const BASE = 'https://s44.mingdao.edu.tw/AACourses/Web/';
-  const period = getCurrentPeriod();
 
-  // 抓主頁面，找所有「重要考試」日期
+  // 只抓主頁面（1 個請求），直接從 qDate 屬性拿日期，不查各日 list 頁面
   const mainHtml = await fetchBig5(`${BASE}eCalendar_view.php`);
 
-  // 從 div 標籤萃取有「重要考試」的 qDate
-  const examDates = new Set();
+  const examDateSet = new Set();
   const divTagRegex = /<div[^>]+id="sDB_[^"]*"[^>]*>/g;
   let tagMatch;
   while ((tagMatch = divTagRegex.exec(mainHtml)) !== null) {
     const tag = tagMatch[0];
     if (!tag.includes('重要考試')) continue;
-    const qDateMatch = tag.match(/qDate="([^"]+)"/);
-    if (qDateMatch) examDates.add(qDateMatch[1]);
+    // qDate 格式：D@YYYY/MM/DD
+    const qDateMatch = tag.match(/qDate="D@(\d{4})\/(\d{2})\/(\d{2})"/);
+    if (qDateMatch) {
+      const [, y, m, d] = qDateMatch;
+      examDateSet.add(`${y}${m}${d}`);
+    }
   }
 
-  // 逐日查詢詳細事件，找定期評量／期中考
-  const seen = new Set();
+  // 將離散日期合併成連續範圍
+  const sortedDates = [...examDateSet].sort();
   const events = [];
+  let rangeStart = null;
+  let rangeEnd = null;
 
-  for (const qDate of examDates) {
-    let html;
-    try {
-      const encoded = encodeURIComponent(qDate);
-      html = await fetchBig5(
-        `${BASE}eCalendar_list.php?F_sPeriod=${period}&qDate=${encoded}&qDG=&qSpec=`
-      );
-    } catch {
-      continue; // 單一日期查詢失敗時跳過，不影響其他日期
-    }
+  const advanceDate = (yyyymmdd) => {
+    const d = new Date(Date.UTC(+yyyymmdd.slice(0, 4), +yyyymmdd.slice(4, 6) - 1, +yyyymmdd.slice(6, 8)));
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10).replace(/-/g, '');
+  };
 
-    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/g;
-    let liMatch;
-    while ((liMatch = liRegex.exec(html)) !== null) {
-      const text = liMatch[1]
-        .replace(/<[^>]+>/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if ((text.includes('定期評量') || text.includes('期中考')) && !seen.has(text)) {
-        seen.add(text);
-        // 支援同月 MM/DD~DD 與跨月 MM/DD~MM/DD 兩種格式
-        const rangeMatch = text.match(/^(\d{2})\/(\d{2})(?:~(?:(\d{2})\/)?(\d{2}))?/);
-        const nameMatch = text.match(/重要考試\s+(.+)$/);
-        if (rangeMatch) {
-          const startMonthNum = parseInt(rangeMatch[1]);
-          const startYear = getYearForMonth(startMonthNum, period);
-          const endMonthStr = rangeMatch[3] || rangeMatch[1]; // 若無跨月部分則同起始月
-          const endDayStr = rangeMatch[4];
-          const endMonthNum = parseInt(endMonthStr);
-          // 跨年處理：結束月份小於起始月份表示跨入下一年（如 12→1）
-          const endYear = endMonthNum < startMonthNum ? startYear + 1 : startYear;
-          const startDate = `${startYear}${rangeMatch[1]}${rangeMatch[2]}`;
-          const endDate = endDayStr
-            ? `${endYear}${endMonthStr}${endDayStr}`
-            : startDate;
-          const fullName = nameMatch ? nameMatch[1].trim() : text;
-          const ordinalMatch = fullName.match(/第([一二三四五六七八九十]+)次/);
-          let shortName;
-          if (ordinalMatch) {
-            // 依事件原始名稱保留正確考試類型
-            if (fullName.includes('定期評量')) shortName = `第${ordinalMatch[1]}次定期評量`;
-            else if (fullName.includes('期末考'))  shortName = `第${ordinalMatch[1]}次期末考`;
-            else if (fullName.includes('期中考'))  shortName = `第${ordinalMatch[1]}次期中考`;
-            else                                   shortName = `第${ordinalMatch[1]}次考試`;
-          } else {
-            shortName = fullName;
-          }
-          events.push({ startDate, endDate, name: shortName, type: 'exam' });
-        }
-      }
+  for (const dateStr of sortedDates) {
+    if (!rangeStart) {
+      rangeStart = rangeEnd = dateStr;
+    } else if (dateStr === advanceDate(rangeEnd)) {
+      rangeEnd = dateStr;
+    } else {
+      events.push({ startDate: rangeStart, endDate: rangeEnd, name: '重要考試', type: 'exam' });
+      rangeStart = rangeEnd = dateStr;
     }
+  }
+  if (rangeStart) {
+    events.push({ startDate: rangeStart, endDate: rangeEnd, name: '重要考試', type: 'exam' });
   }
 
   schoolEventsCache = { data: events, fetchedAt: Date.now() };
