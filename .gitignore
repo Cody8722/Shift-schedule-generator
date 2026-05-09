@@ -3,3 +3,9 @@ npm-debug.log*
 database_backup_*.json
 .env
 backend/.env
+
+# Playwright
+e2e/playwright-report/
+e2e/test-results/
+backend/coverage/
+.playwright-mcp/
