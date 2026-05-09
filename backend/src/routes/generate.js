@@ -5,6 +5,26 @@ const { validateSettings } = require('../validators');
 const { getWeekInfo, getHolidaysForYear } = require('../services/holidayService');
 const { generateWeeklySchedule } = require('../services/scheduleAlgorithm');
 const { generateScheduleHtml } = require('../services/scheduleRenderer');
+const { getSchoolEvents } = require('../services/schoolCalendar');
+
+const buildExamDateMap = async () => {
+  const map = new Map();
+  try {
+    const { data } = await getSchoolEvents();
+    for (const event of data) {
+      const [sy, sm, sd] = [event.startDate.slice(0,4), event.startDate.slice(4,6), event.startDate.slice(6,8)];
+      const [ey, em, ed] = [event.endDate.slice(0,4), event.endDate.slice(4,6), event.endDate.slice(6,8)];
+      const cur = new Date(Date.UTC(+sy, +sm - 1, +sd));
+      const end = new Date(Date.UTC(+ey, +em - 1, +ed));
+      while (cur <= end) {
+        const key = cur.toISOString().slice(0, 10).replace(/-/g, '');
+        map.set(key, event.name);
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+    }
+  } catch { /* 學校行事曆不可用時跳過 */ }
+  return map;
+};
 
 const debugSchedule = debug('app:schedule');
 
@@ -41,6 +61,11 @@ router.post('/api/generate-schedule', generateLimiter, async (req, res) => {
       return res.status(400).json({ message: 'activeHolidays 必須是字串陣列' });
     }
 
+    const examDateMap =
+      process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'e2e'
+        ? new Map()
+        : await buildExamDateMap();
+
     const fullScheduleData = [];
     const colors = [
       { header: '#0284c7', row: '#f0f9ff' },
@@ -60,13 +85,15 @@ router.post('/api/generate-schedule', generateLimiter, async (req, res) => {
           originalHolidaysMap.set(date, name);
         }
       });
-      const scheduleDays = weekDates.map((date) => ({
-        date,
-        shouldSchedule: !resolvedHolidays.includes(date),
-        description: resolvedHolidays.includes(date)
-          ? originalHolidaysMap.get(date) || '假日'
-          : '',
-      }));
+      const scheduleDays = weekDates.map((date) => {
+        const isHoliday = resolvedHolidays.includes(date);
+        const examName = examDateMap.get(date);
+        return {
+          date,
+          shouldSchedule: !isHoliday && !examName,
+          description: isHoliday ? (originalHolidaysMap.get(date) || '假日') : (examName || ''),
+        };
+      });
       const { weeklySchedule, fillStats, weekShiftCounts } = generateWeeklySchedule(
         settings,
         scheduleDays,

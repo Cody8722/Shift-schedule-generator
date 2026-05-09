@@ -16,11 +16,17 @@ const getCurrentPeriod = () => {
   return `${rocYear - 1}2`;
 };
 
-// 以 Big5 解碼抓取網頁
+// 以 Big5 解碼抓取網頁（3 秒 timeout）
 const fetchBig5 = async (url) => {
-  const resp = await fetch(url);
-  const buffer = await resp.arrayBuffer();
-  return iconv.decode(Buffer.from(buffer), 'big5');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    const buffer = await resp.arrayBuffer();
+    return iconv.decode(Buffer.from(buffer), 'big5');
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 const getSchoolEvents = async () => {
