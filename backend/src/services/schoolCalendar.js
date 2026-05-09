@@ -16,10 +16,23 @@ const getCurrentPeriod = () => {
   return `${rocYear - 1}2`;
 };
 
-// 以 Big5 解碼抓取網頁（3 秒 timeout）
+// 依學期代碼與月份推算西元年（避免跨年學期用錯年份）
+const getYearForMonth = (month, period) => {
+  const rocYear = parseInt(period.slice(0, -1)); // '1142' → 114
+  const semester = parseInt(period.slice(-1));   // 1 或 2
+  const baseYear = rocYear + 1911;               // 114 → 2025
+  if (semester === 1) {
+    // 第一學期：9–12 月在 baseYear，1 月在 baseYear+1
+    return month >= 8 ? baseYear : baseYear + 1;
+  }
+  // 第二學期：2–7 月都在 baseYear+1
+  return baseYear + 1;
+};
+
+// 以 Big5 解碼抓取網頁（8 秒 timeout）
 const fetchBig5 = async (url) => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3000);
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const resp = await fetch(url, { signal: controller.signal });
     const buffer = await resp.arrayBuffer();
@@ -57,10 +70,15 @@ const getSchoolEvents = async () => {
   const events = [];
 
   for (const qDate of examDates) {
-    const encoded = encodeURIComponent(qDate);
-    const html = await fetchBig5(
-      `${BASE}eCalendar_list.php?F_sPeriod=${period}&qDate=${encoded}&qDG=&qSpec=`
-    );
+    let html;
+    try {
+      const encoded = encodeURIComponent(qDate);
+      html = await fetchBig5(
+        `${BASE}eCalendar_list.php?F_sPeriod=${period}&qDate=${encoded}&qDG=&qSpec=`
+      );
+    } catch {
+      continue; // 單一日期查詢失敗時跳過，不影響其他日期
+    }
 
     const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/g;
     let liMatch;
@@ -71,17 +89,33 @@ const getSchoolEvents = async () => {
         .trim();
       if ((text.includes('定期評量') || text.includes('期中考')) && !seen.has(text)) {
         seen.add(text);
-        const rangeMatch = text.match(/^(\d{2})\/(\d{2})(?:~(\d{2}))?/);
+        // 支援同月 MM/DD~DD 與跨月 MM/DD~MM/DD 兩種格式
+        const rangeMatch = text.match(/^(\d{2})\/(\d{2})(?:~(?:(\d{2})\/)?(\d{2}))?/);
         const nameMatch = text.match(/重要考試\s+(.+)$/);
         if (rangeMatch) {
-          const year = new Date().getFullYear();
-          const startDate = `${year}${rangeMatch[1]}${rangeMatch[2]}`;
-          const endDate = rangeMatch[3]
-            ? `${year}${rangeMatch[1]}${rangeMatch[3]}`
+          const startMonthNum = parseInt(rangeMatch[1]);
+          const startYear = getYearForMonth(startMonthNum, period);
+          const endMonthStr = rangeMatch[3] || rangeMatch[1]; // 若無跨月部分則同起始月
+          const endDayStr = rangeMatch[4];
+          const endMonthNum = parseInt(endMonthStr);
+          // 跨年處理：結束月份小於起始月份表示跨入下一年（如 12→1）
+          const endYear = endMonthNum < startMonthNum ? startYear + 1 : startYear;
+          const startDate = `${startYear}${rangeMatch[1]}${rangeMatch[2]}`;
+          const endDate = endDayStr
+            ? `${endYear}${endMonthStr}${endDayStr}`
             : startDate;
           const fullName = nameMatch ? nameMatch[1].trim() : text;
           const ordinalMatch = fullName.match(/第([一二三四五六七八九十]+)次/);
-          const shortName = ordinalMatch ? `第${ordinalMatch[1]}次定期評量` : fullName;
+          let shortName;
+          if (ordinalMatch) {
+            // 依事件原始名稱保留正確考試類型
+            if (fullName.includes('定期評量')) shortName = `第${ordinalMatch[1]}次定期評量`;
+            else if (fullName.includes('期末考'))  shortName = `第${ordinalMatch[1]}次期末考`;
+            else if (fullName.includes('期中考'))  shortName = `第${ordinalMatch[1]}次期中考`;
+            else                                   shortName = `第${ordinalMatch[1]}次考試`;
+          } else {
+            shortName = fullName;
+          }
           events.push({ startDate, endDate, name: shortName, type: 'exam' });
         }
       }
