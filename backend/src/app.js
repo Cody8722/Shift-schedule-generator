@@ -32,6 +32,7 @@ const readLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: '來自此 IP 的請求過多，請於 15 分鐘後再試。',
+  skip: () => process.env.NODE_ENV !== 'production',
 });
 
 const writeLimiter = rateLimit({
@@ -40,6 +41,7 @@ const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: '來自此 IP 的請求過多，請於 15 分鐘後再試。',
+  skip: () => process.env.NODE_ENV !== 'production',
 });
 
 // 依 HTTP 方法套用速率限制
