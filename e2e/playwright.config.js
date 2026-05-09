@@ -3,6 +3,8 @@ const { defineConfig, devices } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './tests',
+  globalSetup: './global-setup.js',
+  globalTeardown: './global-teardown.js',
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
