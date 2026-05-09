@@ -1,6 +1,30 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
+const BACKEND_URL = 'http://localhost:3000';
+
+async function resetProfileSettings(page) {
+  const res = await page.request.get(`${BACKEND_URL}/api/profiles`);
+  const data = await res.json();
+  const activeProfile = data?.activeProfile;
+  if (!activeProfile) return;
+
+  // Retry loop: stale saveSettings() PUTs from the previous test can arrive at the
+  // server after our reset, overwriting it. We reset, wait 300ms for any in-flight
+  // PUTs to land, then verify — repeating until the profile is truly clean.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await page.request.put(
+      `${BACKEND_URL}/api/profiles/${encodeURIComponent(activeProfile)}`,
+      { data: { settings: { tasks: [], personnel: [] } } }
+    );
+    await new Promise((r) => setTimeout(r, 300));
+    const check = await page.request.get(`${BACKEND_URL}/api/profiles`);
+    const checkData = await check.json();
+    const profile = checkData?.profiles?.[activeProfile];
+    if (!profile?.settings?.tasks?.length && !profile?.settings?.personnel?.length) return;
+  }
+}
+
 /**
  * 新增一筆勤務並確認 input value 正確。
  * 勤務名稱渲染為 <input value="...">，不可用 toContainText。
@@ -31,7 +55,18 @@ async function addPersonnel(page, name) {
 
 test.describe('產生班表', () => {
   test.beforeEach(async ({ page }) => {
+    // Navigate first to browser-abort any in-flight saveSettings() fetches from the
+    // previous test's handleSettingsChange. Then wait for networkidle (~500ms) to
+    // give the server time to finish processing those stale PUTs before we reset.
     await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await resetProfileSettings(page);
+    // Reload so initApp() fetches the now-clean profile from MongoDB.
+    await page.reload();
+    await page.waitForFunction(
+      () => document.getElementById('profile-select')?.options.length > 0,
+      { timeout: 10_000 }
+    );
   });
 
   test('新增勤務後 input value 正確', async ({ page }) => {

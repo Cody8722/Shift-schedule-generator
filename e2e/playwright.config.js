@@ -29,12 +29,15 @@ module.exports = defineConfig({
   webServer: [
     {
       // 後端：無 MONGODB_URI → 以 no-DB 模式啟動，generate-schedule 仍可用
+      // reuseExistingServer: false 確保每次 E2E 都用最新程式碼啟動，
+      // 避免 rate-limiter 記憶體狀態跨 run 累積。
+      // 執行 E2E 前請先停止本機 backend dev server（port 3000）。
       command: 'node server.js',
       cwd: '../backend',
       port: 3000,
-      reuseExistingServer: !process.env.CI,
-      env: { NODE_ENV: 'test' },
-      timeout: 15_000,
+      reuseExistingServer: false,
+      env: { NODE_ENV: 'e2e' },
+      timeout: 30_000,
     },
     {
       // 前端：Vite dev server
