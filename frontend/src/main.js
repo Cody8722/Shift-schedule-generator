@@ -94,34 +94,48 @@ const updateCapacityStatus = () => {
 const renderTasks = () => {
   elements.taskList.innerHTML = '';
   const tasks = getActiveProfile()?.settings?.tasks || [];
-  tasks.forEach((task, index) => {
-    const div = document.createElement('div');
-    div.className = 'flex items-center gap-2';
-    div.innerHTML = `
+  if (tasks.length === 0) {
+    const placeholder = document.createElement('p');
+    placeholder.className = 'text-sm text-muted task-list-placeholder';
+    placeholder.textContent = '（尚未新增勤務）';
+    elements.taskList.appendChild(placeholder);
+  } else {
+    tasks.forEach((task, index) => {
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-2';
+      div.innerHTML = `
       <input type="text" value="${escapeHtml(task.name)}" class="form-input flex-grow min-w-0 p-1 rounded-md" data-index="${index}" data-field="name">
       <input type="number" value="${escapeHtml(task.count)}" class="form-input w-14 p-1 rounded-md" min="1" data-index="${index}" data-field="count" title="每天需要幾人">
       <input type="number" value="${escapeHtml(task.priority || 9)}" class="form-input w-12 p-1 rounded-md text-center" min="1" max="9" data-index="${index}" data-field="priority" title="優先級（1=最優先，9=最低）">
       <button class="remove-task text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
     `;
-    elements.taskList.appendChild(div);
-  });
+      elements.taskList.appendChild(div);
+    });
+  }
   updateCapacityStatus();
 };
 
 const renderPersonnel = () => {
   elements.personnelList.innerHTML = '';
   const personnel = getActiveProfile()?.settings?.personnel || [];
-  personnel.forEach((person, index) => {
-    const div = document.createElement('div');
-    div.className = 'flex items-center gap-2';
-    div.innerHTML = `
+  if (personnel.length === 0) {
+    const placeholder = document.createElement('p');
+    placeholder.className = 'text-sm text-muted personnel-list-placeholder';
+    placeholder.textContent = '（尚未新增人員）';
+    elements.personnelList.appendChild(placeholder);
+  } else {
+    personnel.forEach((person, index) => {
+      const div = document.createElement('div');
+      div.className = 'flex items-center gap-2';
+      div.innerHTML = `
       <input type="text" value="${escapeHtml(person.name)}" class="form-input flex-grow min-w-0 p-1 rounded-md" data-index="${index}" data-field="name">
       <input type="number" value="${escapeHtml(person.maxShifts || 5)}" class="form-input w-16 p-1 rounded-md" min="1" title="每週班次上限" data-index="${index}" data-field="maxShifts">
       <button class="advanced-settings-btn text-blue-500 hover:text-blue-700 p-1" data-index="${index}">⚙️</button>
       <button class="remove-personnel text-red-500 hover:text-red-700 font-bold p-1" data-index="${index}">&#x2715;</button>
     `;
-    elements.personnelList.appendChild(div);
-  });
+      elements.personnelList.appendChild(div);
+    });
+  }
   updateCapacityStatus();
 };
 
