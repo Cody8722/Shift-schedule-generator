@@ -1,24 +1,53 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
+const BACKEND_URL = 'http://localhost:3000';
+
+async function resetProfileSettings(page) {
+  const res = await page.request.get(`${BACKEND_URL}/api/profiles`);
+  const data = await res.json();
+  const activeProfile = data?.activeProfile;
+  if (!activeProfile) return;
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await page.request.put(
+      `${BACKEND_URL}/api/profiles/${encodeURIComponent(activeProfile)}`,
+      { data: { settings: { tasks: [], personnel: [] } } }
+    );
+    await new Promise((r) => setTimeout(r, 300));
+    const check = await page.request.get(`${BACKEND_URL}/api/profiles`);
+    const checkData = await check.json();
+    const profile = checkData?.profiles?.[activeProfile];
+    if (!profile?.settings?.tasks?.length && !profile?.settings?.personnel?.length) return;
+  }
+}
+
 /**
  * 共用：產生一份最小班表後等待輸出出現。
  */
 async function generateMinimalSchedule(page) {
   await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await resetProfileSettings(page);
+  await page.reload();
+  await page.waitForFunction(
+    () => document.getElementById('profile-select')?.options.length > 0,
+    { timeout: 10_000 }
+  );
 
   await page.locator('#new-task-name').fill('早班');
   await page.locator('#new-task-count').fill('1');
   await page.locator('#add-task-btn').click();
+  await expect(page.locator('#task-list .remove-task')).toHaveCount(1, { timeout: 5_000 });
 
   await page.locator('#new-personnel-name').fill('張三');
   await page.locator('#add-personnel-btn').click();
   await page.locator('#new-personnel-name').fill('李四');
   await page.locator('#add-personnel-btn').click();
+  await expect(page.locator('#personnel-list .remove-personnel')).toHaveCount(2, { timeout: 5_000 });
 
   await page.locator('#num-weeks').fill('1');
   await page.locator('#generate-schedule').click();
-
   await expect(page.locator('#output-container')).toBeVisible({ timeout: 15_000 });
 }
 

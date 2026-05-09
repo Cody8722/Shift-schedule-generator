@@ -14,6 +14,7 @@ const generateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: '產生班表次數過多，請於 15 分鐘後再試。',
+  skip: () => process.env.NODE_ENV !== 'production',
 });
 
 const router = express.Router();
