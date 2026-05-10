@@ -52,6 +52,16 @@ const isRelevantExamType = (name) => {
   return name.includes('定期評量') || name.includes('期中考') || name.includes('期末考');
 };
 
+const getCleanExamName = (rawName) => {
+  if (rawName.includes('期末')) return '期末考';
+  if (rawName.includes('第一') || rawName.includes('一次')) return '一段';
+  if (rawName.includes('第二') || rawName.includes('二次')) return '二段';
+  if (rawName.includes('第三') || rawName.includes('三次')) return '三段';
+  if (rawName.includes('第四') || rawName.includes('四次')) return '四段';
+  if (rawName.includes('期中')) return '期中考';
+  return '定期評量';
+};
+
 const advanceDate = (yyyymmdd) => {
   const d = new Date(Date.UTC(+yyyymmdd.slice(0, 4), +yyyymmdd.slice(4, 6) - 1, +yyyymmdd.slice(6, 8)));
   d.setUTCDate(d.getUTCDate() + 1);
@@ -88,7 +98,7 @@ const getSchoolEvents = async () => {
         { year: baseYear + 1, month: 6 },
       ];
 
-  const examDateSet = new Set();
+  const examDateNameMap = new Map(); // date → clean name
 
   // 每月一次請求，解析 li 事件清單
   const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/g;
@@ -145,16 +155,17 @@ const getSchoolEvents = async () => {
       const endDate = endD ? `${endYear}${actualEndM}${endD}` : startDate;
 
       // 展開範圍內每一天
+      const cleanName = getCleanExamName(name);
       let cur = startDate;
       while (cur <= endDate) {
-        examDateSet.add(cur);
+        if (!examDateNameMap.has(cur)) examDateNameMap.set(cur, cleanName);
         cur = advanceDate(cur);
       }
     }
   }
 
   // 將離散日期合併成連續範圍 event 陣列
-  const sortedDates = [...examDateSet].sort();
+  const sortedDates = [...examDateNameMap.keys()].sort();
   const events = [];
   let rangeStart = null;
   let rangeEnd = null;
@@ -165,15 +176,27 @@ const getSchoolEvents = async () => {
     } else if (dateStr === advanceDate(rangeEnd)) {
       rangeEnd = dateStr;
     } else {
-      events.push({ startDate: rangeStart, endDate: rangeEnd, name: '重要考試', type: 'exam' });
+      events.push({ startDate: rangeStart, endDate: rangeEnd, name: examDateNameMap.get(rangeStart) || '定期評量', type: 'exam' });
       rangeStart = rangeEnd = dateStr;
     }
   }
   if (rangeStart) {
-    events.push({ startDate: rangeStart, endDate: rangeEnd, name: '重要考試', type: 'exam' });
+    events.push({ startDate: rangeStart, endDate: rangeEnd, name: examDateNameMap.get(rangeStart) || '定期評量', type: 'exam' });
   }
 
-  debugServer('school events fetched: %d events, %d exam days', events.length, examDateSet.size);
+  // 同名考試依序編號（如兩個「期中考」→「第一次期中考」「第二次期中考」）
+  const ORDINALS = ['一', '二', '三', '四', '五'];
+  const nameCount = {};
+  for (const ev of events) nameCount[ev.name] = (nameCount[ev.name] || 0) + 1;
+  const nameSeq = {};
+  for (const ev of events) {
+    if (nameCount[ev.name] > 1) {
+      nameSeq[ev.name] = (nameSeq[ev.name] || 0) + 1;
+      ev.name = `第${ORDINALS[nameSeq[ev.name] - 1] || nameSeq[ev.name]}次${ev.name}`;
+    }
+  }
+
+  debugServer('school events fetched: %d events, %d exam days', events.length, examDateNameMap.size);
   schoolEventsCache = { data: events, fetchedAt: Date.now() };
   return { cached: false, data: events };
 };
