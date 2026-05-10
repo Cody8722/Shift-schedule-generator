@@ -31,10 +31,7 @@ async function generateMinimalSchedule(page) {
   await page.waitForLoadState('networkidle');
   await resetProfileSettings(page);
   await page.reload();
-  await page.waitForFunction(
-    () => document.getElementById('profile-select')?.options.length > 0,
-    { timeout: 10_000 }
-  );
+  await expect(page.locator('#generate-schedule')).toBeVisible();
 
   await page.locator('#new-task-name').fill('早班');
   await page.locator('#new-task-count').fill('1');

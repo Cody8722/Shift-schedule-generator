@@ -63,10 +63,7 @@ test.describe('產生班表', () => {
     await resetProfileSettings(page);
     // Reload so initApp() fetches the now-clean profile from MongoDB.
     await page.reload();
-    await page.waitForFunction(
-      () => document.getElementById('profile-select')?.options.length > 0,
-      { timeout: 10_000 }
-    );
+    await expect(page.locator('#generate-schedule')).toBeVisible();
   });
 
   test('新增勤務後 input value 正確', async ({ page }) => {
