@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧排班系統</title>
+    <script>
+        tailwind = { config: { darkMode: 'class' } };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-light: #f9fafb;
+            --text-light: #000000;
+            --card-bg-light: #ffffff;
+            --muted-text-light: #6b7280;
+            --border-light: #e5e7eb;
+            --input-bg-light: #f3f4f6;
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
+            --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+
+            --bg-dark: #111827;
+            --text-dark: #ffffff;
+            --card-bg-dark: #1f2937;
+            --muted-text-dark: #9ca3af;
+            --border-dark: #374151;
+            --input-bg-dark: #374151;
+        }
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .theme-light { background-color: var(--bg-light); color: var(--text-light); }
+        .theme-dark  { background-color: var(--bg-dark);  color: var(--text-dark);  }
+        .card { background-color: var(--card-bg-light); border: 1px solid var(--border-light); }
+        .dark .card { background-color: var(--card-bg-dark); border-color: var(--border-dark); }
+        .form-input { background-color: var(--input-bg-light); border: 1px solid var(--border-light); }
+        .dark .form-input { background-color: var(--input-bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .text-muted { color: var(--muted-text-light); }
+        .dark .text-muted { color: var(--muted-text-dark); }
+        .btn-primary { background-color: var(--primary-color); }
+        .btn-primary:hover { background-color: var(--primary-hover); }
+        .btn-danger { background-color: var(--danger-color); }
+        .btn-danger:hover { background-color: var(--danger-hover); }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        @media (max-width: 767px) {
+            #edit-personnel-sidebar { display: none !important; }
+            #schedule-output { overflow-x: auto !important; }
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
+
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            border-left-color: #fff;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Accordion */
+        .accordion-content { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out, padding 0.3s ease-out; padding: 0 1rem; }
+        .accordion-item.active .accordion-content { padding: 1rem 1rem; max-height: 1000px; transition: max-height 0.5s ease-in, padding 0.3s ease-in; }
+        .accordion-arrow { transition: transform 0.3s ease-out; }
+        .accordion-item.active .accordion-arrow { transform: rotate(90deg); }
+
+        /* Schedule Table */
+        .schedule-table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; border: 1px solid var(--border-light); border-radius: 0.75rem; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06); }
+        .dark .schedule-table { box-shadow: 0 1px 3px 0 rgba(0,0,0,0.3), 0 1px 2px 0 rgba(0,0,0,0.2); }
+        .schedule-table th, .schedule-table td { padding: 0.75rem 1rem; text-align: center; border-bottom: 1px solid var(--border-light); vertical-align: top; }
+        .dark .schedule-table th, .dark .schedule-table td { border-bottom-color: var(--border-dark); }
+        .schedule-table th { font-weight: 600; }
+        .dark .schedule-table th { border-bottom-color: #4b5563; }
+        .schedule-table tbody tr:last-child td { border-bottom: none; }
+        .holiday-cell { background-color: #e5e7eb; color: #4b5563; font-style: italic; }
+        .dark .holiday-cell { background-color: #4b5563; color: #d1d5db; }
+        .dark .schedule-table tbody td { background-color: var(--card-bg-dark); color: var(--text-dark); }
+        .dark .schedule-table tbody td.holiday-cell { background-color: #4b5563; color: #d1d5db; }
+        .dark .schedule-table tbody td.editable-cell:hover { background-color: #1e3a5f; }
+        .dark #edit-personnel-sidebar { background-color: var(--card-bg-dark) !important; border-color: var(--border-dark) !important; color: var(--text-dark); }
+        .dark #edit-personnel-sidebar input { background-color: var(--bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark #edit-personnel-sidebar > div > div { background-color: var(--bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark #edit-personnel-sidebar > div > div:hover { background-color: #1e3a5f; border-color: #3b82f6; }
+        .dark .person-tag { background-color: #1e3a5f; color: #93c5fd; }
+        .dark .weekly-stats-card { background-color: var(--card-bg-dark); border-color: var(--border-dark); color: var(--text-dark); }
+        .dark .weekly-stats-card .text-gray-700 { color: #d1d5db; }
+
+        /* Edit Toolbar */
+        #edit-toolbar { background-color: #eff6ff; border-color: #bfdbfe; }
+        .dark #edit-toolbar { background-color: #1e3a5f; border-color: #1e40af; }
+        .dark #edit-toolbar .edit-toolbar-label { color: #93c5fd; }
+        .dark #edit-toolbar #edit-status { color: #9ca3af; }
+
+        /* Personnel View */
+        .pv-th { background-color: #f3f4f6; border: 1px solid #d1d5db; }
+        .dark .pv-th { background-color: #374151; border-color: #6b7280; color: #f9fafb; }
+        .pv-td { border: 1px solid #d1d5db; }
+        .dark .pv-td { border-color: #6b7280; }
+        .pv-name { background-color: #ffffff; border-right: 2px solid #d1d5db; }
+        .dark .pv-name { background-color: #1f2937; border-right-color: #6b7280; color: #f9fafb; }
+        .pv-holiday { background-color: #f3f4f6; color: #9ca3af; }
+        .dark .pv-holiday { background-color: #374151; color: #6b7280; }
+        #personnel-view tbody tr:nth-child(even) .pv-td:not([class*="pv-task"]):not(.pv-holiday),
+        #personnel-view tbody tr:nth-child(even) .pv-name { background-color: #f9fafb; }
+        .dark #personnel-view tbody tr:nth-child(even) .pv-td:not([class*="pv-task"]):not(.pv-holiday),
+        .dark #personnel-view tbody tr:nth-child(even) .pv-name { background-color: #111827; }
+        .pv-task-0 { background-color: #dbeafe; color: #1e40af; }
+        .dark .pv-task-0 { background-color: #1e3a8a; color: #bfdbfe; }
+        .pv-task-1 { background-color: #dcfce7; color: #166534; }
+        .dark .pv-task-1 { background-color: #14532d; color: #bbf7d0; }
+        .pv-task-2 { background-color: #f3e8ff; color: #6b21a8; }
+        .dark .pv-task-2 { background-color: #581c87; color: #e9d5ff; }
+        .pv-task-3 { background-color: #ffedd5; color: #9a3412; }
+        .dark .pv-task-3 { background-color: #7c2d12; color: #fed7aa; }
+        .pv-task-4 { background-color: #fce7f3; color: #9d174d; }
+        .dark .pv-task-4 { background-color: #831843; color: #fbcfe8; }
+        .pv-task-5 { background-color: #ccfbf1; color: #115e59; }
+        .dark .pv-task-5 { background-color: #134e4a; color: #99f6e4; }
+
+        /* Toast */
+        .toast { padding: 12px 18px; border-radius: 8px; color: white; font-size: 14px; max-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); opacity: 0; transform: translateX(40px); transition: opacity 0.25s ease, transform 0.25s ease; pointer-events: auto; word-break: break-word; }
+        .toast.show { opacity: 1; transform: translateX(0); }
+        .toast.success { background: #16a34a; }
+        .toast.error   { background: #dc2626; }
+        .toast.warning { background: #d97706; }
+        .toast.info    { background: #2563eb; }
+
+        @media print {
+            header { display: none !important; }
+            .lg\:col-span-1 { display: none !important; }
+            #output-container > div:first-child { display: none !important; }
+            .lg\:col-span-2 > div:not(#output-container) { display: none !important; }
+            #output-container { margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: white !important; }
+            #schedule-output { overflow: visible !important; }
+            .schedule-table { page-break-inside: avoid; width: 100% !important; }
+        }
+    </style>
+</head>
+<body class="theme-light">
+
+    <div class="container mx-auto p-4 md:p-8">
+
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl md:text-4xl font-bold text-blue-600 dark:text-blue-400">智慧排班系統</h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">設定檔：<span id="active-profile-badge" class="font-medium text-blue-500 dark:text-blue-300"></span></p>
+            </div>
+            <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+                <svg id="theme-icon-light" class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.95a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414l-.707.707zm-2.12-10.607a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z"></path></svg>
+                <svg id="theme-icon-dark" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+            </button>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1 space-y-4">
+                <div id="accordion-container">
+                    <div class="accordion-item card rounded-lg shadow-md">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>設定檔管理</span>
+                            <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                            <div class="flex items-center gap-2 mb-4">
+                                <label for="profile-select" class="font-medium shrink-0">目前設定檔:</label>
+                                <select id="profile-select" class="form-input rounded-md p-2 w-full"></select>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <button id="new-profile-btn" class="flex items-center justify-center gap-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">新增</button>
+                                <button id="rename-profile-btn" class="flex items-center justify-center gap-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">命名</button>
+                                <button id="delete-profile-btn" class="flex items-center justify-center gap-1 btn-danger text-white font-bold py-2 px-3 rounded-md transition text-sm">刪除</button>
+                                <button id="import-profile-btn" class="flex items-center justify-center gap-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">匯入</button>
+                                <button id="export-profile-btn" class="flex items-center justify-center gap-1 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition text-sm">匯出</button>
+                            </div>
+                            <input type="file" id="profile-file-input" class="hidden" accept=".json">
+                        </div>
+                    </div>
+                    <div class="accordion-item card rounded-lg shadow-md mt-4">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>1. 勤務設定</span>
+                            <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                            <div class="space-y-2 mb-3" id="task-list"></div>
+                            <div id="capacity-status" class="text-sm p-2 rounded-md mt-2"></div>
+                            <div class="flex gap-2">
+                                <input type="text" id="new-task-name" class="form-input flex-grow p-2 rounded-md" placeholder="勤務名稱">
+                                <input type="number" id="new-task-count" class="form-input w-20 p-2 rounded-md" placeholder="人數" value="1" min="1" title="每天需要幾人">
+                                <input type="number" id="new-task-priority" class="form-input w-16 p-2 rounded-md text-center" placeholder="優先" value="9" min="1" max="9" title="優先級（1=最優先，9=最低）">
+                                <button id="add-task-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold p-2 rounded-md flex-shrink-0">＋</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item card rounded-lg shadow-md mt-4">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>2. 人員設定</span>
+                            <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                            <div class="space-y-2 mb-3" id="personnel-list"></div>
+                            <div class="flex gap-2">
+                                <input type="text" id="new-personnel-name" class="form-input flex-grow p-2 rounded-md" placeholder="人員姓名">
+                                <button id="add-personnel-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold p-2 rounded-md flex-shrink-0">＋</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item card rounded-lg shadow-md mt-4 active">
+                        <button class="accordion-header w-full flex justify-between items-center p-4 text-left font-bold text-lg">
+                            <span>3. 產生班表</span>
+                            <svg class="accordion-arrow w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                        <div class="accordion-content">
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block font-medium text-sm text-muted mb-1">選擇開始週</label>
+                                    <input type="week" id="start-week" class="form-input w-full p-2 rounded-md">
+                                </div>
+                                <div>
+                                    <label for="num-weeks" class="block font-medium text-sm text-muted mb-1">產生週數</label>
+                                    <input type="number" id="num-weeks" value="1" min="1" max="10" class="form-input w-full p-2 rounded-md">
+                                </div>
+                                <div>
+                                    <label class="block font-medium text-sm text-muted mb-1">假日排休設定</label>
+                                    <button type="button" id="holiday-settings-btn" class="form-input w-full p-2 rounded-md text-left flex justify-between items-center" aria-expanded="false">
+                                        <span id="holiday-settings-text">編輯假日選項</span>
+                                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <button id="generate-schedule" class="mt-4 w-full text-lg bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md transition shadow-lg flex items-center justify-center gap-2">
+                                <span id="generate-btn-text">產生智慧班表</span>
+                                <div id="generate-spinner" class="spinner hidden"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 space-y-6 min-w-0">
+                <div id="output-container" class="card p-4 rounded-lg shadow-md hidden" style="transition: opacity 0.3s;">
+                    <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                        <div class="flex items-center gap-3">
+                            <h2 class="text-2xl font-bold">班表結果</h2>
+                            <div class="flex gap-1 text-sm">
+                                <button id="view-schedule-btn" class="px-3 py-1 rounded bg-blue-600 text-white text-xs">班表</button>
+                                <button id="view-personnel-btn" class="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs">人員</button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button id="save-schedule-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md transition">儲存班表</button>
+                            <button id="copy-schedule" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-md transition">複製</button>
+                            <button id="export-excel" class="bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition">Excel</button>
+                            <button id="export-personnel-excel" class="hidden bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-3 rounded-md transition text-sm">人員 Excel</button>
+                            <button id="export-pdf" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-3 rounded-md transition">PDF（推薦）</button>
+                            <button id="export-image-pdf" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-md transition text-sm">瀏覽器列印</button>
+                        </div>
+                    </div>
+                    <div id="schedule-output" class="overflow-x-auto"></div>
+                    <div id="personnel-view" class="hidden mt-2 overflow-x-auto"></div>
+                    <div id="fill-stats-panel" class="mt-4 hidden"></div>
+                </div>
+
+                <div class="card p-4 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-3">已儲存的班表</h2>
+                    <ul id="saved-schedules-list" class="list-disc pl-5 space-y-1 text-blue-600 dark:text-blue-400"></ul>
+                </div>
+            </div>
+        </div>
+
+        <footer class="text-center mt-8 text-sm text-muted">
+            <div id="status-container" class="flex items-center justify-center gap-2 mb-2" title="正在檢查連線狀態...">
+                <div id="status-indicator" class="w-3 h-3 rounded-full bg-gray-400 transition-colors"></div>
+                <p id="status-text" class="text-xs">正在檢查連線...</p>
+            </div>
+            <p>智慧排班系統 &copy; <span id="footer-year"></span>. All Rights Reserved.</p>
+        </footer>
+    </div>
+
+    <!-- Personnel Modal -->
+    <div id="personnel-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
+            <h3 class="text-2xl font-bold mb-4">進階設定: <span id="modal-personnel-name"></span></h3>
+            <div class="mb-4">
+                <label class="block font-medium mb-2">固定排休 (星期幾)</label>
+                <div id="off-days-container" class="flex flex-wrap gap-2"></div>
+            </div>
+            <div class="mb-6">
+                <label for="preferred-task-select" class="block font-medium mb-2">偏好勤務地點</label>
+                <select id="preferred-task-select" class="form-input w-full p-2 rounded-md"></select>
+            </div>
+            <div class="flex justify-end gap-3">
+                <button id="modal-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
+                <button id="modal-save-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Modal -->
+    <div id="input-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
+            <h3 id="input-modal-title" class="text-lg font-bold mb-4"></h3>
+            <input id="input-modal-field" type="text" class="form-input w-full p-2 rounded-md mb-4" />
+            <div class="flex justify-end gap-2">
+                <button id="input-modal-cancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">取消</button>
+                <button id="input-modal-confirm" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 max-w-sm mx-auto">
+            <p id="confirm-modal-message" class="text-base mb-6 whitespace-pre-wrap"></p>
+            <div class="flex justify-end gap-2">
+                <button id="confirm-modal-cancel" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">取消</button>
+                <button id="confirm-modal-ok" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md transition">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Holiday Modal -->
+    <div id="holiday-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 md:w-1/2 max-w-lg mx-auto">
+            <h3 class="text-2xl font-bold mb-4">假日排休設定</h3>
+            <div id="modal-holiday-list" class="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-600 p-3 rounded-md mb-6"></div>
+            <div class="flex justify-end gap-3">
+                <button id="modal-holiday-close-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-md transition">關閉</button>
+                <button id="modal-holiday-save-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-md transition">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Diff Modal -->
+    <div id="diff-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="card p-6 rounded-lg shadow-xl w-11/12 max-w-2xl mx-auto flex flex-col" style="max-height:80vh">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-lg font-bold">與原始班表的差異</h3>
+                <button id="diff-modal-close" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-2xl leading-none">&times;</button>
+            </div>
+            <div id="diff-modal-content" class="overflow-y-auto flex-1 text-sm"></div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-5 right-5 flex flex-col gap-2 z-[9999] pointer-events-none"></div>
+
+    <!-- Tailwind safelist -->
+    <div aria-hidden="true" style="display:none"
+        class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200
+               bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200
+               bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200
+               bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200
+               bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200
+               bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200
+               bg-white dark:bg-gray-800 bg-gray-50 dark:bg-gray-700 bg-gray-100
+               border-gray-200 dark:border-gray-600
+               bg-amber-50 dark:bg-amber-900 border-amber-300 dark:border-amber-600
+               text-amber-800 dark:text-amber-200
+               text-green-600 dark:text-green-400 text-red-500 dark:text-red-400
+               text-gray-700 dark:text-gray-300 text-gray-500 dark:text-gray-400">
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
