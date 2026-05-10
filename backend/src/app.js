@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
+const fs = require('fs');
 const { CORS_ORIGIN } = require('./config');
 
 // Routes
@@ -58,22 +60,19 @@ app.use(schedulesRouter);
 app.use(generateRouter);
 app.use(schoolCalendarRouter);
 
-// 根路由 placeholder（前端 Vite dev server 會接管，此處只提供 fallback）
-app.get('/', (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html lang="zh-Hant">
-<head><meta charset="UTF-8"><title>智慧排班系統 v2</title></head>
-<body>
-  <h1>智慧排班系統 v2 後端運行中</h1>
-  <p>請啟動前端 Vite dev server (v2/frontend) 以使用完整功能。</p>
-  <p><a href="/api/status">查看 API 狀態</a></p>
-</body>
-</html>`);
-});
-
-// Favicon 路由 - 防止 404
-app.get('/favicon.ico', (req, res) => {
-  res.status(204).end();
-});
+// Production：serve 前端 dist 靜態檔
+const distPath = path.join(__dirname, '..', 'public');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+} else {
+  // Dev fallback
+  app.get('/', (req, res) => {
+    res.send('<h1>智慧排班系統 v2 後端運行中</h1><p><a href="/api/status">API 狀態</a></p>');
+  });
+  app.get('/favicon.ico', (req, res) => res.status(204).end());
+}
 
 module.exports = app;
