@@ -5,7 +5,6 @@ const {
   holidaysCache,
   getWeekInfo,
   getHolidaysForYear,
-  seedHolidays,
 } = require('../services/holidayService');
 
 const debugDb = debug('app:db');
@@ -34,7 +33,9 @@ router.post('/api/holidays/reseed', async (req, res) => {
     const deleteResult = await getHolidaysCollection().deleteMany({});
     debugDb(`已刪除 ${deleteResult.deletedCount} 筆舊假日資料。`);
     holidaysCache.clear();
-    await seedHolidays();
+    const currentYear = new Date().getFullYear();
+    const years = [currentYear - 1, currentYear, currentYear + 1];
+    await Promise.all(years.map((year) => getHolidaysForYear(year)));
     const count = await getHolidaysCollection().countDocuments();
     res.json({ message: '假日資料重新植入完成', count });
   } catch (error) {

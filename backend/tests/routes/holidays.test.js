@@ -26,7 +26,7 @@ jest.mock('../../src/services/holidayService', () => ({
 const request = require('supertest');
 const app = require('../../server');
 const { getIsDbConnected, getHolidaysCollection } = require('../../src/db/connect');
-const { getWeekInfo, getHolidaysForYear, seedHolidays } = require('../../src/services/holidayService');
+const { getWeekInfo, getHolidaysForYear } = require('../../src/services/holidayService');
 
 /** 建立可覆寫欄位的 mock collection */
 const makeMockCol = (overrides = {}) => ({
@@ -92,16 +92,16 @@ describe('POST /api/holidays/reseed', () => {
   });
 
   it('成功重新植入後回傳 message 與 count', async () => {
-    seedHolidays.mockResolvedValue();
+    getHolidaysForYear.mockResolvedValue(new Map());
     const res = await request(app).post('/api/holidays/reseed');
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('message');
     expect(res.body).toHaveProperty('count');
-    expect(seedHolidays).toHaveBeenCalled();
+    expect(getHolidaysForYear).toHaveBeenCalled();
   });
 
-  it('seedHolidays 失敗時回傳 500', async () => {
-    seedHolidays.mockRejectedValue(new Error('seed failed'));
+  it('getHolidaysForYear 失敗時回傳 500', async () => {
+    getHolidaysForYear.mockRejectedValue(new Error('fetch failed'));
     const res = await request(app).post('/api/holidays/reseed');
     expect(res.status).toBe(500);
   });
