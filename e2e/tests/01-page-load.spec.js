@@ -11,11 +11,11 @@ test.describe('頁面載入', () => {
   });
 
   test('設定面板可見：勤務區塊', async ({ page }) => {
-    await expect(page.locator('#task-list')).toBeVisible();
+    await expect(page.locator('#add-task-btn')).toBeVisible();
   });
 
   test('設定面板可見：人員區塊', async ({ page }) => {
-    await expect(page.locator('#personnel-list')).toBeVisible();
+    await expect(page.locator('#add-personnel-btn')).toBeVisible();
   });
 
   test('產生班表按鈕可見', async ({ page }) => {
