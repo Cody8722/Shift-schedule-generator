@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "test:e2e": "cd e2e && npx playwright test",
+    "test:e2e:headed": "cd e2e && npx playwright test --headed",
+    "test:e2e:ui": "cd e2e && npx playwright test --ui",
+    "test:backend": "cd backend && npm test"
+  }
+}
