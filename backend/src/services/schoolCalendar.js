@@ -1,7 +1,10 @@
 const iconv = require('iconv-lite');
 const debug = require('debug');
+const { getIsDbConnected, getSchoolEventsCollection } = require('../db/connect');
 
 const debugServer = debug('app:server');
+
+const MONGO_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
 
 // 學校行事曆快取（6小時）
 let schoolEventsCache = { data: null, fetchedAt: 0 };
@@ -76,6 +79,20 @@ const getSchoolEvents = async () => {
 
   const BASE = 'https://s44.mingdao.edu.tw/AACourses/Web/';
   const period = getCurrentPeriod();
+
+  // 查 MongoDB 持久快取（7 天內有效）
+  if (getIsDbConnected()) {
+    try {
+      const doc = await getSchoolEventsCollection().findOne({ _id: period });
+      if (doc && Date.now() - doc.fetchedAt < MONGO_TTL_MS) {
+        schoolEventsCache = { data: doc.events, fetchedAt: doc.fetchedAt };
+        debugServer('school events loaded from MongoDB cache (period: %s)', period);
+        return { cached: true, data: doc.events };
+      }
+    } catch (e) {
+      debugServer('MongoDB school events cache read failed: %s', e.message);
+    }
+  }
   const rocYear = parseInt(period.slice(0, -1));
   const semester = parseInt(period.slice(-1));
   const baseYear = rocYear + 1911;
@@ -197,7 +214,24 @@ const getSchoolEvents = async () => {
   }
 
   debugServer('school events fetched: %d events, %d exam days', events.length, examDateNameMap.size);
-  schoolEventsCache = { data: events, fetchedAt: Date.now() };
+
+  const fetchedAt = Date.now();
+  schoolEventsCache = { data: events, fetchedAt };
+
+  // 存入 MongoDB 持久快取
+  if (getIsDbConnected()) {
+    try {
+      await getSchoolEventsCollection().replaceOne(
+        { _id: period },
+        { _id: period, events, fetchedAt },
+        { upsert: true }
+      );
+      debugServer('school events saved to MongoDB (period: %s)', period);
+    } catch (e) {
+      debugServer('MongoDB school events cache write failed: %s', e.message);
+    }
+  }
+
   return { cached: false, data: events };
 };
 

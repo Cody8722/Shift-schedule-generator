@@ -9,6 +9,7 @@ let client;
 let db;
 let configCollection;
 let holidaysCollection;
+let schoolEventsCollection;
 let isDbConnected = false;
 
 if (MONGODB_URI) {
@@ -35,6 +36,8 @@ const getConfigCollection = () => configCollection;
 
 const getHolidaysCollection = () => holidaysCollection;
 
+const getSchoolEventsCollection = () => schoolEventsCollection;
+
 const connect = async () => {
   if (!client) return;
   debugServer('正在連線至 MongoDB...');
@@ -44,6 +47,7 @@ const connect = async () => {
   db = client.db(DB_NAME);
   configCollection = db.collection('profiles');
   holidaysCollection = db.collection('holidays');
+  schoolEventsCollection = db.collection('schoolEvents');
   isDbConnected = true;
 };
 
@@ -82,6 +86,7 @@ module.exports = {
   getIsDbConnected,
   getConfigCollection,
   getHolidaysCollection,
+  getSchoolEventsCollection,
   connect,
   disconnect,
   ensureConfigDocument,
