@@ -235,4 +235,4 @@ const getSchoolEvents = async () => {
   return { cached: false, data: events };
 };
 
-module.exports = { getSchoolEvents };
+module.exports = { getSchoolEvents, schoolEventsCache };
