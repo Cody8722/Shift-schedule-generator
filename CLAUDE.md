@@ -56,7 +56,8 @@ GET    /api/schedules/:name
 DELETE /api/schedules/:name
 POST   /api/generate-schedule
 POST   /api/render-schedule
-GET    /api/school-calendar
+GET    /api/school-events
+POST   /api/school-events/refresh
 GET    /
 ```
 
@@ -65,6 +66,11 @@ GET    /
 - 不可刪除或重命名 MongoDB 文件中的現有欄位
 - 新增欄位必須有預設值或允許 `null`，以確保與現有資料相容
 - 若需移除欄位，必須先與使用者討論 migration 策略
+
+MongoDB 集合清單（`scheduleApp` 資料庫）：
+- `profiles`：設定檔與排班資料
+- `holidays`：台灣國定假日（`_id` 為日期字串如 `2025-01-01`）
+- `schoolEvents`：學校行事曆快取（`_id` 為學期代碼如 `1142`，7 天 TTL）
 
 ---
 
@@ -89,13 +95,13 @@ backend/
     app.js                       # Express 設定、middleware、路由掛載
     config.js                    # 環境變數
     validators.js                # 輸入驗證（profile/schedule 名稱、settings）
-    db/connect.js                # MongoDB 連線管理
+    db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents 三個 collection）
     routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar
     services/
       scheduleAlgorithm.js       # 排班核心演算法（純函數）
       scheduleRenderer.js        # HTML 渲染
-      holidayService.js          # 假日快取、CDN 更新、seedHolidays
-      schoolCalendar.js          # 學校行事曆
+      holidayService.js          # 假日快取、CDN 更新
+      schoolCalendar.js          # 學校行事曆（記憶體 6h + MongoDB 7 天持久快取）
     repositories/
       profileRepository.js       # MongoDB CRUD（profiles、schedules）
   tests/
@@ -304,7 +310,8 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 
 ### 🟡 holidaysCache 不自動更新
 
-假日資料在伺服器**啟動時**載入進 Map，修改 `holidays/*.json` 後必須重啟伺服器才有效。
+假日資料在記憶體中快取。若需更新，呼叫 `POST /api/holidays/reseed`（從 CDN 重新拉取三年資料）。
+直接修改 `holidays/*.json` 不會生效——reseed 現在走 CDN，不讀本地 JSON。
 
 ### 🟡 backend/tests/ 的端點路徑
 
