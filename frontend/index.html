@@ -636,8 +636,8 @@ body:not(.editing) .edit-toolbar { display: none; }
   font-size: 11px;
 }
 
-/* Person tags inside cells */
-.s-table .editable-cell .persons {
+/* Person tags inside cells (edit and preview) */
+.s-table td .persons {
   display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
 }
 .person-tag {
@@ -677,6 +677,28 @@ body:not(.editing) .edit-toolbar { display: none; }
 .fillrate-card .bar > div { height: 100%; background: var(--success); }
 .fillrate-card.warn .bar > div { background: var(--warn); }
 .fillrate-card.warn .nums { color: var(--warn); }
+
+/* ─── Weekly stats footer (per-week shift counts) ───────────── */
+.week-footer {
+  margin-top: 12px; padding: 12px 16px;
+  background: var(--bg-inset); border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+}
+.week-footer .wf-title {
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;
+}
+.wf-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.wf-tag {
+  padding: 2px 10px; border-radius: var(--radius-pill);
+  font-size: 12px; font-weight: 500; border: 1px solid transparent;
+}
+.wf-tag.zero  { background: var(--bg-surface-2); color: var(--text-muted); border-color: var(--border-subtle); }
+.wf-tag.ok    { background: var(--success-soft); color: var(--success); border-color: var(--success-border); }
+.wf-tag.near  { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
+.wf-tag.full  { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
+.wf-tag.over  { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); font-weight: 700; }
+.wf-tag.ghost { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-border); font-style: italic; }
 
 /* ─── Saved schedules ───────────────────────────────────────── */
 .saved {

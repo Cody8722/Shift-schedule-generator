@@ -10,87 +10,90 @@ const escapeHtml = (unsafe) => {
 };
 
 const generateScheduleHtml = (fullScheduleData) => {
-  // 加入 A4 直式版面的 CSS
   let html = `
 <style>
 @media print {
-    @page {
-        size: A4 portrait;
-        margin: 10mm;
-    }
-    body {
-        width: 210mm;
-        min-height: 297mm;
-    }
+    @page { size: A4 portrait; margin: 10mm; }
+    body { width: 210mm; min-height: 297mm; }
+    .week-block { break-inside: avoid; }
 }
 </style>
 `;
 
   fullScheduleData.forEach((data, index) => {
-    const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = data;
+    const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
     const weekDayNames = ['一', '二', '三', '四', '五'];
-    // 驗證並清理顏色值（防止 CSS 注入）
-    const safeHeaderColor = /^#[0-9a-fA-F]{6}$/.test(color.header) ? color.header : '#0284c7';
-    const headerStyle = `style="background-color: ${safeHeaderColor}; color: white;"`;
+
+    const workDays = scheduleDays.filter((d) => d.shouldSchedule).length;
+    const demand = tasks.reduce((s, t) => s + t.count, 0) * workDays;
+    const filled = tasks.reduce((s, task, ti) =>
+      s + scheduleDays.reduce((a, day, di) =>
+        a + (day.shouldSchedule ? schedule[di][ti].length : 0), 0), 0);
+    const pct = demand > 0 ? Math.round(filled / demand * 100) : 100;
+    const fillClass = pct >= 100 ? 'ok' : 'warn';
+
+    const theadCols = weekDayDates.map((date, i) =>
+      `<th><span class="dow">星期${weekDayNames[i]}</span><span class="date">${escapeHtml(date)}</span></th>`
+    ).join('');
+
+    const tbodyRows = tasks.map((task, taskIndex) => {
+      const maxPersonnel = Math.max(
+        ...weekDayDates.map((_, dayIndex) =>
+          scheduleDays[dayIndex].shouldSchedule ? schedule[dayIndex][taskIndex].length : 0
+        ),
+        1
+      );
+      const priorityCls = `p${task.priority || 9}`;
+      let rows = '';
+      for (let pi = 0; pi < maxPersonnel; pi++) {
+        rows += '<tr>';
+        if (pi === 0) {
+          rows += `<td class="task-cell" rowspan="${maxPersonnel}">
+            <span class="priority-dot ${priorityCls}"></span>${escapeHtml(task.name)}
+            <span class="task-meta">需 ${task.count} · P${task.priority || 9}</span>
+          </td>`;
+        }
+        weekDayDates.forEach((_, dayIndex) => {
+          if (!scheduleDays[dayIndex].shouldSchedule) {
+            if (pi === 0) {
+              rows += `<td class="holiday-cell" rowspan="${maxPersonnel}">
+                <span class="holiday-label">${escapeHtml(scheduleDays[dayIndex].description)}</span>
+              </td>`;
+            }
+          } else {
+            const personName = schedule[dayIndex][taskIndex][pi] || '';
+            if (personName) {
+              rows += `<td><div class="persons"><span class="person-tag">${escapeHtml(personName)}</span></div></td>`;
+            } else {
+              rows += `<td class="warn-cell"><div class="persons"><span class="person-tag unfilled">＋ 待補</span></div></td>`;
+            }
+          }
+        });
+        rows += '</tr>';
+      }
+      return rows;
+    }).join('');
 
     html += `
-            <div class="mb-8" id="schedule-week-${index}">
-                <h3 class="text-xl font-bold mb-2">第 ${index + 1} 週班表 (${escapeHtml(dateRange)})</h3>
-                <table class="schedule-table">
-                    <thead>
-                        <tr>
-                            <th ${headerStyle}>勤務地點</th>
-                            ${weekDayDates
-                              .map(
-                                (date, i) =>
-                                  `<th ${headerStyle}>星期${weekDayNames[i]}<br>(${escapeHtml(date)})</th>`
-                              )
-                              .join('')}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tasks
-                          .map((task, taskIndex) => {
-                            // 計算這個任務在整週中最多有幾位員工（決定需要幾列）
-                            const maxPersonnel = Math.max(
-                              ...weekDayDates.map((_, dayIndex) =>
-                                scheduleDays[dayIndex].shouldSchedule
-                                  ? schedule[dayIndex][taskIndex].length
-                                  : 0
-                              ),
-                              1 // 至少一列
-                            );
-
-                            let taskRows = '';
-                            for (let personIndex = 0; personIndex < maxPersonnel; personIndex++) {
-                              taskRows += '<tr>';
-
-                              if (personIndex === 0) {
-                                taskRows += `<td class="font-medium align-middle" rowspan="${maxPersonnel}">${escapeHtml(task.name)}</td>`;
-                              }
-
-                              weekDayDates.forEach((_, dayIndex) => {
-                                if (!scheduleDays[dayIndex].shouldSchedule) {
-                                  if (personIndex === 0) {
-                                    taskRows += `<td class="holiday-cell align-middle" rowspan="${maxPersonnel}">${escapeHtml(scheduleDays[dayIndex].description)}</td>`;
-                                  }
-                                } else {
-                                  const personnel = schedule[dayIndex][taskIndex];
-                                  const personName = personnel[personIndex] || '';
-                                  taskRows += `<td class="align-middle">${escapeHtml(personName)}</td>`;
-                                }
-                              });
-
-                              taskRows += '</tr>';
-                            }
-                            return taskRows;
-                          })
-                          .join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
+<div class="week-block" id="schedule-week-${index}">
+  <div class="week-head">
+    <div class="week-label">
+      <span class="week-num">W${index + 1}</span>
+      <span class="week-date">${escapeHtml(dateRange)}</span>
+    </div>
+    <div class="week-stats">填補 <span class="${fillClass}">${filled}/${demand}</span> · ${pct}%</div>
+  </div>
+  <table class="s-table">
+    <thead><tr>
+      <th style="text-align:left; padding-left: 16px;">勤務</th>
+      ${theadCols}
+    </tr></thead>
+    <tbody>${tbodyRows}</tbody>
+  </table>
+</div>
+`;
   });
+
   return html;
 };
 

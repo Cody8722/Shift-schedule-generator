@@ -409,35 +409,47 @@ function populatePersonnelSidebar() {
 }
 
 function createEditableWeek(weekData, weekIndex) {
-  const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = weekData;
+  const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = weekData;
   const weekDayNames = ['一', '二', '三', '四', '五'];
 
+  // 計算填補率用於 week-head
+  const workDays = scheduleDays.filter(d => d.shouldSchedule).length;
+  const demand = tasks.reduce((s, t) => s + t.count, 0) * workDays;
+  const filled = tasks.reduce((s, task, ti) =>
+    s + scheduleDays.reduce((a, day, di) =>
+      a + (day.shouldSchedule ? schedule[di][ti].length : 0), 0), 0);
+  const pct = demand > 0 ? Math.round(filled / demand * 100) : 100;
+  const fillClass = pct >= 100 ? 'ok' : 'warn';
+
   const weekDiv = document.createElement('div');
-  weekDiv.className = 'mb-8';
+  weekDiv.className = 'week-block';
   weekDiv.id = `schedule-week-${weekIndex}`;
 
-  const title = document.createElement('h3');
-  title.className = 'text-xl font-bold mb-2';
-  title.textContent = `第 ${weekIndex + 1} 週班表 (${dateRange})`;
-  weekDiv.appendChild(title);
+  const weekHead = document.createElement('div');
+  weekHead.className = 'week-head';
+  weekHead.innerHTML = `
+    <div class="week-label">
+      <span class="week-num">W${weekIndex + 1}</span>
+      <span class="week-date">${dateRange}</span>
+    </div>
+    <div class="week-stats">填補 <span class="${fillClass}">${filled}/${demand}</span> · ${pct}%</div>`;
+  weekDiv.appendChild(weekHead);
 
   const table = document.createElement('table');
-  table.className = 'schedule-table w-full border-collapse';
+  table.className = 's-table';
 
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
 
   const thTask = document.createElement('th');
-  thTask.style.backgroundColor = color.header;
-  thTask.style.color = 'white';
-  thTask.textContent = '勤務地點';
+  thTask.style.textAlign = 'left';
+  thTask.style.paddingLeft = '16px';
+  thTask.textContent = '勤務';
   headerRow.appendChild(thTask);
 
   weekDayDates.forEach((date, dayIndex) => {
     const th = document.createElement('th');
-    th.style.backgroundColor = color.header;
-    th.style.color = 'white';
-    th.innerHTML = `星期${weekDayNames[dayIndex]}<br>(${date})`;
+    th.innerHTML = `<span class="dow">星期${weekDayNames[dayIndex]}</span><span class="date">${date}</span>`;
     headerRow.appendChild(th);
   });
 
@@ -449,20 +461,19 @@ function createEditableWeek(weekData, weekIndex) {
     const row = document.createElement('tr');
 
     const tdTask = document.createElement('td');
-    tdTask.className = 'font-medium align-middle bg-gray-50';
-    tdTask.textContent = task.name;
+    tdTask.className = 'task-cell';
+    const priorityCls = `p${task.priority || 9}`;
+    tdTask.innerHTML = `<span class="priority-dot ${priorityCls}"></span>${task.name}<span class="task-meta">需 ${task.count} · P${task.priority || 9}</span>`;
     row.appendChild(tdTask);
 
     weekDayDates.forEach((date, dayIndex) => {
       const td = document.createElement('td');
-      td.className = 'align-middle p-2 border border-gray-300 min-h-[60px]';
 
       if (!scheduleDays[dayIndex].shouldSchedule) {
-        td.classList.add('holiday-cell');
-        td.textContent = scheduleDays[dayIndex].description;
+        td.className = 'holiday-cell';
+        td.innerHTML = `<span class="holiday-label">${scheduleDays[dayIndex].description}</span>`;
       } else {
-        td.classList.add('editable-cell', 'hover:bg-blue-50', 'cursor-pointer');
-        td.style.position = 'relative';
+        td.className = 'editable-cell';
         td.dataset.weekIndex = weekIndex;
         td.dataset.dayIndex = dayIndex;
         td.dataset.taskIndex = taskIndex;
@@ -489,19 +500,18 @@ function createEditableWeek(weekData, weekIndex) {
   table.appendChild(tbody);
   weekDiv.appendChild(table);
 
-  const statsDiv = createWeeklyStats(weekData, weekIndex);
+  const statsDiv = createWeeklyStats(weekData);
   weekDiv.appendChild(statsDiv);
 
   return weekDiv;
 }
 
-function createWeeklyStats(weekData, weekIndex) {
+function createWeeklyStats(weekData) {
   const { schedule } = weekData;
   const personnel = getActiveProfile().settings.personnel || [];
 
   const shiftCounts = {};
   personnel.forEach((person) => { shiftCounts[person.name] = 0; });
-
   schedule.forEach((daySchedule) => {
     daySchedule.forEach((taskPersonnel) => {
       taskPersonnel.forEach((personName) => {
@@ -510,60 +520,51 @@ function createWeeklyStats(weekData, weekIndex) {
     });
   });
 
-  const statsContainer = document.createElement('div');
-  statsContainer.className = 'mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 weekly-stats-card';
+  const container = document.createElement('div');
+  container.className = 'week-footer';
 
   const title = document.createElement('div');
-  title.className = 'font-semibold text-gray-700 mb-2 text-sm';
-  title.textContent = '本週值勤次數統計';
-  statsContainer.appendChild(title);
+  title.className = 'wf-title';
+  title.textContent = '本週值勤次數';
+  container.appendChild(title);
 
-  const tagsContainer = document.createElement('div');
-  tagsContainer.className = 'flex flex-wrap gap-2';
+  const tags = document.createElement('div');
+  tags.className = 'wf-tags';
 
   personnel.forEach((person) => {
     const count = shiftCounts[person.name] || 0;
     const maxShifts = person.maxShifts || 5;
-    const tag = document.createElement('div');
-    tag.className = 'px-3 py-1 rounded-full text-sm font-medium';
-    if (count === 0) {
-      tag.className += ' bg-gray-200 text-gray-600';
-    } else if (count > maxShifts) {
-      tag.className += ' bg-red-100 text-red-700 border-2 border-red-400';
-      tag.textContent = `${person.name}: ${count}/${maxShifts}`;
-    } else if (count === maxShifts) {
-      tag.className += ' bg-orange-100 text-orange-700';
-    } else if (count >= maxShifts - 1) {
-      tag.className += ' bg-yellow-100 text-yellow-700';
-    } else {
-      tag.className += ' bg-green-100 text-green-700';
-    }
-    if (!tag.textContent) tag.textContent = `${person.name}: ${count}/${maxShifts}`;
-    tagsContainer.appendChild(tag);
+    const tag = document.createElement('span');
+    let stateClass = 'ok';
+    if (count === 0) stateClass = 'zero';
+    else if (count > maxShifts) stateClass = 'over';
+    else if (count === maxShifts) stateClass = 'full';
+    else if (count >= maxShifts - 1) stateClass = 'near';
+    tag.className = `wf-tag ${stateClass}`;
+    tag.textContent = `${person.name}: ${count}/${maxShifts}`;
+    tags.appendChild(tag);
   });
 
   Object.keys(shiftCounts).forEach((personName) => {
-    const isInCurrentList = personnel.some((p) => p.name === personName);
-    if (!isInCurrentList) {
+    if (!personnel.some((p) => p.name === personName)) {
       const count = shiftCounts[personName];
-      const tag = document.createElement('div');
-      tag.className =
-        'px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700 border border-purple-300';
+      const tag = document.createElement('span');
+      tag.className = 'wf-tag ghost';
       tag.textContent = `${personName}: ${count} (已刪除)`;
-      tagsContainer.appendChild(tag);
+      tags.appendChild(tag);
     }
   });
 
-  statsContainer.appendChild(tagsContainer);
-  return statsContainer;
+  container.appendChild(tags);
+  return container;
 }
 
 function updateWeeklyStats(weekIndex) {
   const weekElement = document.getElementById(`schedule-week-${weekIndex}`);
   if (!weekElement) return;
-  const oldStats = weekElement.querySelector('.mt-3.p-3.bg-gray-50');
+  const oldStats = weekElement.querySelector('.week-footer');
   if (oldStats) oldStats.remove();
-  const statsDiv = createWeeklyStats(getEditingData()[weekIndex], weekIndex);
+  const statsDiv = createWeeklyStats(getEditingData()[weekIndex]);
   weekElement.appendChild(statsDiv);
 }
 
@@ -580,44 +581,40 @@ function renderCellPersonnel(cell, personnelList) {
   const taskRequiredCount = editingData[weekIndex].tasks[taskIndex].count;
   const currentCount = personnelList.length;
 
-  const container = document.createElement('div');
-  container.className = 'flex flex-col gap-1';
-
-  const countIndicator = document.createElement('div');
-  countIndicator.className = 'text-xs font-semibold';
+  // 缺/滿/超額 小指示器
+  const countEl = document.createElement('div');
+  countEl.style.cssText = 'font:500 10px var(--font-mono);margin-bottom:4px;';
   if (currentCount < taskRequiredCount) {
-    countIndicator.className += ' text-orange-600';
-    countIndicator.textContent = `${currentCount}/${taskRequiredCount} (缺 ${taskRequiredCount - currentCount})`;
-  } else if (currentCount === taskRequiredCount) {
-    countIndicator.className += ' text-green-600';
-    countIndicator.textContent = `${currentCount}/${taskRequiredCount} ✓`;
+    countEl.style.color = 'var(--warn)';
+    countEl.textContent = `${currentCount}/${taskRequiredCount} ✗`;
+    cell.classList.add('warn-cell');
   } else {
-    countIndicator.className += ' text-red-600';
-    countIndicator.textContent = `${currentCount}/${taskRequiredCount} (超額)`;
+    countEl.style.color = 'var(--success)';
+    countEl.textContent = `${currentCount}/${taskRequiredCount} ✓`;
+    cell.classList.remove('warn-cell');
   }
-  container.appendChild(countIndicator);
+  cell.appendChild(countEl);
 
-  const personnelContainer = document.createElement('div');
-  personnelContainer.className = 'flex flex-wrap gap-1';
+  const persons = document.createElement('div');
+  persons.className = 'persons';
 
   personnelList.forEach((personName, index) => {
     const tag = document.createElement('span');
-    tag.className =
-      'person-tag inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm cursor-move';
+    tag.className = 'person-tag';
     tag.draggable = true;
+    tag.dataset.personName = personName;
+    tag.dataset.personIndex = index;
 
     const nameSpan = document.createElement('span');
     nameSpan.textContent = personName;
     tag.appendChild(nameSpan);
 
     const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-person ml-1 text-red-600 hover:text-red-800 font-bold';
+    removeBtn.className = 'remove-person';
+    removeBtn.style.cssText = 'color:var(--danger);font-weight:700;margin-left:2px;font-size:13px;line-height:1;';
     removeBtn.textContent = '×';
     removeBtn.draggable = false;
     tag.appendChild(removeBtn);
-
-    tag.dataset.personName = personName;
-    tag.dataset.personIndex = index;
 
     tag.addEventListener('dragstart', handleTagDragStart);
     tag.addEventListener('dragend', handlePersonDragEnd);
@@ -632,18 +629,17 @@ function renderCellPersonnel(cell, personnelList) {
     });
     removeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 
-    personnelContainer.appendChild(tag);
+    persons.appendChild(tag);
   });
 
   if (personnelList.length === 0) {
     const placeholder = document.createElement('span');
-    placeholder.className = 'text-gray-400 text-sm';
-    placeholder.textContent = '點擊選擇或拖拽人員';
-    personnelContainer.appendChild(placeholder);
+    placeholder.className = 'person-tag unfilled';
+    placeholder.textContent = '＋ 待補';
+    persons.appendChild(placeholder);
   }
 
-  container.appendChild(personnelContainer);
-  cell.appendChild(container);
+  cell.appendChild(persons);
 
   requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(scrollX, scrollY)));
 }
