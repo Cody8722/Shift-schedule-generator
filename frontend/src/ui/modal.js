@@ -9,7 +9,7 @@ export const showInput = (title, defaultValue = '') => {
     document.getElementById('input-modal-title').textContent = title;
     const field = document.getElementById('input-modal-field');
     field.value = defaultValue;
-    document.getElementById('input-modal').classList.remove('hidden');
+    document.getElementById('input-modal').classList.add('open');
     setTimeout(() => {
       field.focus();
       field.select();
@@ -29,7 +29,7 @@ export const showInput = (title, defaultValue = '') => {
     };
 
     function cleanup() {
-      document.getElementById('input-modal').classList.add('hidden');
+      document.getElementById('input-modal').classList.remove('open');
       document.getElementById('input-modal-confirm').removeEventListener('click', onConfirm);
       document.getElementById('input-modal-cancel').removeEventListener('click', onCancel);
       field.removeEventListener('keydown', onKeydown);
@@ -49,7 +49,7 @@ export const showInput = (title, defaultValue = '') => {
 export const showConfirm = (message) => {
   return new Promise((resolve) => {
     document.getElementById('confirm-modal-message').textContent = message;
-    document.getElementById('confirm-modal').classList.remove('hidden');
+    document.getElementById('confirm-modal').classList.add('open');
 
     const onOk = () => {
       cleanup();
@@ -61,7 +61,7 @@ export const showConfirm = (message) => {
     };
 
     function cleanup() {
-      document.getElementById('confirm-modal').classList.add('hidden');
+      document.getElementById('confirm-modal').classList.remove('open');
       document.getElementById('confirm-modal-ok').removeEventListener('click', onOk);
       document.getElementById('confirm-modal-cancel').removeEventListener('click', onCancel);
     }

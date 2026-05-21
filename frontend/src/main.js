@@ -78,13 +78,27 @@ const updateCapacityStatus = () => {
   const capacity = (settings.personnel || []).reduce((s, p) => s + (p.maxShifts || 5), 0);
   const demand = (settings.tasks || []).reduce((s, t) => s + (t.count || 1), 0) * 5;
   const diff = capacity - demand;
-  if (!capacity && !demand) { el.textContent = ''; return; }
+
+  // Update redesign capacity panel elements
+  const supplyEl = document.getElementById('cap-supply');
+  const demandEl = document.getElementById('cap-demand');
+  const noteEl = document.getElementById('cap-note');
+  const fillEl = el.querySelector('.capacity-fill');
+  if (supplyEl) supplyEl.textContent = capacity;
+  if (demandEl) demandEl.textContent = demand;
+  if (!capacity && !demand) {
+    if (noteEl) noteEl.textContent = '尚未設定人員或勤務';
+    el.classList.remove('short');
+    return;
+  }
+  const pct = demand > 0 ? Math.min(100, Math.round(capacity / demand * 100)) : 100;
+  if (fillEl) fillEl.style.width = pct + '%';
   if (diff >= 0) {
-    el.className = 'text-sm p-2 rounded-md mt-2 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-    el.textContent = `容量 ${capacity} ≥ 需求 ${demand}（每週最多可排滿）`;
+    el.classList.remove('short');
+    if (noteEl) noteEl.textContent = `${(settings.personnel || []).length} 位人員可提供 ${capacity} 班次 · 每週需求 ${demand} · 餘 ${diff} 班`;
   } else {
-    el.className = 'text-sm p-2 rounded-md mt-2 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-    el.textContent = `容量 ${capacity} < 需求 ${demand}，每週缺少 ${-diff} 個班次，部分勤務將排不滿`;
+    el.classList.add('short');
+    if (noteEl) noteEl.textContent = `容量 ${capacity} < 需求 ${demand}，每週缺少 ${-diff} 個班次，部分勤務將排不滿`;
   }
 };
 
@@ -157,7 +171,7 @@ const renderSavedSchedules = () => {
   const scheduleNames = schedules ? Object.keys(schedules) : [];
   if (scheduleNames.length === 0) {
     elements.savedSchedulesList.innerHTML =
-      '<li class="text-gray-400 dark:text-gray-500 text-center py-3 text-sm">尚無儲存的班表<br><span class="text-xs">產生班表後點擊「儲存班表」</span></li>';
+      '<li class="saved-empty">尚無儲存的班表<span class="hint">產生班表後點擊「儲存班表」</span></li>';
     return;
   }
   elements.savedSchedulesList.innerHTML = '';
@@ -247,7 +261,9 @@ const updateHolidaySelectionUI = async () => {
 // ─────────────────────────────────────────────
 const renderFillStats = (weekData) => {
   const panel = document.getElementById('fill-stats-panel');
-  if (!panel) return;
+  const grid = document.getElementById('fillrate-grid');
+  if (!panel || !grid) return;
+
   const statsMap = {};
   for (const week of weekData) {
     for (const s of week.fillStats || []) {
@@ -256,29 +272,23 @@ const renderFillStats = (weekData) => {
       statsMap[s.name].filled += s.filled;
     }
   }
+
   const names = Object.keys(statsMap);
   if (names.length === 0) { panel.classList.add('hidden'); return; }
-  const allOk = names.every((n) => statsMap[n].filled === statsMap[n].needed);
-  if (allOk) {
-    panel.className = 'mt-4 text-sm p-2 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-    panel.textContent = '所有勤務已排滿';
-    return;
-  }
-  const rows = names
-    .map((n) => {
-      const s = statsMap[n];
-      const pct = s.needed > 0 ? Math.round((s.filled / s.needed) * 100) : 100;
-      const color =
-        pct === 100
-          ? 'text-green-700 dark:text-green-300'
-          : pct >= 50
-          ? 'text-yellow-700 dark:text-yellow-300'
-          : 'text-red-700 dark:text-red-300';
-      return `<tr class="${color}"><td class="pr-3 py-0.5">${escapeHtml(n)}</td><td class="pr-3">優先 ${s.priority}</td><td class="pr-3">${s.filled} / ${s.needed}</td><td>${pct}%</td></tr>`;
-    })
-    .join('');
-  panel.className = 'mt-4';
-  panel.innerHTML = `<p class="text-sm font-semibold mb-1">勤務填補率</p><table class="text-sm"><thead><tr class="text-muted"><th class="pr-3 text-left font-normal">勤務</th><th class="pr-3 text-left font-normal">優先級</th><th class="pr-3 text-left font-normal">填補/需求</th><th class="text-left font-normal">填補率</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  panel.className = 'fillrate';
+
+  grid.innerHTML = names.map((n) => {
+    const s = statsMap[n];
+    const pct = s.needed > 0 ? Math.round((s.filled / s.needed) * 100) : 100;
+    const mod = pct === 100 ? '' : pct >= 50 ? ' warn' : ' danger';
+    return `
+    <div class="fillrate-card${mod}">
+      <div><span class="name">${escapeHtml(n)}</span><span class="pri">優先 ${s.priority}</span></div>
+      <div class="nums">${s.filled}/${s.needed} · ${pct}%</div>
+      <div class="bar"><div style="width:${Math.min(pct, 100)}%"></div></div>
+    </div>`;
+  }).join('');
 };
 
 async function generateFullSchedule() {
@@ -354,137 +364,88 @@ function renderEditableSchedule() {
   const outputContainer = document.getElementById('output-container');
   if (outputContainer) outputContainer.style.overflow = 'visible';
 
-  const toolbar = createEditToolbar();
-  container.appendChild(toolbar);
-
-  const sidebar = createPersonnelSidebar();
-  const wrapper = document.createElement('div');
-  wrapper.className = 'flex gap-4 items-start';
-  wrapper.style.position = 'static';
-  wrapper.appendChild(sidebar);
-
-  const scheduleContainer = document.createElement('div');
-  scheduleContainer.className = 'flex-1 min-w-0';
-  scheduleContainer.style.overflowX = 'auto';
+  document.body.classList.add('editing');
+  populatePersonnelSidebar();
 
   editingData.forEach((weekData, weekIndex) => {
     const weekElement = createEditableWeek(weekData, weekIndex);
-    scheduleContainer.appendChild(weekElement);
+    container.appendChild(weekElement);
   });
-
-  wrapper.appendChild(scheduleContainer);
-  container.appendChild(wrapper);
 }
 
-function createEditToolbar() {
-  const toolbar = document.createElement('div');
-  toolbar.id = 'edit-toolbar';
-  toolbar.className = 'border rounded-lg p-4 mb-4 flex items-center justify-between';
-  toolbar.innerHTML = `
-    <div class="flex items-center gap-4">
-      <span class="edit-toolbar-label text-blue-700 font-medium">編輯模式</span>
-      <span id="edit-status" class="text-sm text-gray-600"></span>
-    </div>
-    <div class="flex gap-2 flex-wrap">
-      <button id="undo-edit-btn" title="復原 (Ctrl+Z)" disabled class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">復原</button>
-      <button id="redo-edit-btn" title="重做 (Ctrl+Y)" disabled class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">重做</button>
-      <button id="diff-btn" title="查看與原始班表的差異" class="px-3 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 text-sm">變更摘要</button>
-      <button id="save-edits-btn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400" disabled>儲存修改</button>
-      <button id="cancel-edits-btn" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">取消編輯</button>
-      <button id="exit-edit-mode-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">預覽模式</button>
-    </div>
-  `;
-
-  setTimeout(() => {
-    document.getElementById('save-edits-btn').addEventListener('click', saveEdits);
-    document.getElementById('cancel-edits-btn').addEventListener('click', cancelEdits);
-    document.getElementById('exit-edit-mode-btn').addEventListener('click', exitEditMode);
-    document.getElementById('undo-edit-btn').addEventListener('click', () =>
-      undoEdit(renderEditableSchedule)
-    );
-    document.getElementById('redo-edit-btn').addEventListener('click', () =>
-      redoEdit(renderEditableSchedule)
-    );
-    document.getElementById('diff-btn').addEventListener('click', showDiffModal);
-  }, 0);
-
-  return toolbar;
+function initEditToolbarEvents() {
+  document.getElementById('save-edits-btn')?.addEventListener('click', saveEdits);
+  document.getElementById('cancel-edits-btn')?.addEventListener('click', cancelEdits);
+  document.getElementById('exit-edit-mode-btn')?.addEventListener('click', exitEditMode);
+  document.getElementById('undo-edit-btn')?.addEventListener('click', () =>
+    undoEdit(renderEditableSchedule)
+  );
+  document.getElementById('redo-edit-btn')?.addEventListener('click', () =>
+    redoEdit(renderEditableSchedule)
+  );
+  document.getElementById('diff-btn')?.addEventListener('click', showDiffModal);
 }
 
-function createPersonnelSidebar() {
-  const sidebar = document.createElement('div');
-  sidebar.id = 'edit-personnel-sidebar';
-  sidebar.className = 'w-64 bg-gray-50 border border-gray-200 rounded-lg p-4';
-  sidebar.style.position = 'sticky';
-  sidebar.style.top = '20px';
-  sidebar.style.alignSelf = 'flex-start';
-  sidebar.style.maxHeight = 'calc(100vh - 40px)';
-  sidebar.style.display = 'flex';
-  sidebar.style.flexDirection = 'column';
-  sidebar.style.overflow = 'hidden';
-
-  const header = document.createElement('h3');
-  header.className = 'font-bold mb-3 text-gray-700';
-  header.textContent = '可用人員';
-  header.style.flexShrink = '0';
-  sidebar.appendChild(header);
-
-  const personnelList = document.createElement('div');
-  personnelList.className = 'space-y-2';
-  personnelList.style.flex = '1';
-  personnelList.style.overflowY = 'auto';
-  personnelList.style.overflowX = 'hidden';
-  personnelList.style.paddingRight = '8px';
-  personnelList.style.paddingBottom = '16px';
-  personnelList.style.minHeight = '0';
+function populatePersonnelSidebar() {
+  const dragList = document.getElementById('drag-list');
+  if (!dragList) return;
+  dragList.innerHTML = '';
 
   const personnel = getActiveProfile().settings.personnel || [];
   personnel.forEach((person) => {
-    const personElement = document.createElement('div');
-    personElement.className =
-      'bg-white border border-gray-300 rounded px-3 py-2 cursor-move hover:bg-blue-50 hover:border-blue-400 transition-colors';
-    personElement.draggable = true;
-    personElement.textContent = person.name;
-    personElement.dataset.personName = person.name;
-    personElement.addEventListener('dragstart', handlePersonDragStart);
-    personElement.addEventListener('dragend', handlePersonDragEnd);
-    personnelList.appendChild(personElement);
+    const card = document.createElement('div');
+    card.className = 'drag-card';
+    card.draggable = true;
+    card.textContent = person.name;
+    card.dataset.personName = person.name;
+    card.addEventListener('dragstart', handlePersonDragStart);
+    card.addEventListener('dragend', handlePersonDragEnd);
+    dragList.appendChild(card);
   });
-
-  sidebar.appendChild(personnelList);
-  return sidebar;
 }
 
 function createEditableWeek(weekData, weekIndex) {
-  const { schedule, tasks, dateRange, weekDayDates, scheduleDays, color } = weekData;
+  const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = weekData;
   const weekDayNames = ['一', '二', '三', '四', '五'];
 
+  // 計算填補率用於 week-head
+  const workDays = scheduleDays.filter(d => d.shouldSchedule).length;
+  const demand = tasks.reduce((s, t) => s + t.count, 0) * workDays;
+  const filled = tasks.reduce((s, task, ti) =>
+    s + scheduleDays.reduce((a, day, di) =>
+      a + (day.shouldSchedule ? schedule[di][ti].length : 0), 0), 0);
+  const pct = demand > 0 ? Math.round(filled / demand * 100) : 100;
+  const fillClass = pct >= 100 ? 'ok' : 'warn';
+
   const weekDiv = document.createElement('div');
-  weekDiv.className = 'mb-8';
+  weekDiv.className = 'week-block';
   weekDiv.id = `schedule-week-${weekIndex}`;
 
-  const title = document.createElement('h3');
-  title.className = 'text-xl font-bold mb-2';
-  title.textContent = `第 ${weekIndex + 1} 週班表 (${dateRange})`;
-  weekDiv.appendChild(title);
+  const weekHead = document.createElement('div');
+  weekHead.className = 'week-head';
+  weekHead.innerHTML = `
+    <div class="week-label">
+      <span class="week-num">W${weekIndex + 1}</span>
+      <span class="week-date">${dateRange}</span>
+    </div>
+    <div class="week-stats">填補 <span class="${fillClass}">${filled}/${demand}</span> · ${pct}%</div>`;
+  weekDiv.appendChild(weekHead);
 
   const table = document.createElement('table');
-  table.className = 'schedule-table w-full border-collapse';
+  table.className = 's-table';
 
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
 
   const thTask = document.createElement('th');
-  thTask.style.backgroundColor = color.header;
-  thTask.style.color = 'white';
-  thTask.textContent = '勤務地點';
+  thTask.style.textAlign = 'left';
+  thTask.style.paddingLeft = '16px';
+  thTask.textContent = '勤務';
   headerRow.appendChild(thTask);
 
   weekDayDates.forEach((date, dayIndex) => {
     const th = document.createElement('th');
-    th.style.backgroundColor = color.header;
-    th.style.color = 'white';
-    th.innerHTML = `星期${weekDayNames[dayIndex]}<br>(${date})`;
+    th.innerHTML = `<span class="dow">星期${weekDayNames[dayIndex]}</span><span class="date">${date}</span>`;
     headerRow.appendChild(th);
   });
 
@@ -496,20 +457,19 @@ function createEditableWeek(weekData, weekIndex) {
     const row = document.createElement('tr');
 
     const tdTask = document.createElement('td');
-    tdTask.className = 'font-medium align-middle bg-gray-50';
-    tdTask.textContent = task.name;
+    tdTask.className = 'task-cell';
+    const priorityCls = `p${task.priority || 9}`;
+    tdTask.innerHTML = `<span class="priority-dot ${priorityCls}"></span>${task.name}<span class="task-meta">需 ${task.count} · P${task.priority || 9}</span>`;
     row.appendChild(tdTask);
 
     weekDayDates.forEach((date, dayIndex) => {
       const td = document.createElement('td');
-      td.className = 'align-middle p-2 border border-gray-300 min-h-[60px]';
 
       if (!scheduleDays[dayIndex].shouldSchedule) {
-        td.classList.add('holiday-cell');
-        td.textContent = scheduleDays[dayIndex].description;
+        td.className = 'holiday-cell';
+        td.innerHTML = `<span class="holiday-label">${scheduleDays[dayIndex].description}</span>`;
       } else {
-        td.classList.add('editable-cell', 'hover:bg-blue-50', 'cursor-pointer');
-        td.style.position = 'relative';
+        td.className = 'editable-cell';
         td.dataset.weekIndex = weekIndex;
         td.dataset.dayIndex = dayIndex;
         td.dataset.taskIndex = taskIndex;
@@ -536,19 +496,18 @@ function createEditableWeek(weekData, weekIndex) {
   table.appendChild(tbody);
   weekDiv.appendChild(table);
 
-  const statsDiv = createWeeklyStats(weekData, weekIndex);
+  const statsDiv = createWeeklyStats(weekData);
   weekDiv.appendChild(statsDiv);
 
   return weekDiv;
 }
 
-function createWeeklyStats(weekData, weekIndex) {
+function createWeeklyStats(weekData) {
   const { schedule } = weekData;
   const personnel = getActiveProfile().settings.personnel || [];
 
   const shiftCounts = {};
   personnel.forEach((person) => { shiftCounts[person.name] = 0; });
-
   schedule.forEach((daySchedule) => {
     daySchedule.forEach((taskPersonnel) => {
       taskPersonnel.forEach((personName) => {
@@ -557,60 +516,51 @@ function createWeeklyStats(weekData, weekIndex) {
     });
   });
 
-  const statsContainer = document.createElement('div');
-  statsContainer.className = 'mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 weekly-stats-card';
+  const container = document.createElement('div');
+  container.className = 'week-footer';
 
   const title = document.createElement('div');
-  title.className = 'font-semibold text-gray-700 mb-2 text-sm';
-  title.textContent = '本週值勤次數統計';
-  statsContainer.appendChild(title);
+  title.className = 'wf-title';
+  title.textContent = '本週值勤次數';
+  container.appendChild(title);
 
-  const tagsContainer = document.createElement('div');
-  tagsContainer.className = 'flex flex-wrap gap-2';
+  const tags = document.createElement('div');
+  tags.className = 'wf-tags';
 
   personnel.forEach((person) => {
     const count = shiftCounts[person.name] || 0;
     const maxShifts = person.maxShifts || 5;
-    const tag = document.createElement('div');
-    tag.className = 'px-3 py-1 rounded-full text-sm font-medium';
-    if (count === 0) {
-      tag.className += ' bg-gray-200 text-gray-600';
-    } else if (count > maxShifts) {
-      tag.className += ' bg-red-100 text-red-700 border-2 border-red-400';
-      tag.textContent = `${person.name}: ${count}/${maxShifts}`;
-    } else if (count === maxShifts) {
-      tag.className += ' bg-orange-100 text-orange-700';
-    } else if (count >= maxShifts - 1) {
-      tag.className += ' bg-yellow-100 text-yellow-700';
-    } else {
-      tag.className += ' bg-green-100 text-green-700';
-    }
-    if (!tag.textContent) tag.textContent = `${person.name}: ${count}/${maxShifts}`;
-    tagsContainer.appendChild(tag);
+    const tag = document.createElement('span');
+    let stateClass = 'ok';
+    if (count === 0) stateClass = 'zero';
+    else if (count > maxShifts) stateClass = 'over';
+    else if (count === maxShifts) stateClass = 'full';
+    else if (count >= maxShifts - 1) stateClass = 'near';
+    tag.className = `wf-tag ${stateClass}`;
+    tag.textContent = `${person.name}: ${count}/${maxShifts}`;
+    tags.appendChild(tag);
   });
 
   Object.keys(shiftCounts).forEach((personName) => {
-    const isInCurrentList = personnel.some((p) => p.name === personName);
-    if (!isInCurrentList) {
+    if (!personnel.some((p) => p.name === personName)) {
       const count = shiftCounts[personName];
-      const tag = document.createElement('div');
-      tag.className =
-        'px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700 border border-purple-300';
+      const tag = document.createElement('span');
+      tag.className = 'wf-tag ghost';
       tag.textContent = `${personName}: ${count} (已刪除)`;
-      tagsContainer.appendChild(tag);
+      tags.appendChild(tag);
     }
   });
 
-  statsContainer.appendChild(tagsContainer);
-  return statsContainer;
+  container.appendChild(tags);
+  return container;
 }
 
 function updateWeeklyStats(weekIndex) {
   const weekElement = document.getElementById(`schedule-week-${weekIndex}`);
   if (!weekElement) return;
-  const oldStats = weekElement.querySelector('.mt-3.p-3.bg-gray-50');
+  const oldStats = weekElement.querySelector('.week-footer');
   if (oldStats) oldStats.remove();
-  const statsDiv = createWeeklyStats(getEditingData()[weekIndex], weekIndex);
+  const statsDiv = createWeeklyStats(getEditingData()[weekIndex]);
   weekElement.appendChild(statsDiv);
 }
 
@@ -627,44 +577,40 @@ function renderCellPersonnel(cell, personnelList) {
   const taskRequiredCount = editingData[weekIndex].tasks[taskIndex].count;
   const currentCount = personnelList.length;
 
-  const container = document.createElement('div');
-  container.className = 'flex flex-col gap-1';
-
-  const countIndicator = document.createElement('div');
-  countIndicator.className = 'text-xs font-semibold';
+  // 缺/滿/超額 小指示器
+  const countEl = document.createElement('div');
+  countEl.style.cssText = 'font:500 10px var(--font-mono);margin-bottom:4px;';
   if (currentCount < taskRequiredCount) {
-    countIndicator.className += ' text-orange-600';
-    countIndicator.textContent = `${currentCount}/${taskRequiredCount} (缺 ${taskRequiredCount - currentCount})`;
-  } else if (currentCount === taskRequiredCount) {
-    countIndicator.className += ' text-green-600';
-    countIndicator.textContent = `${currentCount}/${taskRequiredCount} ✓`;
+    countEl.style.color = 'var(--warn)';
+    countEl.textContent = `${currentCount}/${taskRequiredCount} ✗`;
+    cell.classList.add('warn-cell');
   } else {
-    countIndicator.className += ' text-red-600';
-    countIndicator.textContent = `${currentCount}/${taskRequiredCount} (超額)`;
+    countEl.style.color = 'var(--success)';
+    countEl.textContent = `${currentCount}/${taskRequiredCount} ✓`;
+    cell.classList.remove('warn-cell');
   }
-  container.appendChild(countIndicator);
+  cell.appendChild(countEl);
 
-  const personnelContainer = document.createElement('div');
-  personnelContainer.className = 'flex flex-wrap gap-1';
+  const persons = document.createElement('div');
+  persons.className = 'persons';
 
   personnelList.forEach((personName, index) => {
     const tag = document.createElement('span');
-    tag.className =
-      'person-tag inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm cursor-move';
+    tag.className = 'person-tag';
     tag.draggable = true;
+    tag.dataset.personName = personName;
+    tag.dataset.personIndex = index;
 
     const nameSpan = document.createElement('span');
     nameSpan.textContent = personName;
     tag.appendChild(nameSpan);
 
     const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-person ml-1 text-red-600 hover:text-red-800 font-bold';
+    removeBtn.className = 'remove-person';
+    removeBtn.style.cssText = 'color:var(--danger);font-weight:700;margin-left:2px;font-size:13px;line-height:1;';
     removeBtn.textContent = '×';
     removeBtn.draggable = false;
     tag.appendChild(removeBtn);
-
-    tag.dataset.personName = personName;
-    tag.dataset.personIndex = index;
 
     tag.addEventListener('dragstart', handleTagDragStart);
     tag.addEventListener('dragend', handlePersonDragEnd);
@@ -679,18 +625,17 @@ function renderCellPersonnel(cell, personnelList) {
     });
     removeBtn.addEventListener('mousedown', (e) => e.stopPropagation());
 
-    personnelContainer.appendChild(tag);
+    persons.appendChild(tag);
   });
 
   if (personnelList.length === 0) {
     const placeholder = document.createElement('span');
-    placeholder.className = 'text-gray-400 text-sm';
-    placeholder.textContent = '點擊選擇或拖拽人員';
-    personnelContainer.appendChild(placeholder);
+    placeholder.className = 'person-tag unfilled';
+    placeholder.textContent = '＋ 待補';
+    persons.appendChild(placeholder);
   }
 
-  container.appendChild(personnelContainer);
-  cell.appendChild(container);
+  cell.appendChild(persons);
 
   requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(scrollX, scrollY)));
 }
@@ -1081,6 +1026,9 @@ async function exitEditMode() {
   setHasUnsavedChanges(false);
   draggedPerson = null;
   draggedFromCell = null;
+  document.body.classList.remove('editing');
+  const dragList = document.getElementById('drag-list');
+  if (dragList) dragList.innerHTML = '';
 
   api.post('render-schedule', getGeneratedData()).then((response) => {
     if (response?.html) {
@@ -1118,11 +1066,11 @@ const openPersonnelModal = (index) => {
           `<option value="${task.name}" ${person.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
       )
       .join('');
-  elements.personnelModal.classList.remove('hidden');
+  elements.personnelModal.classList.add('open');
 };
 
 const closePersonnelModal = () => {
-  elements.personnelModal.classList.add('hidden');
+  elements.personnelModal.classList.remove('open');
   currentEditingPersonnelIndex = -1;
 };
 
@@ -1575,25 +1523,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.modalHolidayList.innerHTML = availableHolidays
       .map(
         (holiday) => `
-      <label class="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
-        <input type="checkbox" class="form-checkbox rounded holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
-        <span class="flex-grow">${holiday.name}</span>
-        <span class="text-sm text-gray-500">(${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)})</span>
+      <label class="holiday-item">
+        <input type="checkbox" class="holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
+        <span style="flex:1">${holiday.name}</span>
+        <span class="hdate">${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)}</span>
       </label>`
       )
       .join('');
-    elements.holidayModal.classList.remove('hidden');
+    elements.holidayModal.classList.add('open');
   });
 
   elements.modalHolidayCloseBtn.addEventListener('click', () => {
-    elements.holidayModal.classList.add('hidden');
+    elements.holidayModal.classList.remove('open');
   });
 
   elements.modalHolidaySaveBtn.addEventListener('click', () => {
     const checkedBoxes = elements.modalHolidayList.querySelectorAll('.holiday-checkbox:checked');
     activeHolidayDates = new Set(Array.from(checkedBoxes).map((cb) => cb.value));
     updateHolidayButtonText();
-    elements.holidayModal.classList.add('hidden');
+    elements.holidayModal.classList.remove('open');
     if (getGeneratedData()) {
       elements.outputContainer.style.opacity = '0.5';
       generateFullSchedule().then(() => {
@@ -1606,8 +1554,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
 
   document.getElementById('diff-modal-close')?.addEventListener('click', () => {
-    document.getElementById('diff-modal').classList.add('hidden');
+    document.getElementById('diff-modal').classList.remove('open');
   });
+
+  initEditToolbarEvents();
 
   // 人員/班表 tab 切換
   const personnelExcelBtn = document.getElementById('export-personnel-excel');
@@ -1616,10 +1566,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('view-schedule-btn')?.addEventListener('click', () => {
     document.getElementById('schedule-output').classList.remove('hidden');
     document.getElementById('personnel-view').classList.add('hidden');
-    document.getElementById('view-schedule-btn').className =
-      'px-3 py-1 rounded bg-blue-600 text-white text-xs';
-    document.getElementById('view-personnel-btn').className =
-      'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+    document.getElementById('view-schedule-btn').className = 'active';
+    document.getElementById('view-personnel-btn').className = '';
     scheduleExcelBtn?.classList.remove('hidden');
     personnelExcelBtn?.classList.add('hidden');
   });
@@ -1628,10 +1576,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderPersonnelView(getEditingData() || getGeneratedData());
     document.getElementById('personnel-view').classList.remove('hidden');
     document.getElementById('schedule-output').classList.add('hidden');
-    document.getElementById('view-personnel-btn').className =
-      'px-3 py-1 rounded bg-blue-600 text-white text-xs';
-    document.getElementById('view-schedule-btn').className =
-      'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+    document.getElementById('view-personnel-btn').className = 'active';
+    document.getElementById('view-schedule-btn').className = '';
     scheduleExcelBtn?.classList.add('hidden');
     personnelExcelBtn?.classList.remove('hidden');
   });

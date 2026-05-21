@@ -43,20 +43,23 @@ export const showDiffModal = () => {
   if (!original || !current) return;
 
   const changes = buildDiff(original, current);
+  const total = changes.reduce((s, c) => s + c.added.length + c.removed.length, 0);
+  const dmTotal = document.getElementById('dm-total');
+  if (dmTotal) dmTotal.textContent = total;
+
   if (changes.length === 0) {
-    content.innerHTML =
-      '<p class="text-gray-500 dark:text-gray-400 text-center py-6">目前無任何修改，班表與原始一致。</p>';
+    content.innerHTML = '<p class="diff-empty">目前無任何修改，班表與原始一致。</p>';
   } else {
     content.innerHTML = changes
       .map(
         (c) => `
-      <div class="mb-3 pb-3 border-b border-gray-200 dark:border-gray-600 last:border-0">
-        <p class="font-medium text-gray-700 dark:text-gray-300 mb-1">${escapeHtml(c.label)}</p>
-        ${c.added.map((p) => `<p class="text-green-600 dark:text-green-400 ml-3">＋ ${escapeHtml(p)}</p>`).join('')}
-        ${c.removed.map((p) => `<p class="text-red-500 dark:text-red-400 ml-3">－ ${escapeHtml(p)}</p>`).join('')}
+      <div class="diff-item">
+        <p class="diff-label">${escapeHtml(c.label)}</p>
+        ${c.added.map((p) => `<p class="diff-added">＋ ${escapeHtml(p)}</p>`).join('')}
+        ${c.removed.map((p) => `<p class="diff-removed">－ ${escapeHtml(p)}</p>`).join('')}
       </div>`
       )
       .join('');
   }
-  modal.classList.remove('hidden');
+  modal.classList.add('open');
 };
