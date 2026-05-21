@@ -78,13 +78,27 @@ const updateCapacityStatus = () => {
   const capacity = (settings.personnel || []).reduce((s, p) => s + (p.maxShifts || 5), 0);
   const demand = (settings.tasks || []).reduce((s, t) => s + (t.count || 1), 0) * 5;
   const diff = capacity - demand;
-  if (!capacity && !demand) { el.textContent = ''; return; }
+
+  // Update redesign capacity panel elements
+  const supplyEl = document.getElementById('cap-supply');
+  const demandEl = document.getElementById('cap-demand');
+  const noteEl = document.getElementById('cap-note');
+  const fillEl = el.querySelector('.capacity-fill');
+  if (supplyEl) supplyEl.textContent = capacity;
+  if (demandEl) demandEl.textContent = demand;
+  if (!capacity && !demand) {
+    if (noteEl) noteEl.textContent = '尚未設定人員或勤務';
+    el.classList.remove('short');
+    return;
+  }
+  const pct = demand > 0 ? Math.min(100, Math.round(capacity / demand * 100)) : 100;
+  if (fillEl) fillEl.style.width = pct + '%';
   if (diff >= 0) {
-    el.className = 'text-sm p-2 rounded-md mt-2 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-    el.textContent = `容量 ${capacity} ≥ 需求 ${demand}（每週最多可排滿）`;
+    el.classList.remove('short');
+    if (noteEl) noteEl.textContent = `${(settings.personnel || []).length} 位人員可提供 ${capacity} 班次 · 每週需求 ${demand} · 餘 ${diff} 班`;
   } else {
-    el.className = 'text-sm p-2 rounded-md mt-2 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
-    el.textContent = `容量 ${capacity} < 需求 ${demand}，每週缺少 ${-diff} 個班次，部分勤務將排不滿`;
+    el.classList.add('short');
+    if (noteEl) noteEl.textContent = `容量 ${capacity} < 需求 ${demand}，每週缺少 ${-diff} 個班次，部分勤務將排不滿`;
   }
 };
 
@@ -354,105 +368,44 @@ function renderEditableSchedule() {
   const outputContainer = document.getElementById('output-container');
   if (outputContainer) outputContainer.style.overflow = 'visible';
 
-  const toolbar = createEditToolbar();
-  container.appendChild(toolbar);
-
-  const sidebar = createPersonnelSidebar();
-  const wrapper = document.createElement('div');
-  wrapper.className = 'flex gap-4 items-start';
-  wrapper.style.position = 'static';
-  wrapper.appendChild(sidebar);
-
-  const scheduleContainer = document.createElement('div');
-  scheduleContainer.className = 'flex-1 min-w-0';
-  scheduleContainer.style.overflowX = 'auto';
+  document.body.classList.add('editing');
+  populatePersonnelSidebar();
 
   editingData.forEach((weekData, weekIndex) => {
     const weekElement = createEditableWeek(weekData, weekIndex);
-    scheduleContainer.appendChild(weekElement);
+    container.appendChild(weekElement);
   });
-
-  wrapper.appendChild(scheduleContainer);
-  container.appendChild(wrapper);
 }
 
-function createEditToolbar() {
-  const toolbar = document.createElement('div');
-  toolbar.id = 'edit-toolbar';
-  toolbar.className = 'border rounded-lg p-4 mb-4 flex items-center justify-between';
-  toolbar.innerHTML = `
-    <div class="flex items-center gap-4">
-      <span class="edit-toolbar-label text-blue-700 font-medium">編輯模式</span>
-      <span id="edit-status" class="text-sm text-gray-600"></span>
-    </div>
-    <div class="flex gap-2 flex-wrap">
-      <button id="undo-edit-btn" title="復原 (Ctrl+Z)" disabled class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">復原</button>
-      <button id="redo-edit-btn" title="重做 (Ctrl+Y)" disabled class="px-3 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-40 text-sm">重做</button>
-      <button id="diff-btn" title="查看與原始班表的差異" class="px-3 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 text-sm">變更摘要</button>
-      <button id="save-edits-btn" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400" disabled>儲存修改</button>
-      <button id="cancel-edits-btn" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">取消編輯</button>
-      <button id="exit-edit-mode-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">預覽模式</button>
-    </div>
-  `;
-
-  setTimeout(() => {
-    document.getElementById('save-edits-btn').addEventListener('click', saveEdits);
-    document.getElementById('cancel-edits-btn').addEventListener('click', cancelEdits);
-    document.getElementById('exit-edit-mode-btn').addEventListener('click', exitEditMode);
-    document.getElementById('undo-edit-btn').addEventListener('click', () =>
-      undoEdit(renderEditableSchedule)
-    );
-    document.getElementById('redo-edit-btn').addEventListener('click', () =>
-      redoEdit(renderEditableSchedule)
-    );
-    document.getElementById('diff-btn').addEventListener('click', showDiffModal);
-  }, 0);
-
-  return toolbar;
+function initEditToolbarEvents() {
+  document.getElementById('save-edits-btn')?.addEventListener('click', saveEdits);
+  document.getElementById('cancel-edits-btn')?.addEventListener('click', cancelEdits);
+  document.getElementById('exit-edit-mode-btn')?.addEventListener('click', exitEditMode);
+  document.getElementById('undo-edit-btn')?.addEventListener('click', () =>
+    undoEdit(renderEditableSchedule)
+  );
+  document.getElementById('redo-edit-btn')?.addEventListener('click', () =>
+    redoEdit(renderEditableSchedule)
+  );
+  document.getElementById('diff-btn')?.addEventListener('click', showDiffModal);
 }
 
-function createPersonnelSidebar() {
-  const sidebar = document.createElement('div');
-  sidebar.id = 'edit-personnel-sidebar';
-  sidebar.className = 'w-64 bg-gray-50 border border-gray-200 rounded-lg p-4';
-  sidebar.style.position = 'sticky';
-  sidebar.style.top = '20px';
-  sidebar.style.alignSelf = 'flex-start';
-  sidebar.style.maxHeight = 'calc(100vh - 40px)';
-  sidebar.style.display = 'flex';
-  sidebar.style.flexDirection = 'column';
-  sidebar.style.overflow = 'hidden';
-
-  const header = document.createElement('h3');
-  header.className = 'font-bold mb-3 text-gray-700';
-  header.textContent = '可用人員';
-  header.style.flexShrink = '0';
-  sidebar.appendChild(header);
-
-  const personnelList = document.createElement('div');
-  personnelList.className = 'space-y-2';
-  personnelList.style.flex = '1';
-  personnelList.style.overflowY = 'auto';
-  personnelList.style.overflowX = 'hidden';
-  personnelList.style.paddingRight = '8px';
-  personnelList.style.paddingBottom = '16px';
-  personnelList.style.minHeight = '0';
+function populatePersonnelSidebar() {
+  const dragList = document.getElementById('drag-list');
+  if (!dragList) return;
+  dragList.innerHTML = '';
 
   const personnel = getActiveProfile().settings.personnel || [];
   personnel.forEach((person) => {
-    const personElement = document.createElement('div');
-    personElement.className =
-      'bg-white border border-gray-300 rounded px-3 py-2 cursor-move hover:bg-blue-50 hover:border-blue-400 transition-colors';
-    personElement.draggable = true;
-    personElement.textContent = person.name;
-    personElement.dataset.personName = person.name;
-    personElement.addEventListener('dragstart', handlePersonDragStart);
-    personElement.addEventListener('dragend', handlePersonDragEnd);
-    personnelList.appendChild(personElement);
+    const card = document.createElement('div');
+    card.className = 'drag-card';
+    card.draggable = true;
+    card.textContent = person.name;
+    card.dataset.personName = person.name;
+    card.addEventListener('dragstart', handlePersonDragStart);
+    card.addEventListener('dragend', handlePersonDragEnd);
+    dragList.appendChild(card);
   });
-
-  sidebar.appendChild(personnelList);
-  return sidebar;
 }
 
 function createEditableWeek(weekData, weekIndex) {
@@ -1081,6 +1034,9 @@ async function exitEditMode() {
   setHasUnsavedChanges(false);
   draggedPerson = null;
   draggedFromCell = null;
+  document.body.classList.remove('editing');
+  const dragList = document.getElementById('drag-list');
+  if (dragList) dragList.innerHTML = '';
 
   api.post('render-schedule', getGeneratedData()).then((response) => {
     if (response?.html) {
@@ -1118,11 +1074,11 @@ const openPersonnelModal = (index) => {
           `<option value="${task.name}" ${person.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
       )
       .join('');
-  elements.personnelModal.classList.remove('hidden');
+  elements.personnelModal.classList.add('open');
 };
 
 const closePersonnelModal = () => {
-  elements.personnelModal.classList.add('hidden');
+  elements.personnelModal.classList.remove('open');
   currentEditingPersonnelIndex = -1;
 };
 
@@ -1582,18 +1538,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       </label>`
       )
       .join('');
-    elements.holidayModal.classList.remove('hidden');
+    elements.holidayModal.classList.add('open');
   });
 
   elements.modalHolidayCloseBtn.addEventListener('click', () => {
-    elements.holidayModal.classList.add('hidden');
+    elements.holidayModal.classList.remove('open');
   });
 
   elements.modalHolidaySaveBtn.addEventListener('click', () => {
     const checkedBoxes = elements.modalHolidayList.querySelectorAll('.holiday-checkbox:checked');
     activeHolidayDates = new Set(Array.from(checkedBoxes).map((cb) => cb.value));
     updateHolidayButtonText();
-    elements.holidayModal.classList.add('hidden');
+    elements.holidayModal.classList.remove('open');
     if (getGeneratedData()) {
       elements.outputContainer.style.opacity = '0.5';
       generateFullSchedule().then(() => {
@@ -1606,8 +1562,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.numWeeksInput.addEventListener('input', debouncedUpdateHolidays);
 
   document.getElementById('diff-modal-close')?.addEventListener('click', () => {
-    document.getElementById('diff-modal').classList.add('hidden');
+    document.getElementById('diff-modal').classList.remove('open');
   });
+
+  initEditToolbarEvents();
 
   // 人員/班表 tab 切換
   const personnelExcelBtn = document.getElementById('export-personnel-excel');
@@ -1616,10 +1574,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('view-schedule-btn')?.addEventListener('click', () => {
     document.getElementById('schedule-output').classList.remove('hidden');
     document.getElementById('personnel-view').classList.add('hidden');
-    document.getElementById('view-schedule-btn').className =
-      'px-3 py-1 rounded bg-blue-600 text-white text-xs';
-    document.getElementById('view-personnel-btn').className =
-      'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+    document.getElementById('view-schedule-btn').className = 'active';
+    document.getElementById('view-personnel-btn').className = '';
     scheduleExcelBtn?.classList.remove('hidden');
     personnelExcelBtn?.classList.add('hidden');
   });
@@ -1628,10 +1584,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderPersonnelView(getEditingData() || getGeneratedData());
     document.getElementById('personnel-view').classList.remove('hidden');
     document.getElementById('schedule-output').classList.add('hidden');
-    document.getElementById('view-personnel-btn').className =
-      'px-3 py-1 rounded bg-blue-600 text-white text-xs';
-    document.getElementById('view-schedule-btn').className =
-      'px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs';
+    document.getElementById('view-personnel-btn').className = 'active';
+    document.getElementById('view-schedule-btn').className = '';
     scheduleExcelBtn?.classList.add('hidden');
     personnelExcelBtn?.classList.remove('hidden');
   });

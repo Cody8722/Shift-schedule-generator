@@ -58,5 +58,5 @@ export const showDiffModal = () => {
       )
       .join('');
   }
-  modal.classList.remove('hidden');
+  modal.classList.add('open');
 };
