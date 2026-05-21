@@ -171,7 +171,7 @@ const renderSavedSchedules = () => {
   const scheduleNames = schedules ? Object.keys(schedules) : [];
   if (scheduleNames.length === 0) {
     elements.savedSchedulesList.innerHTML =
-      '<li class="text-gray-400 dark:text-gray-500 text-center py-3 text-sm">尚無儲存的班表<br><span class="text-xs">產生班表後點擊「儲存班表」</span></li>';
+      '<li class="saved-empty">尚無儲存的班表<span class="hint">產生班表後點擊「儲存班表」</span></li>';
     return;
   }
   elements.savedSchedulesList.innerHTML = '';
@@ -261,7 +261,9 @@ const updateHolidaySelectionUI = async () => {
 // ─────────────────────────────────────────────
 const renderFillStats = (weekData) => {
   const panel = document.getElementById('fill-stats-panel');
-  if (!panel) return;
+  const grid = document.getElementById('fillrate-grid');
+  if (!panel || !grid) return;
+
   const statsMap = {};
   for (const week of weekData) {
     for (const s of week.fillStats || []) {
@@ -270,29 +272,23 @@ const renderFillStats = (weekData) => {
       statsMap[s.name].filled += s.filled;
     }
   }
+
   const names = Object.keys(statsMap);
   if (names.length === 0) { panel.classList.add('hidden'); return; }
-  const allOk = names.every((n) => statsMap[n].filled === statsMap[n].needed);
-  if (allOk) {
-    panel.className = 'mt-4 text-sm p-2 rounded-md bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-    panel.textContent = '所有勤務已排滿';
-    return;
-  }
-  const rows = names
-    .map((n) => {
-      const s = statsMap[n];
-      const pct = s.needed > 0 ? Math.round((s.filled / s.needed) * 100) : 100;
-      const color =
-        pct === 100
-          ? 'text-green-700 dark:text-green-300'
-          : pct >= 50
-          ? 'text-yellow-700 dark:text-yellow-300'
-          : 'text-red-700 dark:text-red-300';
-      return `<tr class="${color}"><td class="pr-3 py-0.5">${escapeHtml(n)}</td><td class="pr-3">優先 ${s.priority}</td><td class="pr-3">${s.filled} / ${s.needed}</td><td>${pct}%</td></tr>`;
-    })
-    .join('');
-  panel.className = 'mt-4';
-  panel.innerHTML = `<p class="text-sm font-semibold mb-1">勤務填補率</p><table class="text-sm"><thead><tr class="text-muted"><th class="pr-3 text-left font-normal">勤務</th><th class="pr-3 text-left font-normal">優先級</th><th class="pr-3 text-left font-normal">填補/需求</th><th class="text-left font-normal">填補率</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+  panel.className = 'fillrate';
+
+  grid.innerHTML = names.map((n) => {
+    const s = statsMap[n];
+    const pct = s.needed > 0 ? Math.round((s.filled / s.needed) * 100) : 100;
+    const mod = pct === 100 ? '' : pct >= 50 ? ' warn' : ' danger';
+    return `
+    <div class="fillrate-card${mod}">
+      <div><span class="name">${escapeHtml(n)}</span><span class="pri">優先 ${s.priority}</span></div>
+      <div class="nums">${s.filled}/${s.needed} · ${pct}%</div>
+      <div class="bar"><div style="width:${Math.min(pct, 100)}%"></div></div>
+    </div>`;
+  }).join('');
 };
 
 async function generateFullSchedule() {
@@ -1527,10 +1523,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.modalHolidayList.innerHTML = availableHolidays
       .map(
         (holiday) => `
-      <label class="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer">
-        <input type="checkbox" class="form-checkbox rounded holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
-        <span class="flex-grow">${holiday.name}</span>
-        <span class="text-sm text-gray-500">(${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)})</span>
+      <label class="holiday-item">
+        <input type="checkbox" class="holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
+        <span style="flex:1">${holiday.name}</span>
+        <span class="hdate">${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)}</span>
       </label>`
       )
       .join('');

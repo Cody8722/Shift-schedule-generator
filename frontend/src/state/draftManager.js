@@ -55,13 +55,12 @@ export const showDraftBanner = (draft, mins, renderEditableScheduleCallback) => 
   const label = mins < 1 ? '剛才' : `${mins} 分鐘前`;
   const banner = document.createElement('div');
   banner.id = 'draft-banner';
-  banner.className =
-    'mb-4 p-3 bg-amber-50 dark:bg-amber-900 border border-amber-300 dark:border-amber-600 rounded-lg flex items-center justify-between text-sm';
+  banner.className = 'draft-banner';
   banner.innerHTML = `
-    <span class="text-amber-800 dark:text-amber-200">找到 ${label} 的未儲存草稿（設定檔：${escapeHtml(draft.profile)}）</span>
-    <div class="flex gap-2 ml-3 shrink-0">
-      <button id="draft-restore-btn" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-xs">恢復草稿</button>
-      <button id="draft-discard-btn" class="bg-gray-400 hover:bg-gray-500 text-white px-3 py-1 rounded text-xs">捨棄</button>
+    <span class="draft-msg">找到 ${label} 的未儲存草稿（設定檔：${escapeHtml(draft.profile)}）</span>
+    <div class="draft-actions">
+      <button id="draft-restore-btn" class="btn btn-primary btn-sm">恢復草稿</button>
+      <button id="draft-discard-btn" class="btn btn-ghost btn-sm">捨棄</button>
     </div>`;
 
   const container = document.getElementById('output-container');

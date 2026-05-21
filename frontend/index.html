@@ -677,6 +677,33 @@ body:not(.editing) .edit-toolbar { display: none; }
 .fillrate-card .bar > div { height: 100%; background: var(--success); }
 .fillrate-card.warn .bar > div { background: var(--warn); }
 .fillrate-card.warn .nums { color: var(--warn); }
+.fillrate-card.danger .bar > div { background: var(--danger); }
+.fillrate-card.danger .nums { color: var(--danger); }
+
+/* ─── Saved schedules empty state ───────────────────────────── */
+.saved-empty {
+  text-align: center; padding: 12px 0;
+  font-size: 13px; color: var(--text-muted);
+}
+.saved-empty .hint { font-size: 11px; display: block; margin-top: 2px; color: var(--text-faint); }
+
+/* ─── Holiday modal list items ───────────────────────────────── */
+.holiday-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px; border-radius: 6px; cursor: pointer;
+}
+.holiday-item:hover { background: var(--bg-surface-2); }
+.holiday-item .hdate { font-size: 12px; font-family: var(--font-mono); color: var(--text-muted); }
+
+/* ─── Draft restore banner ───────────────────────────────────── */
+.draft-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; margin-bottom: 14px;
+  background: var(--warn-soft); border: 1px solid var(--warn-border);
+  border-radius: 8px; font-size: 13px;
+}
+.draft-banner .draft-msg { color: var(--warn); flex: 1; }
+.draft-banner .draft-actions { display: flex; gap: 6px; margin-left: 12px; flex-shrink: 0; }
 
 /* ─── Weekly stats footer (per-week shift counts) ───────────── */
 .week-footer {
