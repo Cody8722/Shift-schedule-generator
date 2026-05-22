@@ -160,6 +160,17 @@ describe('POST /api/generate-schedule — 成功路徑', () => {
     expect(scheduleDays[0].shouldSchedule).toBe(false);
     expect(scheduleDays[0].date).toBe('20250106');
   });
+
+  it('getHolidaysForYear 回傳非空 Map 時 description 帶上假日名稱', async () => {
+    getHolidaysForYear.mockResolvedValue(new Map([['20250106', '元旦']]));
+    await request(app)
+      .post('/api/generate-schedule')
+      .send({ ...validBody, activeHolidays: ['20250106'] });
+
+    const scheduleDays = generateWeeklySchedule.mock.calls[0][1];
+    const jan6 = scheduleDays.find((d) => d.date === '20250106');
+    expect(jan6.description).toBe('元旦');
+  });
 });
 
 // ── POST /api/render-schedule ──────────────────────────────────────────────────

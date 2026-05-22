@@ -144,6 +144,18 @@ describe('PUT /api/holidays', () => {
     expect(col.deleteOne).toHaveBeenCalled();
     expect(col.updateOne).not.toHaveBeenCalled();
   });
+
+  it('updateOne 拋出例外時回傳 500', async () => {
+    getHolidaysCollection.mockReturnValue(
+      makeMockCol({
+        updateOne: jest.fn().mockRejectedValue(new Error('DB error')),
+      })
+    );
+    const res = await request(app)
+      .put('/api/holidays')
+      .send({ date: '2025-01-01', name: '元旦', isHoliday: true });
+    expect(res.status).toBe(500);
+  });
 });
 
 // ── GET /api/holidays-in-range ────────────────────────────────────────────────
@@ -176,5 +188,12 @@ describe('GET /api/holidays-in-range', () => {
     const res = await request(app).get('/api/holidays-in-range?startWeek=2025-W11&numWeeks=1');
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
+  });
+
+  it('getHolidaysForYear 拋出例外時回傳 500', async () => {
+    getWeekInfo.mockReturnValue({ weekDates: ['2025-01-06'] });
+    getHolidaysForYear.mockRejectedValue(new Error('DB error'));
+    const res = await request(app).get('/api/holidays-in-range?startWeek=2025-W01&numWeeks=1');
+    expect(res.status).toBe(500);
   });
 });
