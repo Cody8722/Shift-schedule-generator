@@ -30,6 +30,7 @@ async function generateMinimalSchedule(page) {
   await page.waitForLoadState('networkidle');
   await resetProfileSettings(page);
   await page.reload();
+  await page.waitForLoadState('networkidle');
   await expect(page.locator('#generate-schedule')).toBeVisible();
 
   await page.locator('#new-task-name').fill('早班');

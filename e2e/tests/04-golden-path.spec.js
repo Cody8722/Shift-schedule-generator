@@ -31,16 +31,19 @@ async function generateMinimalSchedule(page) {
   await page.waitForLoadState('networkidle');
   await resetProfileSettings(page);
   await page.reload();
+  await page.waitForLoadState('networkidle');
   await expect(page.locator('#generate-schedule')).toBeVisible();
 
   await page.locator('#new-task-name').fill('早班');
   await page.locator('#new-task-count').fill('1');
   await page.locator('#add-task-btn').click();
+  await expect(page.locator('#task-list .remove-task')).toHaveCount(1, { timeout: 5_000 });
 
   await page.locator('#new-personnel-name').fill('張三');
   await page.locator('#add-personnel-btn').click();
   await page.locator('#new-personnel-name').fill('李四');
   await page.locator('#add-personnel-btn').click();
+  await expect(page.locator('#personnel-list .remove-personnel')).toHaveCount(2, { timeout: 5_000 });
 
   await page.locator('#num-weeks').fill('1');
   await page.locator('#generate-schedule').click();
