@@ -192,6 +192,15 @@ describe('refreshHolidaysFromCDN', () => {
     expect(col.deleteMany).toHaveBeenCalledWith({ _id: { $regex: `^${currentYear + 1}` }, source: 'cdn' });
   });
 
+  it('deleteMany 拋出例外時仍繼續執行（catch 吞掉錯誤）', async () => {
+    getIsDbConnected.mockReturnValue(true);
+    const col = makeCol();
+    col.deleteMany.mockRejectedValue(new Error('DB error'));
+    getHolidaysCollection.mockReturnValue(col);
+
+    await expect(refreshHolidaysFromCDN()).resolves.toBeUndefined();
+  });
+
   it('重刷後快取已清除對應年份', async () => {
     getIsDbConnected.mockReturnValue(true);
     const currentYear = new Date().getFullYear();
@@ -269,6 +278,22 @@ describe('seedHolidays', () => {
 
     await expect(seedHolidays()).resolves.toBeUndefined();
     expect(col.insertMany).not.toHaveBeenCalled();
+  });
+
+  it('insertMany 拋出非 11000 錯誤時被外層 catch 捕獲，不 crash', async () => {
+    getIsDbConnected.mockReturnValue(true);
+    const col = makeCol();
+    col.countDocuments.mockResolvedValue(0);
+    const nonDupError = Object.assign(new Error('network error'), { code: 500 });
+    col.insertMany.mockRejectedValue(nonDupError);
+    getHolidaysCollection.mockReturnValue(col);
+
+    fsMock.promises.readdir.mockResolvedValue(['2025.json']);
+    fsMock.promises.readFile.mockResolvedValue(JSON.stringify([
+      { date: '20250101', description: '元旦', isHoliday: true },
+    ]));
+
+    await expect(seedHolidays()).resolves.toBeUndefined();
   });
 
   it('insertMany 因重複 key (11000) 不 crash', async () => {

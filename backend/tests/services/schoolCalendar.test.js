@@ -196,6 +196,159 @@ describe('getSchoolEvents — 無 DB，解析考試資料', () => {
   });
 });
 
+// ── isHighSchoolExam 與 getCleanExamName 各分支 ──────────────────────────────
+
+describe('getSchoolEvents — 考試名稱分支覆蓋', () => {
+  const makeHtml = (date, name) => `<html><body><ul>
+<li>
+  <span class="blueWord1 eCLdateFS">${date}</span>
+  <span class="eSpecABC W14">重要考試</span>
+  <span class="GrayWord1 W14">${name}</span>
+</li>
+</ul></body></html>`;
+
+  it('技高（L47）觸發 isHighSchoolExam → 加入事件', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('03/25', '技高第一次定期評量'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('高一（L48）觸發 isHighSchoolExam → 加入事件', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('03/25', '高一第一次定期評量'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('非高中部（L49 return false）→ 事件被過濾，回傳空陣列', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('03/25', '國中部第一次定期評量'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data).toEqual([]);
+  });
+
+  it('名稱含「第二次」→ getCleanExamName 回傳「二段」（L61）', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('04/10', '高中部第二次定期評量'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data.some((e) => e.name.includes('二段') || e.name.includes('第二次二段'))).toBe(true);
+  });
+
+  it('名稱含「第三次」→ getCleanExamName 回傳「三段」（L62）', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('04/10', '高中部第三次定期評量'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data.some((e) => e.name.includes('三段') || e.name.includes('第三次三段'))).toBe(true);
+  });
+
+  it('名稱含「第四次」→ getCleanExamName 回傳「四段」（L63）', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('04/10', '高中部第四次定期評量'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data.some((e) => e.name.includes('四段') || e.name.includes('第四次四段'))).toBe(true);
+  });
+
+  it('名稱含「期中」→ getCleanExamName 回傳「期中考」（L64）', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('04/10', '高中部期中考'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data.some((e) => e.name.includes('期中考'))).toBe(true);
+  });
+
+  it('名稱無特殊詞 → getCleanExamName 回傳「定期評量」（L65）', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(makeHtml('04/10', '高中部定期評量'))),
+    });
+    const result = await mod.getSchoolEvents();
+    expect(result.data.some((e) => e.name.includes('定期評量'))).toBe(true);
+  });
+});
+
+// ── 連續日期合併與重名編號 ──────────────────────────────────────────────────────
+
+describe('getSchoolEvents — 連續日期合併與重名編號', () => {
+  // 3 筆考試：03/25、03/26（連續）、03/28（不連續）且同名
+  const MULTI_EXAM_HTML = `<html><body><ul>
+<li>
+  <span class="blueWord1 eCLdateFS">03/25</span>
+  <span class="eSpecABC W14">重要考試</span>
+  <span class="GrayWord1 W14">高中部定期評量</span>
+</li>
+<li>
+  <span class="blueWord1 eCLdateFS">03/26</span>
+  <span class="eSpecABC W14">重要考試</span>
+  <span class="GrayWord1 W14">高中部定期評量</span>
+</li>
+<li>
+  <span class="blueWord1 eCLdateFS">03/28</span>
+  <span class="eSpecABC W14">重要考試</span>
+  <span class="GrayWord1 W14">高中部定期評量</span>
+</li>
+</ul></body></html>`;
+
+  it('連續日期（03/25-26）合併成一個 event（L193-194）', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(MULTI_EXAM_HTML)),
+    });
+    const result = await mod.getSchoolEvents();
+    // 3 個日期 → 2 個 event（03/25-26 合併，03/28 單獨）
+    expect(result.data.length).toBe(2);
+    const merged = result.data.find((e) => e.startDate !== e.endDate);
+    expect(merged).toBeDefined();
+  });
+
+  it('不連續日期觸發 range 切分（L195-197）並開新 range', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(MULTI_EXAM_HTML)),
+    });
+    const result = await mod.getSchoolEvents();
+    // 第二個 event 的 startDate === endDate（單日）
+    const single = result.data.find((e) => e.startDate === e.endDate);
+    expect(single).toBeDefined();
+  });
+
+  it('同名 event 依序編號（L211-212）', async () => {
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(MULTI_EXAM_HTML)),
+    });
+    const result = await mod.getSchoolEvents();
+    // 兩個「定期評量」應被重新命名為「第一次定期評量」與「第二次定期評量」
+    const names = result.data.map((e) => e.name);
+    expect(names.some((n) => n.includes('第一次'))).toBe(true);
+    expect(names.some((n) => n.includes('第二次'))).toBe(true);
+  });
+});
+
 // ── 有 DB，fetch 後存入 MongoDB 快取 ──────────────────────────────────────────
 
 describe('getSchoolEvents — 有 DB，寫入 MongoDB 快取', () => {
