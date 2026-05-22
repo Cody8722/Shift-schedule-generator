@@ -115,6 +115,11 @@ describe('validateSettings', () => {
   });
 
   // personnel 欄位驗證
+  it('person.name 空字串回傳 invalid', () => {
+    const s = { tasks: [{ name: '早班', count: 1 }], personnel: [{ name: '' }] };
+    expect(validateSettings(s).valid).toBe(false);
+  });
+
   it('person.maxShifts=0 低於下限', () => {
     const s = { tasks: [{ name: '早班', count: 1 }], personnel: [{ name: '張三', maxShifts: 0 }] };
     expect(validateSettings(s).valid).toBe(false);

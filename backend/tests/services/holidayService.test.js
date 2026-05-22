@@ -45,6 +45,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   holidaysCache.clear();
   global.fetch = jest.fn();
+  // clearAllMocks 只清 calls，不重置 implementation；需明確恢復 access 預設行為，
+  // 避免「holidays 目錄不存在時不 crash」的 mockRejectedValue 污染後續測試。
+  fsMock.promises.access.mockResolvedValue(undefined);
 });
 
 // ── getWeekInfo ───────────────────────────────────────────────────────────────
@@ -267,6 +270,21 @@ describe('seedHolidays', () => {
     const docs = col.insertMany.mock.calls[0][0];
     expect(docs).toHaveLength(1);
     expect(docs[0]._id).toBe('20250101');
+  });
+
+  it('JSON 檔案中全為非假日時不呼叫 insertMany', async () => {
+    getIsDbConnected.mockReturnValue(true);
+    const col = makeCol();
+    col.countDocuments.mockResolvedValue(0);
+    getHolidaysCollection.mockReturnValue(col);
+
+    fsMock.promises.readdir.mockResolvedValue(['2025.json']);
+    fsMock.promises.readFile.mockResolvedValue(JSON.stringify([
+      { date: '20250102', description: '工作日', isHoliday: false },
+    ]));
+
+    await seedHolidays();
+    expect(col.insertMany).not.toHaveBeenCalled();
   });
 
   it('holidays 目錄不存在時不 crash', async () => {
