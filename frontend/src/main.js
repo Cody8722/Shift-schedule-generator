@@ -53,6 +53,11 @@ import { applyTheme, currentTheme } from './ui/theme.js';
 // ── Features ──
 import { renderPersonnelView, exportPersonnelExcel } from './features/schedule/personnelView.js';
 import { showDiffModal } from './features/schedule/diffSummary.js';
+import { printSchedule, exportToPdf } from './features/schedule/pdfExport.js';
+
+// ── Utils ──
+import { updateCapacityStatus } from './utils/capacityStatus.js';
+import { checkConnectionStatus } from './utils/connectionStatus.js';
 
 // ─────────────────────────────────────────────
 // DOM 元素集合（在 DOMContentLoaded 後填入）
@@ -67,40 +72,6 @@ let currentEditingPersonnelIndex = -1;
 let draggedPerson = null;
 let draggedFromCell = null;
 
-// ─────────────────────────────────────────────
-// 工具：容量狀態
-// ─────────────────────────────────────────────
-const updateCapacityStatus = () => {
-  const el = document.getElementById('capacity-status');
-  if (!el) return;
-  const settings = getActiveProfile()?.settings;
-  if (!settings) return;
-  const capacity = (settings.personnel || []).reduce((s, p) => s + (p.maxShifts || 5), 0);
-  const demand = (settings.tasks || []).reduce((s, t) => s + (t.count || 1), 0) * 5;
-  const diff = capacity - demand;
-
-  // Update redesign capacity panel elements
-  const supplyEl = document.getElementById('cap-supply');
-  const demandEl = document.getElementById('cap-demand');
-  const noteEl = document.getElementById('cap-note');
-  const fillEl = el.querySelector('.capacity-fill');
-  if (supplyEl) supplyEl.textContent = capacity;
-  if (demandEl) demandEl.textContent = demand;
-  if (!capacity && !demand) {
-    if (noteEl) noteEl.textContent = '尚未設定人員或勤務';
-    el.classList.remove('short');
-    return;
-  }
-  const pct = demand > 0 ? Math.min(100, Math.round(capacity / demand * 100)) : 100;
-  if (fillEl) fillEl.style.width = pct + '%';
-  if (diff >= 0) {
-    el.classList.remove('short');
-    if (noteEl) noteEl.textContent = `${(settings.personnel || []).length} 位人員可提供 ${capacity} 班次 · 每週需求 ${demand} · 餘 ${diff} 班`;
-  } else {
-    el.classList.add('short');
-    if (noteEl) noteEl.textContent = `容量 ${capacity} < 需求 ${demand}，每週缺少 ${-diff} 個班次，部分勤務將排不滿`;
-  }
-};
 
 // ─────────────────────────────────────────────
 // 渲染函式
@@ -1074,25 +1045,6 @@ const closePersonnelModal = () => {
   currentEditingPersonnelIndex = -1;
 };
 
-// ─────────────────────────────────────────────
-// 連線狀態
-// ─────────────────────────────────────────────
-const checkConnectionStatus = async () => {
-  try {
-    const response = await fetch('api/status');
-    const data = await response.json();
-    if (response.ok && data.database === 'connected') {
-      elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-green-500 transition-colors';
-      elements.statusText.textContent = '連線狀態：良好';
-    } else {
-      elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-yellow-400 transition-colors';
-      elements.statusText.textContent = '連線狀態：資料庫異常';
-    }
-  } catch {
-    elements.statusIndicator.className = 'w-3 h-3 rounded-full bg-red-500 transition-colors';
-    elements.statusText.textContent = '連線狀態：伺服器無回應';
-  }
-};
 
 // ─────────────────────────────────────────────
 // 初始化
@@ -1606,105 +1558,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initApp();
 });
 
-// ─────────────────────────────────────────────
-// PDF / 列印（使用全域 jsPDF/html2canvas）
-// ─────────────────────────────────────────────
-async function printSchedule() {
-  const generatedData = getGeneratedData();
-  if (!generatedData) return;
-  try {
-    const response = await api.post('render-schedule', generatedData);
-    if (response?.html) elements.scheduleOutput.innerHTML = response.html;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    window.print();
-  } catch (err) {
-    console.error('列印失敗:', err);
-    showToast('列印失敗，請稍後再試', 'error');
-  }
-}
-
-async function exportToPdf() {
-  const generatedData = getGeneratedData();
-  if (!generatedData) return;
-  try {
-    const response = await api.post('render-schedule', generatedData);
-    if (response?.html) elements.scheduleOutput.innerHTML = response.html;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  } catch (err) {
-    console.error('載入預覽 HTML 失敗:', err);
-    showToast('無法載入班表，請稍後再試', 'error');
-    return;
-  }
-
-  const { jsPDF } = window.jspdf;
-  const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
-  const numWeeks = generatedData.length;
-
-  let fontSize, headerFontSize, titleFontSize, padding, scaleValue;
-  if (numWeeks === 1) { fontSize = 18; headerFontSize = 19; titleFontSize = 22; padding = 12; scaleValue = 1.8; }
-  else if (numWeeks === 2) { fontSize = 15; headerFontSize = 16; titleFontSize = 19; padding = 10; scaleValue = 1.4; }
-  else if (numWeeks <= 4) { fontSize = 14; headerFontSize = 15; titleFontSize = 17; padding = 8; scaleValue = 1.3; }
-  else { fontSize = 12; headerFontSize = 13; titleFontSize = 15; padding = 6; scaleValue = 1.2; }
-
-  const style = document.createElement('style');
-  style.innerHTML = `
-    .pdf-export-container { display: block; padding: ${padding}px; background: white; width: 1000px !important; min-width: 1000px !important; }
-    .pdf-export-container .mb-8 { margin-bottom: ${padding}px !important; }
-    .pdf-export-container h3 { font-size: ${titleFontSize}px !important; margin-bottom: ${padding / 2}px !important; font-weight: bold; }
-    .pdf-export-container table { font-size: ${fontSize}px !important; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
-    .pdf-export-container th, .pdf-export-container td { padding: ${padding}px !important; line-height: 1.4 !important; word-wrap: break-word !important; }
-    .pdf-export-container th { font-size: ${headerFontSize}px !important; font-weight: bold !important; }
-  `;
-  document.head.appendChild(style);
-
-  const container = document.createElement('div');
-  container.className = 'pdf-export-container';
-  allScheduleElements.forEach((el) => container.appendChild(el.cloneNode(true)));
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  document.body.appendChild(container);
-
-  try {
-    const canvas = await window.html2canvas(container, {
-      scale: scaleValue,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-    });
-
-    document.body.removeChild(container);
-    document.head.removeChild(style);
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfPageWidth = pdf.internal.pageSize.getWidth();
-    const pdfPageHeight = pdf.internal.pageSize.getHeight();
-    const imgProps = pdf.getImageProperties(imgData);
-    const margin = 5;
-    const availableWidth = pdfPageWidth - margin * 2;
-    const availableHeight = pdfPageHeight - margin * 2;
-
-    let scale = availableWidth / imgProps.width;
-    let pdfImageWidth = availableWidth;
-    let pdfImageHeight = imgProps.height * scale;
-
-    if (pdfImageHeight > availableHeight) {
-      scale = availableHeight / imgProps.height;
-      pdfImageHeight = availableHeight;
-      pdfImageWidth = imgProps.width * scale;
-    }
-
-    const xPosition = margin;
-    const yPosition = (pdfPageHeight - pdfImageHeight) / 2;
-    pdf.addImage(imgData, 'JPEG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
-    pdf.save('班表.pdf');
-  } catch (err) {
-    console.error('html2canvas failed:', err);
-    showToast('PDF 導出失敗，請稍後再試', 'error');
-    if (document.body.contains(container)) document.body.removeChild(container);
-    if (document.head.contains(style)) document.head.removeChild(style);
-  }
-}
 
 // 修正 debouncedUpdateHolidays 在 initApp 的參照
 // 因為 debouncedUpdateHolidays 定義在 DOMContentLoaded 內，
