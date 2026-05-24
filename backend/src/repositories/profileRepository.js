@@ -56,7 +56,7 @@ const updateProfileSettings = async (name, settings) => {
   }
 };
 
-const renameProfile = async (oldName, newName, currentActive) => {
+const renameProfile = async (oldName, newName) => {
   const configCollection = getConfigCollection();
   const config = await configCollection.findOne({ _id: CONFIG_ID });
   if (!config.profiles[oldName] || config.profiles[newName]) {

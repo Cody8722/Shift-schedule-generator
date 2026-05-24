@@ -4,7 +4,6 @@ import {
   setGeneratedData,
   setCurrentScheduleName,
   setAppState,
-  getAppState,
 } from './appState.js';
 import { autoSaveDraft, clearDraft } from './draftManager.js';
 

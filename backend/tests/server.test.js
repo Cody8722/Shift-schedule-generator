@@ -129,6 +129,17 @@ describe('POST /api/generate-schedule', () => {
     expect(res.status).toBe(400);
   });
 
+  it('maxShifts=8 超出上限回傳 400', async () => {
+    const settings = {
+      ...minimalSettings,
+      personnel: [{ name: '張三', maxShifts: 8 }, { name: '李四', maxShifts: 5 }],
+    };
+    const res = await request(app)
+      .post('/api/generate-schedule')
+      .send({ ...validBody, settings });
+    expect(res.status).toBe(400);
+  });
+
   it('缺少 settings 回傳 400', async () => {
     const res = await request(app)
       .post('/api/generate-schedule')
@@ -180,6 +191,14 @@ describe('Profiles API', () => {
     const res = await request(app).get('/api/profiles');
     // 無 DB 時可能回 503/200，皆可接受；確保不 crash
     expect([200, 503]).toContain(res.status);
+  });
+});
+
+describe('GET /', () => {
+  it('dev fallback 回傳 200 HTML', async () => {
+    const res = await request(app).get('/');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('智慧排班系統');
   });
 });
 

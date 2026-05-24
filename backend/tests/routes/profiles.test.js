@@ -88,6 +88,12 @@ describe('PUT /api/profiles/active', () => {
     expect(res.status).toBe(200);
     expect(repo.setActiveProfile).toHaveBeenCalledWith('my-profile');
   });
+
+  it('repo 拋出例外時回傳 500', async () => {
+    repo.setActiveProfile.mockRejectedValue(new Error('DB error'));
+    const res = await request(app).put('/api/profiles/active').send({ name: 'my-profile' });
+    expect(res.status).toBe(500);
+  });
 });
 
 // ── POST /api/profiles ────────────────────────────────────────────────────────
@@ -131,6 +137,12 @@ describe('PUT /api/profiles/:name', () => {
     expect(res.status).toBe(503);
   });
 
+  it('名稱含特殊符號時回傳 400', async () => {
+    const encoded = encodeURIComponent('@invalid');
+    const res = await request(app).put(`/api/profiles/${encoded}`).send({ settings: minSettings });
+    expect(res.status).toBe(400);
+  });
+
   it('settings 無效（tasks 非陣列）時回傳 400', async () => {
     const res = await request(app)
       .put('/api/profiles/test')
@@ -152,6 +164,12 @@ describe('PUT /api/profiles/:name', () => {
     expect(res.status).toBe(404);
   });
 
+  it('repo 拋出非 404 例外時回傳 500', async () => {
+    repo.updateProfileSettings.mockRejectedValue(new Error('DB error'));
+    const res = await request(app).put('/api/profiles/test').send({ settings: minSettings });
+    expect(res.status).toBe(500);
+  });
+
   it('中文名稱正確解碼後更新', async () => {
     repo.updateProfileSettings.mockResolvedValue();
     const encoded = encodeURIComponent('早班組');
@@ -170,6 +188,12 @@ describe('PUT /api/profiles/:name/rename', () => {
     expect(res.status).toBe(503);
   });
 
+  it('舊名稱含特殊符號時回傳 400', async () => {
+    const encoded = encodeURIComponent('@invalid');
+    const res = await request(app).put(`/api/profiles/${encoded}/rename`).send({ newName: 'new' });
+    expect(res.status).toBe(400);
+  });
+
   it('新名稱含空格時回傳 400', async () => {
     const res = await request(app)
       .put('/api/profiles/valid/rename')
@@ -184,6 +208,14 @@ describe('PUT /api/profiles/:name/rename', () => {
       .send({ newName: 'new-name' });
     expect(res.status).toBe(200);
     expect(repo.renameProfile).toHaveBeenCalledWith('old-name', 'new-name');
+  });
+
+  it('repo 拋出例外時回傳 500', async () => {
+    repo.renameProfile.mockRejectedValue(new Error('DB error'));
+    const res = await request(app)
+      .put('/api/profiles/old-name/rename')
+      .send({ newName: 'new-name' });
+    expect(res.status).toBe(500);
   });
 });
 
@@ -213,5 +245,11 @@ describe('DELETE /api/profiles/:name', () => {
     repo.deleteProfile.mockRejectedValue(err);
     const res = await request(app).delete('/api/profiles/test');
     expect(res.status).toBe(400);
+  });
+
+  it('repo 拋出非 400 例外時回傳 500', async () => {
+    repo.deleteProfile.mockRejectedValue(new Error('DB error'));
+    const res = await request(app).delete('/api/profiles/test');
+    expect(res.status).toBe(500);
   });
 });

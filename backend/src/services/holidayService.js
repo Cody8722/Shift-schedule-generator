@@ -123,7 +123,7 @@ const seedHolidays = async () => {
 
     try {
       await fs.access(holidayDir);
-    } catch (err) {
+    } catch {
       debugServer('警告: holidays 目錄不存在，跳過假日資料植入。');
       return;
     }

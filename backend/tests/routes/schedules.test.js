@@ -97,6 +97,22 @@ describe('POST /api/schedules', () => {
       .send({ name: '2025-W01', data: sampleData, profile: 'a b' });
     expect(res.status).toBe(400);
   });
+
+  it('未提供 profile 且 config.activeProfile 為 null 時回傳 500', async () => {
+    repo.getConfig.mockResolvedValue({});
+    const res = await request(app)
+      .post('/api/schedules')
+      .send({ name: '2025-W01', data: sampleData });
+    expect(res.status).toBe(500);
+  });
+
+  it('repo.saveSchedule 拋出例外時回傳 500', async () => {
+    repo.saveSchedule.mockRejectedValue(new Error('DB error'));
+    const res = await request(app)
+      .post('/api/schedules')
+      .send({ name: '2025-W01', data: sampleData, profile: 'default' });
+    expect(res.status).toBe(500);
+  });
 });
 
 // ── GET /api/schedules/:name ──────────────────────────────────────────────────
@@ -134,6 +150,17 @@ describe('GET /api/schedules/:name', () => {
     expect(res.status).toBe(200);
     expect(repo.getSchedule).toHaveBeenCalledWith('default', '春季排班');
   });
+
+  it('?profile 含特殊符號時回傳 400', async () => {
+    const res = await request(app).get('/api/schedules/2025-W01?profile=a%20b');
+    expect(res.status).toBe(400);
+  });
+
+  it('repo.getSchedule 拋出例外時回傳 500', async () => {
+    repo.getSchedule.mockRejectedValue(new Error('DB error'));
+    const res = await request(app).get('/api/schedules/2025-W01');
+    expect(res.status).toBe(500);
+  });
 });
 
 // ── DELETE /api/schedules/:name ───────────────────────────────────────────────
@@ -145,11 +172,22 @@ describe('DELETE /api/schedules/:name', () => {
     expect(res.status).toBe(503);
   });
 
+  it('班表名稱超過 100 字元時回傳 400', async () => {
+    const name = encodeURIComponent('a'.repeat(101));
+    const res = await request(app).delete(`/api/schedules/${name}`);
+    expect(res.status).toBe(400);
+  });
+
   it('成功刪除班表', async () => {
     repo.deleteSchedule.mockResolvedValue();
     const res = await request(app).delete('/api/schedules/2025-W01');
     expect(res.status).toBe(200);
     expect(repo.deleteSchedule).toHaveBeenCalledWith('default', '2025-W01');
+  });
+
+  it('?profile 含特殊符號時回傳 400', async () => {
+    const res = await request(app).delete('/api/schedules/2025-W01?profile=a%20b');
+    expect(res.status).toBe(400);
   });
 
   it('repo 拋出例外時回傳 500', async () => {

@@ -62,7 +62,10 @@ test.describe('產生班表', () => {
     await page.waitForLoadState('networkidle');
     await resetProfileSettings(page);
     // Reload so initApp() fetches the now-clean profile from MongoDB.
+    // waitForLoadState ensures initApp() completes before the test adds items,
+    // preventing a race where a late profile-load overwrites freshly added tasks.
     await page.reload();
+    await page.waitForLoadState('networkidle');
     await expect(page.locator('#generate-schedule')).toBeVisible();
   });
 
