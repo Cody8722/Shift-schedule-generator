@@ -63,6 +63,8 @@ let elements = {};
 let availableHolidays = [];
 let activeHolidayDates = new Set();
 let currentEditingPersonnelIndex = -1;
+let statusCheckInterval = null;
+let appInitialized = false;
 
 
 // ─────────────────────────────────────────────
@@ -196,12 +198,15 @@ const initApp = async () => {
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  elements.startWeekInput.value = `${year}-W${String(weekNo).padStart(2, '0')}`;
-
-  debouncedUpdateHolidays();
-  setInitialAccordionState();
-  setInterval(checkConnectionStatus, 30000);
-  document.getElementById('footer-year').textContent = new Date().getFullYear();
+  if (!appInitialized) {
+    elements.startWeekInput.value = `${year}-W${String(weekNo).padStart(2, '0')}`;
+    debouncedUpdateHolidays();
+    setInitialAccordionState();
+    if (statusCheckInterval) clearInterval(statusCheckInterval);
+    statusCheckInterval = setInterval(checkConnectionStatus, 30000);
+    document.getElementById('footer-year').textContent = new Date().getFullYear();
+    appInitialized = true;
+  }
 
   // 草稿恢復
   try {
