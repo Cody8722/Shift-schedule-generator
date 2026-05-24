@@ -13,8 +13,6 @@ import { api } from '../../api/client.js';
 import { showToast } from '../../ui/toast.js';
 import { showConfirm } from '../../ui/modal.js';
 import { showDiffModal } from './diffSummary.js';
-import { renderPersonnelView } from './personnelView.js';
-
 let draggedPerson = null;
 let draggedFromCell = null;
 

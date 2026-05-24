@@ -2,7 +2,6 @@ import { showToast } from '../ui/toast.js';
 import {
   getEditingData,
   setEditingData,
-  getAppState,
   getActiveProfile,
 } from './appState.js';
 

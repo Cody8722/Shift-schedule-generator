@@ -511,7 +511,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!generatedData) return;
     const wb = window.XLSX.utils.book_new();
     generatedData.forEach((data, index) => {
-      const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
+      const { schedule, tasks, weekDayDates, scheduleDays } = data;
       const header = [
         '勤務地點',
         ...weekDayDates.map(
