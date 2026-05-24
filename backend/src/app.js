@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
@@ -18,7 +19,42 @@ const app = express();
 // 信任代理設定 (必須在 rate limiter 之前設定)
 app.set('trust proxy', 1);
 
-// CORS
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",           // Tailwind 需要 inline script 注入 config
+        'https://cdn.tailwindcss.com',
+        'https://cdn.sheetjs.com',
+        'https://cdnjs.cloudflare.com',
+      ],
+      styleSrc: [
+        "'self'",
+        "'unsafe-inline'",           // Tailwind JIT 動態注入樣式
+        'https://fonts.googleapis.com',
+      ],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      imgSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,  // CDN 資源不帶 COEP header，啟用會導致阻擋
+}));
+
+// API 回應加 no-store，避免快取敏感資料
+app.use('/api/', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
+// CORS（CORS_ORIGIN 未設定時預設 * 僅適合開發環境，生產環境請設定 CORS_ORIGIN）
 const corsOptions = {
   origin: CORS_ORIGIN,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
