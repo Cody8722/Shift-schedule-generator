@@ -546,6 +546,8 @@ body.editing .person-tag:active { cursor: grabbing; }
 
 /* Edit toolbar shown only when in edit mode */
 body:not(.editing) .edit-toolbar { display: none; }
+/* Enter-edit button hidden while in edit mode */
+body.editing #enter-edit-btn { display: none; }
 
 .week-block + .week-block { margin-top: 28px; }
 .week-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
@@ -1418,7 +1420,7 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
             </div>
           </div>
           <div class="panel-actions">
-            <button class="btn btn-secondary btn-sm" id="enter-edit-btn" style="display:none">
+            <button class="btn btn-secondary btn-sm" id="enter-edit-btn">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
               編輯班表
             </button>

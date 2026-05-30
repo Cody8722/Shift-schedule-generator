@@ -21,6 +21,19 @@ const _updateUndoRedoBtns = () => {
   if (r) r.disabled = editRedoStack.length === 0;
 };
 
+const _updateSettingsBadges = () => {
+  const undoBadge = document.getElementById('undo-badge');
+  const redoBadge = document.getElementById('redo-badge');
+  if (undoBadge) {
+    undoBadge.textContent = settingsUndoStack.length;
+    undoBadge.style.display = settingsUndoStack.length > 0 ? '' : 'none';
+  }
+  if (redoBadge) {
+    redoBadge.textContent = settingsRedoStack.length;
+    redoBadge.style.display = settingsRedoStack.length > 0 ? '' : 'none';
+  }
+};
+
 // ── 編輯歷史 ──
 export const getHistoryLock = () => _historyLock;
 export const setHistoryLock = (val) => {
@@ -66,6 +79,7 @@ export const pushSettingsHistory = () => {
   settingsUndoStack.push(JSON.stringify(profile.settings));
   if (settingsUndoStack.length > MAX_HISTORY) settingsUndoStack.shift();
   settingsRedoStack = [];
+  _updateSettingsBadges();
 };
 
 export const undoSettings = async (renderAllCallback, saveSettingsCallback) => {
@@ -75,6 +89,7 @@ export const undoSettings = async (renderAllCallback, saveSettingsCallback) => {
   profile.settings = JSON.parse(settingsUndoStack.pop());
   renderAllCallback();
   await saveSettingsCallback();
+  _updateSettingsBadges();
   showToast('已復原設定', 'info', 1500);
 };
 
@@ -85,10 +100,12 @@ export const redoSettings = async (renderAllCallback, saveSettingsCallback) => {
   profile.settings = JSON.parse(settingsRedoStack.pop());
   renderAllCallback();
   await saveSettingsCallback();
+  _updateSettingsBadges();
   showToast('已重做設定', 'info', 1500);
 };
 
 export const clearSettingsHistory = () => {
   settingsUndoStack = [];
   settingsRedoStack = [];
+  _updateSettingsBadges();
 };

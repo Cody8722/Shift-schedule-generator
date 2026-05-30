@@ -152,7 +152,7 @@ function createEditableWeek(weekData, weekIndex) {
         td.addEventListener('drop', handleCellDrop);
         td.addEventListener('dragleave', handleCellDragLeave);
         td.addEventListener('click', (e) => {
-          if (!e.target.closest('.person-tag')) {
+          if (!e.target.closest('.person-tag:not(.unfilled)')) {
             showPersonnelDropdown(td, weekIndex, dayIndex, taskIndex);
           }
         });
@@ -406,6 +406,7 @@ function clearAllHighlights() {
 function handlePersonDragStart(e) {
   draggedPerson = e.target.dataset.personName;
   draggedFromCell = null;
+  e.dataTransfer.setData('text/plain', draggedPerson);
   e.target.classList.add('opacity-50');
   highlightAvailableCells(draggedPerson);
 }
@@ -418,6 +419,7 @@ function handlePersonDragEnd(e) {
 function handleTagDragStart(e) {
   draggedPerson = e.target.dataset.personName;
   draggedFromCell = e.target.closest('.editable-cell');
+  e.dataTransfer.setData('text/plain', draggedPerson);
   e.target.classList.add('opacity-50');
   highlightAvailableCells(draggedPerson);
 }
@@ -682,6 +684,11 @@ async function cancelEdits() {
   clearDraft();
   setEditingData(JSON.parse(JSON.stringify(getGeneratedData())));
   setHasUnsavedChanges(false);
+  clearEditHistory();
+  const editStatus = document.getElementById('edit-status');
+  if (editStatus) { editStatus.textContent = ''; editStatus.className = ''; }
+  const saveEditsBtn = document.getElementById('save-edits-btn');
+  if (saveEditsBtn) saveEditsBtn.disabled = true;
   renderEditableSchedule();
 }
 
