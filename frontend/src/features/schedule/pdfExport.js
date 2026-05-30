@@ -1,11 +1,13 @@
-import { getGeneratedData } from '../../state/appState.js';
+import { getGeneratedData, getEditingData } from '../../state/appState.js';
 import { api } from '../../api/client.js';
 import { showToast } from '../../ui/toast.js';
+import { renderEditableSchedule } from './editableSchedule.js';
 
 export async function printSchedule() {
   const generatedData = getGeneratedData();
   if (!generatedData) return;
   const scheduleOutput = document.getElementById('schedule-output');
+  const wasEditing = getEditingData() !== null;
   try {
     const response = await api.post('render-schedule', generatedData);
     if (response?.html && scheduleOutput) scheduleOutput.innerHTML = response.html;
@@ -14,6 +16,8 @@ export async function printSchedule() {
   } catch (err) {
     console.error('列印失敗:', err);
     showToast('列印失敗，請稍後再試', 'error');
+  } finally {
+    if (wasEditing) renderEditableSchedule();
   }
 }
 
@@ -21,6 +25,7 @@ export async function exportToPdf() {
   const generatedData = getGeneratedData();
   if (!generatedData) return;
   const scheduleOutput = document.getElementById('schedule-output');
+  const wasEditing = getEditingData() !== null;
   try {
     const response = await api.post('render-schedule', generatedData);
     if (response?.html && scheduleOutput) scheduleOutput.innerHTML = response.html;
@@ -28,6 +33,7 @@ export async function exportToPdf() {
   } catch (err) {
     console.error('載入預覽 HTML 失敗:', err);
     showToast('無法載入班表，請稍後再試', 'error');
+    if (wasEditing) renderEditableSchedule();
     return;
   }
 
@@ -98,5 +104,7 @@ export async function exportToPdf() {
     showToast('PDF 導出失敗，請稍後再試', 'error');
     if (document.body.contains(container)) document.body.removeChild(container);
     if (document.head.contains(style)) document.head.removeChild(style);
+  } finally {
+    if (wasEditing) renderEditableSchedule();
   }
 }
