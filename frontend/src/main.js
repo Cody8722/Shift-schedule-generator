@@ -43,12 +43,13 @@ import {
 import { showToast } from './ui/toast.js';
 import { showInput, showConfirm } from './ui/modal.js';
 import { applyTheme, currentTheme } from './ui/theme.js';
+import { initTutorial } from './ui/tutorial.js';
 
 // ── Features ──
 import { renderPersonnelView, exportPersonnelExcel } from './features/schedule/personnelView.js';
 import { printSchedule, exportToPdf } from './features/schedule/pdfExport.js';
 import { renderAll, renderSavedSchedules } from './features/settings/settingsRenderer.js';
-import { renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
+import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
 
 // ── Utils ──
@@ -290,6 +291,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.themeToggle.addEventListener('click', () => {
     const isDark = document.documentElement.classList.contains('dark');
     applyTheme(isDark ? 'light' : 'dark');
+  });
+
+  // 全域 modal × 關閉鈕（class="modal-close"，無 ID）
+  document.addEventListener('click', (e) => {
+    const closeBtn = e.target.closest('.modal-close');
+    if (!closeBtn) return;
+    const backdrop = closeBtn.closest('.modal-backdrop');
+    if (!backdrop) return;
+    // confirm/input modal 的 × 要走取消流程，讓 Promise 正確 resolve
+    const cancelBtn = backdrop.querySelector('#confirm-modal-cancel, #input-modal-cancel');
+    if (cancelBtn) {
+      cancelBtn.click();
+    } else {
+      backdrop.classList.remove('open');
+    }
   });
 
   // 任務
@@ -631,7 +647,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('diff-modal').classList.remove('open');
   });
 
+  document.getElementById('diff-modal-close-2')?.addEventListener('click', () => {
+    document.getElementById('diff-modal').classList.remove('open');
+  });
+
+  document.getElementById('diff-modal-apply')?.addEventListener('click', () => {
+    document.getElementById('diff-modal').classList.remove('open');
+  });
+
+  document.getElementById('dm-revert')?.addEventListener('click', async () => {
+    document.getElementById('diff-modal').classList.remove('open');
+    const ok = await showConfirm('確定要捨棄所有變更，回到原始班表嗎？');
+    if (!ok) return;
+    clearDraft();
+    setEditingData(JSON.parse(JSON.stringify(getGeneratedData())));
+    setHasUnsavedChanges(false);
+    clearEditHistory();
+    const editStatus = document.getElementById('edit-status');
+    if (editStatus) { editStatus.textContent = ''; editStatus.className = ''; }
+    const saveEditsBtn = document.getElementById('save-edits-btn');
+    if (saveEditsBtn) saveEditsBtn.disabled = true;
+    renderEditableSchedule();
+  });
+
   initEditToolbarEvents();
+
+  document.getElementById('enter-edit-btn')?.addEventListener('click', enableEditMode);
 
   // 人員/班表 tab 切換
   const personnelExcelBtn = document.getElementById('export-personnel-excel');
@@ -658,6 +699,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   personnelExcelBtn?.addEventListener('click', exportPersonnelExcel);
 
+  document.getElementById('undo')?.addEventListener('click', () => undoSettings(renderAll, saveSettings));
+  document.getElementById('redo')?.addEventListener('click', () => redoSettings(renderAll, saveSettings));
+
   // 全域鍵盤快捷鍵
   document.addEventListener('keydown', (e) => {
     const mod = navigator.platform.toUpperCase().includes('MAC') ? e.metaKey : e.ctrlKey;
@@ -678,6 +722,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await initApp();
+  initTutorial();
 });
 
 
