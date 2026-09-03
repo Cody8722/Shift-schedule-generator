@@ -55,6 +55,7 @@ import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
 
 // ── Utils ──
 import { checkConnectionStatus } from './utils/connectionStatus.js';
+import { downloadWorkbook } from './utils/excelDownload.js';
 
 // ─────────────────────────────────────────────
 // DOM 元素集合（在 DOMContentLoaded 後填入）
@@ -532,43 +533,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Excel
-  elements.exportExcelBtn.addEventListener('click', () => {
+  elements.exportExcelBtn.addEventListener('click', async () => {
     const generatedData = getGeneratedData();
     if (!generatedData) return;
-    const wb = window.XLSX.utils.book_new();
+    const wb = new window.ExcelJS.Workbook();
     generatedData.forEach((data, index) => {
       const { schedule, tasks, weekDayDates, scheduleDays } = data;
-      const header = [
+      const ws = wb.addWorksheet(`第${index + 1}週`);
+      ws.columns = Array(6).fill({ width: 15 });
+
+      const headerRow = ws.addRow([
         '勤務地點',
         ...weekDayDates.map(
           (date, i) => `星期${['一', '二', '三', '四', '五'][i]}\n(${date})`
         ),
-      ];
-      const ws_data = [header];
+      ]);
+      headerRow.eachCell((cell) => { cell.alignment = { wrapText: true, vertical: 'top' }; });
+
       tasks.forEach((task, taskIndex) => {
-        const row = [task.name];
+        const cells = [task.name];
         weekDayDates.forEach((_, dayIndex) => {
-          if (!scheduleDays[dayIndex].shouldSchedule) {
-            row.push(scheduleDays[dayIndex].description);
-          } else {
-            row.push(schedule[dayIndex][taskIndex].join('\n'));
-          }
+          cells.push(
+            scheduleDays[dayIndex].shouldSchedule
+              ? schedule[dayIndex][taskIndex].join('\n')
+              : scheduleDays[dayIndex].description
+          );
         });
-        ws_data.push(row);
+        const row = ws.addRow(cells);
+        row.eachCell((cell) => { cell.alignment = { wrapText: true, vertical: 'top' }; });
       });
-      const ws = window.XLSX.utils.aoa_to_sheet(ws_data);
-      ws['!cols'] = Array(6).fill({ wch: 15 });
-      // SheetJS 免費版無法寫入儲存格的 wrapText 樣式，但列高（!rows）有支援。
-      // Excel 對儲存格內手動換行（多人姓名用 \n 接起來）不會自動撐開列高，
-      // 沒設定的話姓名一多，後面幾行在 Excel 打開時會被壓在同一行高度裡看不到。
-      // 依每列最長的換行數手動撐開列高，讓每個名字都有自己的一行。
-      ws['!rows'] = ws_data.map((row) => {
-        const maxLines = Math.max(1, ...row.map((cell) => String(cell ?? '').split('\n').length));
-        return { hpt: maxLines * 15 };
-      });
-      window.XLSX.utils.book_append_sheet(wb, ws, `第${index + 1}週`);
     });
-    window.XLSX.writeFile(wb, '班表.xlsx');
+    await downloadWorkbook(wb, '班表.xlsx');
   });
 
   // PDF

@@ -97,7 +97,7 @@ backend/
   tests/
 
 frontend/
-  index.html                     # HTML 入口，載入 CDN（Tailwind、SheetJS、jsPDF）
+  index.html                     # HTML 入口，載入 CDN（Tailwind、ExcelJS、jsPDF、html2canvas）
   vite.config.js                 # proxy /api → http://localhost:3000
   src/
     main.js                      # 主進入點（約 750 行，DOM 事件綁定 + 初始化）

@@ -28,7 +28,6 @@ app.use(helmet({
         "'self'",
         "'unsafe-inline'",           // Tailwind 需要 inline script 注入 config
         'https://cdn.tailwindcss.com',
-        'https://cdn.sheetjs.com',
         'https://cdnjs.cloudflare.com',
       ],
       styleSrc: [

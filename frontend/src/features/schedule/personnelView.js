@@ -1,5 +1,6 @@
 import { escapeHtml } from '../../utils/escapeHtml.js';
 import { getAppState, getEditingData, getGeneratedData } from '../../state/appState.js';
+import { downloadWorkbook } from '../../utils/excelDownload.js';
 
 export const TASK_COLORS = [
   'pv-task-0',
@@ -94,7 +95,7 @@ export const renderPersonnelView = (data) => {
 /**
  * 匯出人員班表為 Excel。
  */
-export const exportPersonnelExcel = () => {
+export const exportPersonnelExcel = async () => {
   const data = getEditingData() || getGeneratedData();
   if (!data) return;
 
@@ -131,20 +132,17 @@ export const exportPersonnelExcel = () => {
     });
   });
 
-  const header = ['姓名', ...cols.map((c) => c.label)];
-  const wsData = [
-    header,
-    ...allPersons.map((p) => [
-      p,
-      ...cols.map((c) =>
-        c.shouldSchedule ? personMap[p]?.[`${c.wi}-${c.di}`] || '' : '假日'
-      ),
-    ]),
-  ];
+  const wb = new window.ExcelJS.Workbook();
+  const ws = wb.addWorksheet('人員班表');
+  ws.columns = [{ width: 10 }, ...cols.map(() => ({ width: 12 }))];
 
-  const wb = window.XLSX.utils.book_new();
-  const ws = window.XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols'] = [{ wch: 10 }, ...cols.map(() => ({ wch: 12 }))];
-  window.XLSX.utils.book_append_sheet(wb, ws, '人員班表');
-  window.XLSX.writeFile(wb, '人員班表.xlsx');
+  ws.addRow(['姓名', ...cols.map((c) => c.label)]);
+  allPersons.forEach((p) => {
+    ws.addRow([
+      p,
+      ...cols.map((c) => (c.shouldSchedule ? personMap[p]?.[`${c.wi}-${c.di}`] || '' : '假日')),
+    ]);
+  });
+
+  await downloadWorkbook(wb, '人員班表.xlsx');
 };
