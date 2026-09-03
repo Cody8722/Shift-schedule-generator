@@ -55,6 +55,8 @@ export async function exportToPdf() {
     .pdf-export-container table { font-size: ${fontSize}px !important; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
     .pdf-export-container th, .pdf-export-container td { padding: ${padding}px !important; line-height: 1.4 !important; word-wrap: break-word !important; }
     .pdf-export-container th { font-size: ${headerFontSize}px !important; font-weight: bold !important; }
+    .pdf-export-container .person-tag,
+    .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: nowrap !important; }
   `;
   document.head.appendChild(style);
 
@@ -64,6 +66,15 @@ export async function exportToPdf() {
   container.style.position = 'absolute';
   container.style.left = '-9999px';
   document.body.appendChild(container);
+
+  // Noto Sans TC 等 Google Fonts 用 font-display: swap 載入，若還沒切換完成就被
+  // html2canvas 截圖，中文字會用 fallback 字型的寬度算版，跟 CSS 原本抓好的
+  // pill padding 對不上，畫面上看起來就像文字被擠出格子邊界。等字型就緒 + 多等
+  // 一次畫面重繪，確保截到的是真正套用目標字型之後的排版。
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+  }
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
   try {
     const canvas = await window.html2canvas(container, {
