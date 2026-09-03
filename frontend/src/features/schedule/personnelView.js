@@ -1,6 +1,7 @@
 import { escapeHtml } from '../../utils/escapeHtml.js';
-import { getAppState, getEditingData, getGeneratedData } from '../../state/appState.js';
+import { getAppState } from '../../state/appState.js';
 import { downloadWorkbook } from '../../utils/excelDownload.js';
+import { getExportData } from './exportWeekFilter.js';
 
 export const TASK_COLORS = [
   'pv-task-0',
@@ -96,8 +97,8 @@ export const renderPersonnelView = (data) => {
  * 匯出人員班表為 Excel。
  */
 export const exportPersonnelExcel = async () => {
-  const data = getEditingData() || getGeneratedData();
-  if (!data) return;
+  const data = getExportData();
+  if (!data || data.length === 0) return;
 
   const dayNames = ['一', '二', '三', '四', '五'];
   const appState = getAppState();
@@ -109,7 +110,7 @@ export const exportPersonnelExcel = async () => {
   data.forEach((week, wi) => {
     week.weekDayDates.forEach((date, di) => {
       cols.push({
-        label: `W${wi + 1}${dayNames[di]}(${date})`,
+        label: `W${week.weekIndex + 1}${dayNames[di]}(${date})`,
         wi,
         di,
         shouldSchedule: week.scheduleDays[di].shouldSchedule,

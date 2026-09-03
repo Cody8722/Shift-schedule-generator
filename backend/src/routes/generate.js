@@ -110,6 +110,7 @@ router.post('/api/generate-schedule', generateLimiter, async (req, res) => {
         weekDayDates,
         scheduleDays,
         color: colors[i % colors.length],
+        weekIndex: i,
       });
     }
 

@@ -1,15 +1,16 @@
-import { getGeneratedData, getEditingData } from '../../state/appState.js';
+import { getEditingData } from '../../state/appState.js';
+import { getExportData } from './exportWeekFilter.js';
 import { api } from '../../api/client.js';
 import { showToast } from '../../ui/toast.js';
 import { renderEditableSchedule } from './editableSchedule.js';
 
 export async function printSchedule() {
-  const generatedData = getGeneratedData();
-  if (!generatedData) return;
+  const exportData = getExportData();
+  if (!exportData || exportData.length === 0) return;
   const scheduleOutput = document.getElementById('schedule-output');
   const wasEditing = getEditingData() !== null;
   try {
-    const response = await api.post('render-schedule', generatedData);
+    const response = await api.post('render-schedule', exportData);
     if (response?.html && scheduleOutput) scheduleOutput.innerHTML = response.html;
     await new Promise((resolve) => setTimeout(resolve, 100));
     window.print();
@@ -21,13 +22,21 @@ export async function printSchedule() {
   }
 }
 
+// 依「每頁週數」決定字級/間距——每頁週數越少，代表每週分到的版面越大，字可以更大
+const PAGE_DENSITY_STYLES = {
+  1: { fontSize: 18, headerFontSize: 19, titleFontSize: 22, padding: 12, scaleValue: 1.8 },
+  2: { fontSize: 15, headerFontSize: 16, titleFontSize: 19, padding: 10, scaleValue: 1.4 },
+  3: { fontSize: 14, headerFontSize: 15, titleFontSize: 17, padding: 8, scaleValue: 1.3 },
+  4: { fontSize: 12, headerFontSize: 13, titleFontSize: 15, padding: 6, scaleValue: 1.2 },
+};
+
 export async function exportToPdf() {
-  const generatedData = getGeneratedData();
-  if (!generatedData) return;
+  const exportData = getExportData();
+  if (!exportData || exportData.length === 0) return;
   const scheduleOutput = document.getElementById('schedule-output');
   const wasEditing = getEditingData() !== null;
   try {
-    const response = await api.post('render-schedule', generatedData);
+    const response = await api.post('render-schedule', exportData);
     if (response?.html && scheduleOutput) scheduleOutput.innerHTML = response.html;
     await new Promise((resolve) => setTimeout(resolve, 100));
   } catch (err) {
@@ -38,14 +47,9 @@ export async function exportToPdf() {
   }
 
   const { jsPDF } = window.jspdf;
-  const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
-  const numWeeks = generatedData.length;
-
-  let fontSize, headerFontSize, titleFontSize, padding, scaleValue;
-  if (numWeeks === 1) { fontSize = 18; headerFontSize = 19; titleFontSize = 22; padding = 12; scaleValue = 1.8; }
-  else if (numWeeks === 2) { fontSize = 15; headerFontSize = 16; titleFontSize = 19; padding = 10; scaleValue = 1.4; }
-  else if (numWeeks <= 4) { fontSize = 14; headerFontSize = 15; titleFontSize = 17; padding = 8; scaleValue = 1.3; }
-  else { fontSize = 12; headerFontSize = 13; titleFontSize = 15; padding = 6; scaleValue = 1.2; }
+  const weeksPerPageInput = parseInt(document.getElementById('weeks-per-page')?.value, 10);
+  const weeksPerPage = Math.min(4, Math.max(1, weeksPerPageInput || 2));
+  const { fontSize, headerFontSize, titleFontSize, padding, scaleValue } = PAGE_DENSITY_STYLES[weeksPerPage];
 
   const style = document.createElement('style');
   style.innerHTML = `
@@ -60,13 +64,6 @@ export async function exportToPdf() {
   `;
   document.head.appendChild(style);
 
-  const container = document.createElement('div');
-  container.className = 'pdf-export-container';
-  allScheduleElements.forEach((el) => container.appendChild(el.cloneNode(true)));
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  document.body.appendChild(container);
-
   // Noto Sans TC 等 Google Fonts 用 font-display: swap 載入，若還沒切換完成就被
   // html2canvas 截圖，中文字會用 fallback 字型的寬度算版，跟 CSS 原本抓好的
   // pill padding 對不上，畫面上看起來就像文字被擠出格子邊界。等字型就緒 + 多等
@@ -76,44 +73,68 @@ export async function exportToPdf() {
   }
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
+  const allScheduleElements = Array.from(document.querySelectorAll('[id^="schedule-week-"]'));
+  // 依「每頁週數」把週區塊切成好幾頁，超過的自動排到下一頁（自動分頁補位）
+  const pdfPages = [];
+  for (let i = 0; i < allScheduleElements.length; i += weeksPerPage) {
+    pdfPages.push(allScheduleElements.slice(i, i + weeksPerPage));
+  }
+
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  let renderedAnyPage = false;
+  let activeContainer = null;
+
   try {
-    const canvas = await window.html2canvas(container, {
-      scale: scaleValue,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-    });
+    for (const pageElements of pdfPages) {
+      const container = document.createElement('div');
+      container.className = 'pdf-export-container';
+      pageElements.forEach((el) => container.appendChild(el.cloneNode(true)));
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      document.body.appendChild(container);
+      activeContainer = container;
 
-    document.body.removeChild(container);
-    document.head.removeChild(style);
+      const canvas = await window.html2canvas(container, {
+        scale: scaleValue,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+      });
+      document.body.removeChild(container);
+      activeContainer = null;
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfPageWidth = pdf.internal.pageSize.getWidth();
-    const pdfPageHeight = pdf.internal.pageSize.getHeight();
-    const imgProps = pdf.getImageProperties(imgData);
-    const margin = 5;
-    const availableWidth = pdfPageWidth - margin * 2;
-    const availableHeight = pdfPageHeight - margin * 2;
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const pdfPageWidth = pdf.internal.pageSize.getWidth();
+      const pdfPageHeight = pdf.internal.pageSize.getHeight();
+      const imgProps = pdf.getImageProperties(imgData);
+      const margin = 5;
+      const availableWidth = pdfPageWidth - margin * 2;
+      const availableHeight = pdfPageHeight - margin * 2;
 
-    let scale = availableWidth / imgProps.width;
-    let pdfImageWidth = availableWidth;
-    let pdfImageHeight = imgProps.height * scale;
+      let scale = availableWidth / imgProps.width;
+      let pdfImageWidth = availableWidth;
+      let pdfImageHeight = imgProps.height * scale;
 
-    if (pdfImageHeight > availableHeight) {
-      scale = availableHeight / imgProps.height;
-      pdfImageHeight = availableHeight;
-      pdfImageWidth = imgProps.width * scale;
+      if (pdfImageHeight > availableHeight) {
+        scale = availableHeight / imgProps.height;
+        pdfImageHeight = availableHeight;
+        pdfImageWidth = imgProps.width * scale;
+      }
+
+      if (renderedAnyPage) pdf.addPage();
+      renderedAnyPage = true;
+
+      const xPosition = margin + (availableWidth - pdfImageWidth) / 2;
+      const yPosition = margin;
+      pdf.addImage(imgData, 'JPEG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
     }
 
-    const xPosition = margin;
-    const yPosition = (pdfPageHeight - pdfImageHeight) / 2;
-    pdf.addImage(imgData, 'JPEG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
+    document.head.removeChild(style);
     pdf.save('班表.pdf');
   } catch (err) {
     console.error('html2canvas failed:', err);
     showToast('PDF 導出失敗，請稍後再試', 'error');
-    if (document.body.contains(container)) document.body.removeChild(container);
+    if (activeContainer && document.body.contains(activeContainer)) document.body.removeChild(activeContainer);
     if (document.head.contains(style)) document.head.removeChild(style);
   } finally {
     if (wasEditing) renderEditableSchedule();

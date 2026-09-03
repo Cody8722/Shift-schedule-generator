@@ -52,6 +52,7 @@ import { renderAll, renderSavedSchedules } from './features/settings/settingsRen
 import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
 import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
+import { getExportData, initExportWeekFilter } from './features/schedule/exportWeekFilter.js';
 
 // ── Utils ──
 import { checkConnectionStatus } from './utils/connectionStatus.js';
@@ -506,12 +507,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 複製
   elements.copyBtn.addEventListener('click', () => {
-    const generatedData = getGeneratedData();
-    if (!generatedData) return;
+    const exportData = getExportData();
+    if (!exportData || exportData.length === 0) return;
     let textContent = '';
-    generatedData.forEach((data, index) => {
+    exportData.forEach((data) => {
       const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
-      textContent += `第 ${index + 1} 週班表 (${dateRange})\n`;
+      textContent += `第 ${data.weekIndex + 1} 週班表 (${dateRange})\n`;
       textContent +=
         ['勤務地點', '星期一', '星期二', '星期三', '星期四', '星期五'].join('\t') + '\n';
       tasks.forEach((task, taskIndex) => {
@@ -534,12 +535,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Excel
   elements.exportExcelBtn.addEventListener('click', async () => {
-    const generatedData = getGeneratedData();
-    if (!generatedData) return;
+    const exportData = getExportData();
+    if (!exportData || exportData.length === 0) return;
     const wb = new window.ExcelJS.Workbook();
-    generatedData.forEach((data, index) => {
+    exportData.forEach((data) => {
       const { schedule, tasks, weekDayDates, scheduleDays } = data;
-      const ws = wb.addWorksheet(`第${index + 1}週`);
+      const ws = wb.addWorksheet(`第${data.weekIndex + 1}週`);
       ws.columns = Array(6).fill({ width: 15 });
 
       const headerRow = ws.addRow([
@@ -685,6 +686,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initEditToolbarEvents();
   initScheduleCompare();
+  initExportWeekFilter();
 
   document.getElementById('enter-edit-btn')?.addEventListener('click', enableEditMode);
 

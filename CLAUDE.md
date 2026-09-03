@@ -116,12 +116,14 @@ frontend/
       debounce.js
       capacityStatus.js          # 容量/填補率狀態計算
       connectionStatus.js        # 後端連線狀態顯示
+      excelDownload.js           # ExcelJS Workbook → Blob 觸發瀏覽器下載
     features/schedule/
       personnelView.js           # 人員月曆視圖 + Excel 下載
       diffSummary.js             # 變更摘要 Modal（buildDiff、共用 renderDiffSection）
       editableSchedule.js        # 可編輯班表（含單格重排、拖曳對調）
       scheduleCompare.js         # 比較已儲存班表 Modal（人員異動/填補率/勤務設定差異）
-      pdfExport.js               # PDF 匯出
+      exportWeekFilter.js        # 匯出週次篩選（getExportData，供複製/Excel/PDF/人員Excel 共用）
+      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁）
       scheduleGenerator.js       # 前端排班產生流程
     features/settings/
       settingsRenderer.js        # 設定頁渲染

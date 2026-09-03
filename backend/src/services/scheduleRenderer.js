@@ -22,6 +22,9 @@ const generateScheduleHtml = (fullScheduleData) => {
 
   fullScheduleData.forEach((data, index) => {
     const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
+    // 匯出時可能只送選定的幾週，weekIndex 保留該週在完整班表中的原始序號，
+    // 讓 W 標籤跟格子 id 不會因為篩選而錯位；沒有這個欄位的舊資料退回用陣列位置。
+    const weekNum = data.weekIndex ?? index;
     const weekDayNames = ['一', '二', '三', '四', '五'];
 
     const workDays = scheduleDays.filter((d) => d.shouldSchedule).length;
@@ -75,10 +78,10 @@ const generateScheduleHtml = (fullScheduleData) => {
     }).join('');
 
     html += `
-<div class="week-block" id="schedule-week-${index}">
+<div class="week-block" id="schedule-week-${weekNum}">
   <div class="week-head">
     <div class="week-label">
-      <span class="week-num">W${index + 1}</span>
+      <span class="week-num">W${weekNum + 1}</span>
       <span class="week-date">${escapeHtml(dateRange)}</span>
     </div>
     <div class="week-stats">填補 <span class="${fillClass}">${filled}/${demand}</span> · ${pct}%</div>

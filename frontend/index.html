@@ -443,6 +443,24 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .panel-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+.week-filter {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  flex-basis: 100%; width: 100%;
+  padding: 10px 20px; border-top: 1px solid var(--border-subtle);
+}
+.week-filter-label { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.week-filter-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.week-chip {
+  padding: 4px 12px; border-radius: var(--radius-pill);
+  background: var(--bg-inset); border: 1px solid var(--border-subtle);
+  color: var(--text-muted); font: 500 12px var(--font-mono);
+  transition: background .12s, border-color .12s, color .12s;
+}
+.week-chip:hover { border-color: var(--border-default); }
+.week-chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.week-filter-sep { width: 1px; align-self: stretch; background: var(--border-subtle); }
+#weeks-per-page { width: auto; padding: 4px 8px; font-size: 12px; }
+
 /* ─── Edit toolbar ──────────────────────────────────────────── */
 .edit-toolbar {
   display: flex; align-items: center; gap: 12px;
@@ -1465,6 +1483,18 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h2l1 2 1-3 1 3 1-2h2"/></svg>
               人員 Excel
             </button>
+          </div>
+          <div class="week-filter hidden" id="export-week-filter">
+            <span class="week-filter-label">匯出週次</span>
+            <div class="week-filter-chips" id="week-filter-chips"></div>
+            <span class="week-filter-sep"></span>
+            <label class="week-filter-label" for="weeks-per-page">PDF 每頁</label>
+            <select class="select" id="weeks-per-page">
+              <option value="1">1 週</option>
+              <option value="2" selected>2 週</option>
+              <option value="3">3 週</option>
+              <option value="4">4 週</option>
+            </select>
           </div>
         </div>
 
