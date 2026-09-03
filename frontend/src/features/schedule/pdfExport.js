@@ -49,20 +49,6 @@ export async function exportToPdf() {
   const { jsPDF } = window.jspdf;
   const weeksPerPageInput = parseInt(document.getElementById('weeks-per-page')?.value, 10);
   const weeksPerPage = Math.min(4, Math.max(1, weeksPerPageInput || 2));
-  const { fontSize, headerFontSize, titleFontSize, padding, scaleValue } = PAGE_DENSITY_STYLES[weeksPerPage];
-
-  const style = document.createElement('style');
-  style.innerHTML = `
-    .pdf-export-container { display: block; padding: ${padding}px; background: white; width: 1000px !important; min-width: 1000px !important; }
-    .pdf-export-container .mb-8 { margin-bottom: ${padding}px !important; }
-    .pdf-export-container h3 { font-size: ${titleFontSize}px !important; margin-bottom: ${padding / 2}px !important; font-weight: bold; }
-    .pdf-export-container table { font-size: ${fontSize}px !important; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
-    .pdf-export-container th, .pdf-export-container td { padding: ${padding}px !important; line-height: 1.4 !important; word-wrap: break-word !important; }
-    .pdf-export-container th { font-size: ${headerFontSize}px !important; font-weight: bold !important; }
-    .pdf-export-container .person-tag,
-    .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: nowrap !important; }
-  `;
-  document.head.appendChild(style);
 
   // Noto Sans TC 等 Google Fonts 用 font-display: swap 載入，若還沒切換完成就被
   // html2canvas 截圖，中文字會用 fallback 字型的寬度算版，跟 CSS 原本抓好的
@@ -83,9 +69,28 @@ export async function exportToPdf() {
   const pdf = new jsPDF('p', 'mm', 'a4');
   let renderedAnyPage = false;
   let activeContainer = null;
+  let activeStyle = null;
 
   try {
     for (const pageElements of pdfPages) {
+      // 依「這一頁實際的週數」決定字級/間距，而不是用整體的「每頁週數」設定——
+      // 自動補位補到的最後一頁週數可能比設定值少（例如每頁 2 週但只剩 1 週），
+      // 這樣那一頁才會真的放大填滿版面，而不是維持跟其他頁一樣的小尺寸。
+      const density = PAGE_DENSITY_STYLES[Math.min(4, Math.max(1, pageElements.length))];
+      const style = document.createElement('style');
+      style.innerHTML = `
+        .pdf-export-container { display: block; padding: ${density.padding}px; background: white; width: 1000px !important; min-width: 1000px !important; }
+        .pdf-export-container .mb-8 { margin-bottom: ${density.padding}px !important; }
+        .pdf-export-container h3 { font-size: ${density.titleFontSize}px !important; margin-bottom: ${density.padding / 2}px !important; font-weight: bold; }
+        .pdf-export-container table { font-size: ${density.fontSize}px !important; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
+        .pdf-export-container th, .pdf-export-container td { padding: ${density.padding}px !important; line-height: 1.4 !important; word-wrap: break-word !important; }
+        .pdf-export-container th { font-size: ${density.headerFontSize}px !important; font-weight: bold !important; }
+        .pdf-export-container .person-tag,
+        .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: nowrap !important; }
+      `;
+      document.head.appendChild(style);
+      activeStyle = style;
+
       const container = document.createElement('div');
       container.className = 'pdf-export-container';
       pageElements.forEach((el) => container.appendChild(el.cloneNode(true)));
@@ -95,47 +100,38 @@ export async function exportToPdf() {
       activeContainer = container;
 
       const canvas = await window.html2canvas(container, {
-        scale: scaleValue,
+        scale: density.scaleValue,
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
       });
       document.body.removeChild(container);
       activeContainer = null;
+      document.head.removeChild(style);
+      activeStyle = null;
 
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
       const pdfPageWidth = pdf.internal.pageSize.getWidth();
       const pdfPageHeight = pdf.internal.pageSize.getHeight();
-      const imgProps = pdf.getImageProperties(imgData);
       const margin = 5;
       const availableWidth = pdfPageWidth - margin * 2;
       const availableHeight = pdfPageHeight - margin * 2;
 
-      let scale = availableWidth / imgProps.width;
-      let pdfImageWidth = availableWidth;
-      let pdfImageHeight = imgProps.height * scale;
-
-      if (pdfImageHeight > availableHeight) {
-        scale = availableHeight / imgProps.height;
-        pdfImageHeight = availableHeight;
-        pdfImageWidth = imgProps.width * scale;
-      }
-
+      // 直接拉伸填滿整張可用版面，不嚴格保持長寬比——容器寬度固定，週數越少內容
+      // 天生越「扁」，等比例縮放不管字級放多大都填不滿 A4 直向頁面的高度；拉伸後
+      // 每列會變高一點，但表格內容本來就不怕這種程度的變形，比留一堆空白更好讀。
       if (renderedAnyPage) pdf.addPage();
       renderedAnyPage = true;
 
-      const xPosition = margin + (availableWidth - pdfImageWidth) / 2;
-      const yPosition = margin;
-      pdf.addImage(imgData, 'JPEG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
+      pdf.addImage(imgData, 'JPEG', margin, margin, availableWidth, availableHeight);
     }
 
-    document.head.removeChild(style);
     pdf.save('班表.pdf');
   } catch (err) {
     console.error('html2canvas failed:', err);
     showToast('PDF 導出失敗，請稍後再試', 'error');
     if (activeContainer && document.body.contains(activeContainer)) document.body.removeChild(activeContainer);
-    if (document.head.contains(style)) document.head.removeChild(style);
+    if (activeStyle && document.head.contains(activeStyle)) document.head.removeChild(activeStyle);
   } finally {
     if (wasEditing) renderEditableSchedule();
   }
