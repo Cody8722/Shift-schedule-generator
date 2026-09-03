@@ -558,6 +558,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       const ws = window.XLSX.utils.aoa_to_sheet(ws_data);
       ws['!cols'] = Array(6).fill({ wch: 15 });
+      // SheetJS 免費版無法寫入儲存格的 wrapText 樣式，但列高（!rows）有支援。
+      // Excel 對儲存格內手動換行（多人姓名用 \n 接起來）不會自動撐開列高，
+      // 沒設定的話姓名一多，後面幾行在 Excel 打開時會被壓在同一行高度裡看不到。
+      // 依每列最長的換行數手動撐開列高，讓每個名字都有自己的一行。
+      ws['!rows'] = ws_data.map((row) => {
+        const maxLines = Math.max(1, ...row.map((cell) => String(cell ?? '').split('\n').length));
+        return { hpt: maxLines * 15 };
+      });
       window.XLSX.utils.book_append_sheet(wb, ws, `第${index + 1}週`);
     });
     window.XLSX.writeFile(wb, '班表.xlsx');
