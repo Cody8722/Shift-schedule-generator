@@ -12,18 +12,7 @@
 @~/.claude/rules/common/coding-style.md
 @~/.claude/rules/typescript/coding-style.md
 
----
-
-## 操作規則
-
-- 禁止單獨使用 `cd`，優先使用相對路徑
-- 禁止使用 `cd ... && <指令>` 的組合，直接用 `<指令> path/to/target`
-- 修改檔案前必須先完整讀過，不靠假設
-- 不刪除未觸及的程式碼、注解、TODO
-- 不主動重構超出需求範圍的程式碼
-- 遇到不確定的需求先問，不自行假設後執行
-- 不可覆寫或修改現有的 `.env` 檔案
-- 不可為了讓測試通過而修改測試邏輯，應修正程式碼本身
+> 通用操作規則（Bash、git、commit、分支主幹、程式碼風格、memory 維護）見 `~/.claude/CLAUDE.md`。本檔只列本專案專屬內容。
 
 ---
 
@@ -59,6 +48,7 @@ POST   /api/render-schedule
 GET    /api/school-events
 POST   /api/school-events/refresh
 GET    /
+GET    /robots.txt
 ```
 
 ### MongoDB Schema
@@ -110,7 +100,7 @@ frontend/
   index.html                     # HTML 入口，載入 CDN（Tailwind、SheetJS、jsPDF）
   vite.config.js                 # proxy /api → http://localhost:3000
   src/
-    main.js                      # 主進入點（1700+ 行）
+    main.js                      # 主進入點（約 750 行，DOM 事件綁定 + 初始化）
     api/client.js                # fetch wrapper（get/post/put/delete）
     state/
       appState.js                # 全域狀態（activeProfile、generatedData、editingData）
@@ -120,12 +110,28 @@ frontend/
       toast.js                   # Toast 通知
       modal.js                   # 確認 Modal
       theme.js                   # 深色/淺色模式切換
+      tutorial.js                # 新手導覽
     utils/
       escapeHtml.js
       debounce.js
+      capacityStatus.js          # 容量/填補率狀態計算
+      connectionStatus.js        # 後端連線狀態顯示
     features/schedule/
       personnelView.js           # 人員月曆視圖 + Excel 下載
-      diffSummary.js             # 變更摘要 Modal（buildDiff）
+      diffSummary.js             # 變更摘要 Modal（buildDiff、共用 renderDiffSection）
+      editableSchedule.js        # 可編輯班表（含單格重排、拖曳對調）
+      scheduleCompare.js         # 比較已儲存班表 Modal（人員異動/填補率/勤務設定差異）
+      pdfExport.js               # PDF 匯出
+      scheduleGenerator.js       # 前端排班產生流程
+    features/settings/
+      settingsRenderer.js        # 設定頁渲染
+
+（部分 *.test.js 為 Vitest 單元測試，與被測檔案同目錄）
+
+e2e/                              # Playwright E2E 測試（CI 會另外裝瀏覽器執行）
+  playwright.config.js
+  global-setup.js / global-teardown.js
+  tests/                          # 01-page-load ~ 05-advanced-editing
 
 holidays/
   2025.json / 2026.json / 2027.json
@@ -175,7 +181,7 @@ holidays/
 MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/
 DB_NAME=scheduleApp      # 預設值
 PORT=3000                # 預設值
-CORS_ORIGIN=             # 未設定則允許全部
+CORS_ORIGIN=*            # 預設值；未設定時 config.js 也會 fallback 成 *，僅適合開發環境
 ```
 
 若未提供 `MONGODB_URI`，伺服器仍會啟動，但所有資料庫功能停用（會顯示警告）。
@@ -186,67 +192,52 @@ CORS_ORIGIN=             # 未設定則允許全部
 
 ```bash
 # 後端開發伺服器
-cd backend && npm run dev
+npm --prefix backend run dev
 
-# 後端 debug 模式
-cd backend && DEBUG=app:* node server.js
+# 後端 debug 模式（環境變數寫在指令最前面，仍是單一指令）
+DEBUG=app:* node backend/server.js
 
-# 後端測試
-cd backend && npm test
+# 後端測試（Jest）
+npm --prefix backend test
 
 # 前端開發伺服器（port 5173，proxy → backend:3000）
-cd frontend && npm run dev
+npm --prefix frontend run dev
 
 # 前端建置
-cd frontend && npm run build
+npm --prefix frontend run build
+
+# 前端測試（Vitest）
+npm --prefix frontend test
+
+# E2E 測試（Playwright，需先跑起 backend + frontend dev server）
+npm run test:e2e          # 根目錄 package.json 的捷徑，實際是 cd e2e && npx playwright test
+npm run test:e2e:ui       # Playwright UI 模式
 ```
 
 ### 推送前必須確認
 
 ```bash
-cd backend && npm test   # 全部通過才推
+npm --prefix backend test    # 後端全部通過
+npm --prefix frontend test   # 前端全部通過
 ```
 
 ---
 
-## 分支策略
+## 分支策略（本專案額外）
 
-```
-feature/* → develop（測試版） → release（穩定版，透過 PR）
-```
-
-- `feature/<name>`：所有新功能與 bug 修復在此開發
-- `develop`：整合分支，推送後 CI 自動觸發測試；直接 push 僅限小修（文件、設定）
-- `release`：穩定版，**禁止直接 push**，必須從 `develop` 開 PR 合併
-
----
-
-## Commit 規範
-
-格式：`<類型>: <簡短描述>`
-
-| 類型 | 用途 |
-|------|------|
-| `feat` | 新功能 |
-| `fix` | Bug 修復 |
-| `refactor` | 重構（非新功能、非 bug）|
-| `docs` | 文件變更 |
-| `test` | 測試相關 |
-| `perf` | 效能優化 |
-| `chore` | 建置工具或雜項變更 |
-| `ci` | CI/CD 設定變更 |
-| `style` | 格式調整（不影響邏輯）|
-
-每約 5 個相關變更，或一個功能階段完成後才 commit。commit 後必須推送到遠端。
+分支主幹見全域，本專案額外：
+- `develop`：推送後 CI 自動觸發測試；直接 push 僅限小修（文件、設定）
+- `release`：**禁止直接 push**，必須從 `develop` 開 PR 合併
 
 ---
 
 ## CI/CD 說明
 
-GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release` 或開 PR 到 `release` 時觸發，執行：
+GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release` 或開 PR 到 `release` 時觸發，平行執行三個 job：
 
-1. 安裝 `backend/` 依賴
-2. 執行後端測試（`npm test`）
+1. `backend-test`：`backend/` 安裝依賴 + `npm test`（Jest）
+2. `frontend-test`：`frontend/` 安裝依賴 + `npm test`（Vitest）
+3. `e2e-test`：安裝 `backend/`、`frontend/`、`e2e/` 依賴，`npx playwright install --with-deps chromium`，再跑 `npx playwright test`；失敗時上傳 `playwright-report` artifact（保留 7 天）
 
 ---
 
@@ -261,7 +252,8 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 ### 修改假日資料（holidays/*.json）時
 
 1. 確認格式與現有 JSON 結構一致
-2. 重啟後端讓 `holidaysCache` 重新載入（快取在記憶體，不會自動更新）
+2. 這些本地 JSON 只有在 `holidays` collection 是空的時候，才會被 `seedHolidays()` 讀取植入——**單純重啟後端不會套用變更**
+3. 要讓變更反映到資料庫：呼叫 `POST /api/holidays/reseed`（清空 collection，改從 CDN 重抓，不會讀本地 JSON），或用 `PUT /api/holidays` 逐筆改
 
 ### 新增 Profile 或 Schedule 相關欄位時
 
@@ -280,8 +272,6 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 
 - **縮排**：2 空格
 - **引號**：單引號
-- **命名**：函數 `camelCase`、類別 `PascalCase`、常數 `UPPER_CASE`
-- **禁止**：`var`；`console.log` 遺留於生產環境
 
 ---
 
@@ -293,9 +283,10 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 所有帶 `:name` 的路由都**必須**用 `decodeURIComponent(req.params.name)` 處理，否則找不到資料。
 受影響端點：`PUT /api/profiles/:name`、`PUT /api/profiles/:name/rename`、`DELETE /api/profiles/:name`、`GET /api/schedules/:name`、`DELETE /api/schedules/:name`
 
-### 🔴 無 DB 模式下的靜默失敗
+### 🔴 無 DB 模式下的行為不一致（不是「全部」靜默失敗）
 
-未設定 `MONGODB_URI` 時，伺服器仍會正常啟動，但所有資料庫操作會靜默失敗（不崩潰、不報錯給前端）。
+未設定 `MONGODB_URI` 時，伺服器仍會正常啟動。`profiles`/`schedules`/`holidays` 相關路由都有 `getIsDbConnected()` 檢查，會明確回傳 503「資料庫未連線」給前端。
+但 `POST /api/generate-schedule`、`POST /api/render-schedule` **沒有**這層檢查：內部呼叫的 `getHolidaysForYear()` 在無 DB 時直接回傳空 `Map`，假日/行事曆資料會被靜默忽略、班表照樣「成功」產生，前端不會收到任何錯誤或警告。
 診斷方式：`GET /api/status` 確認 `"database": "connected"` 還是 `"disconnected"`。
 
 ### 🟡 Tailwind CDN 動態 HTML 限制
@@ -308,10 +299,11 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 名稱只允許 `a-zA-Z0-9_中文-`，長度 1–50 字元。
 特殊符號（如 `/`、`&`、空格）會被後端拒絕，但前端目前沒有即時驗證——使用者存檔才會看到錯誤。
 
-### 🟡 holidaysCache 不自動更新
+### 🟡 holidaysCache 的自動/手動更新範圍不同
 
-假日資料在記憶體中快取。若需更新，呼叫 `POST /api/holidays/reseed`（從 CDN 重新拉取三年資料）。
-直接修改 `holidays/*.json` 不會生效——reseed 現在走 CDN，不讀本地 JSON。
+`server.js` 啟動時、以及之後**每 24 小時**都會自動呼叫 `refreshHolidaysFromCDN()`，重新從 CDN 拉「今年 + 明年」的假日資料並清掉對應快取——這兩年的資料其實會自動更新。
+不會自動更新的是：**去年（含）以前**的資料、以及最初從 `holidays/*.json` 植入（無 `source:'cdn'` 標記）的資料。要強制整批重抓三年資料，呼叫 `POST /api/holidays/reseed`（清空整個 collection + 記憶體快取，全部重新從 CDN 拉）。
+直接修改 `holidays/*.json` 不會生效——只有 collection 是空的時候（`seedHolidays()`）才會讀本地檔案；reseed 走的是 CDN，不讀本地 JSON。
 
 ### 🟡 backend/tests/ 的端點路徑
 
