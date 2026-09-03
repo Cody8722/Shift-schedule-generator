@@ -94,6 +94,20 @@ describe('PUT /api/profiles/active', () => {
     const res = await request(app).put('/api/profiles/active').send({ name: 'my-profile' });
     expect(res.status).toBe(500);
   });
+
+  it('名稱格式錯誤時回傳 400，不呼叫 repo', async () => {
+    const res = await request(app).put('/api/profiles/active').send({ name: 'a/b' });
+    expect(res.status).toBe(400);
+    expect(repo.setActiveProfile).not.toHaveBeenCalled();
+  });
+
+  it('設定檔不存在時（repo 拋出 404）回傳 404', async () => {
+    const err = new Error('找不到設定檔: not-exist');
+    err.status = 404;
+    repo.setActiveProfile.mockRejectedValue(err);
+    const res = await request(app).put('/api/profiles/active').send({ name: 'not-exist' });
+    expect(res.status).toBe(404);
+  });
 });
 
 // ── POST /api/profiles ────────────────────────────────────────────────────────

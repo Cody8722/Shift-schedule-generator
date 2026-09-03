@@ -12,12 +12,15 @@ const getConfig = async () => {
 const setActiveProfile = async (name) => {
   const configCollection = getConfigCollection();
   const result = await configCollection.updateOne(
-    { _id: CONFIG_ID },
+    { _id: CONFIG_ID, [`profiles.${name}`]: { $exists: true } },
     { $set: { activeProfile: name } }
   );
-  if (result.modifiedCount === 0) {
-    throw new Error('找不到設定檔或無需更新');
+  if (result.matchedCount === 0) {
+    const err = new Error(`找不到設定檔: ${name}`);
+    err.status = 404;
+    throw err;
   }
+  // matchedCount > 0 但 modifiedCount 為 0 代表本來就是目前的作用中設定檔，視為成功（冪等）
 };
 
 const createProfile = async (name) => {
