@@ -67,6 +67,13 @@ export async function exportToPdf() {
   }
 
   const pdf = new jsPDF('p', 'mm', 'a4');
+  const pdfPageWidth = pdf.internal.pageSize.getWidth();
+  const pdfPageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 5;
+  const availableWidth = pdfPageWidth - margin * 2;
+  const availableHeight = pdfPageHeight - margin * 2;
+  const targetAspect = availableWidth / availableHeight;
+
   let renderedAnyPage = false;
   let activeContainer = null;
   let activeStyle = null;
@@ -99,6 +106,25 @@ export async function exportToPdf() {
       document.body.appendChild(container);
       activeContainer = container;
 
+      // 容器寬度固定，週數越少內容天生越「扁」（比 A4 直向頁面更寬更矮）。與其事後
+      // 把截好的圖硬拉伸（表頭、圓角標籤都會變形），改成截圖前先量出容器目前的長寬比，
+      // 補上下（或左右）留白讓長寬比先貼近目標頁面，這樣文字/標籤本身完全不變形，
+      // 之後用等比例縮放去填滿版面時才不會留下大片空白，也不會拉伸內容。
+      const naturalWidth = container.offsetWidth;
+      const naturalHeight = container.offsetHeight;
+      const naturalAspect = naturalWidth / naturalHeight;
+      if (naturalAspect > targetAspect) {
+        const neededHeight = naturalWidth / targetAspect;
+        const extraHeight = Math.max(0, neededHeight - naturalHeight);
+        container.style.paddingTop = `${extraHeight / 2}px`;
+        container.style.paddingBottom = `${extraHeight / 2}px`;
+      } else if (naturalAspect < targetAspect) {
+        const neededWidth = naturalHeight * targetAspect;
+        const extraWidth = Math.max(0, neededWidth - naturalWidth);
+        container.style.paddingLeft = `${extraWidth / 2}px`;
+        container.style.paddingRight = `${extraWidth / 2}px`;
+      }
+
       const canvas = await window.html2canvas(container, {
         scale: density.scaleValue,
         useCORS: true,
@@ -111,19 +137,19 @@ export async function exportToPdf() {
       activeStyle = null;
 
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
-      const pdfPageWidth = pdf.internal.pageSize.getWidth();
-      const pdfPageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 5;
-      const availableWidth = pdfPageWidth - margin * 2;
-      const availableHeight = pdfPageHeight - margin * 2;
+      const imgProps = pdf.getImageProperties(imgData);
+      // 截圖前已經把長寬比調整到接近 targetAspect，這裡用等比例縮放（不拉伸變形）
+      // 幾乎就能剛好填滿整個可用版面。
+      const scale = Math.min(availableWidth / imgProps.width, availableHeight / imgProps.height);
+      const pdfImageWidth = imgProps.width * scale;
+      const pdfImageHeight = imgProps.height * scale;
 
-      // 直接拉伸填滿整張可用版面，不嚴格保持長寬比——容器寬度固定，週數越少內容
-      // 天生越「扁」，等比例縮放不管字級放多大都填不滿 A4 直向頁面的高度；拉伸後
-      // 每列會變高一點，但表格內容本來就不怕這種程度的變形，比留一堆空白更好讀。
       if (renderedAnyPage) pdf.addPage();
       renderedAnyPage = true;
 
-      pdf.addImage(imgData, 'JPEG', margin, margin, availableWidth, availableHeight);
+      const xPosition = margin + (availableWidth - pdfImageWidth) / 2;
+      const yPosition = margin + (availableHeight - pdfImageHeight) / 2;
+      pdf.addImage(imgData, 'JPEG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
     }
 
     pdf.save('班表.pdf');
