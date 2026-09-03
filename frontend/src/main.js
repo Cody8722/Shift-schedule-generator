@@ -51,6 +51,7 @@ import { printSchedule, exportToPdf } from './features/schedule/pdfExport.js';
 import { renderAll, renderSavedSchedules } from './features/settings/settingsRenderer.js';
 import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
+import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
 
 // ── Utils ──
 import { checkConnectionStatus } from './utils/connectionStatus.js';
@@ -83,6 +84,15 @@ const handleSettingsChange = async (updateFn) => {
   renderAll();
   await saveSettings();
   if (getGeneratedData()) {
+    if (getHasUnsavedChanges()) {
+      const ok = await showConfirm(
+        '班表有手動調整尚未儲存，變更設定會重新產生班表並覆蓋這些修改，確定要繼續嗎？'
+      );
+      if (!ok) {
+        showToast('設定已儲存，但班表未重新產生（手動修改已保留）', 'info', 4000);
+        return;
+      }
+    }
     elements.outputContainer.style.opacity = '0.5';
     await generateFullSchedule(Array.from(activeHolidayDates));
     elements.outputContainer.style.opacity = '1';
@@ -671,6 +681,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   initEditToolbarEvents();
+  initScheduleCompare();
 
   document.getElementById('enter-edit-btn')?.addEventListener('click', enableEditMode);
 

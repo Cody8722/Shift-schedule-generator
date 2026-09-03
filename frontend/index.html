@@ -622,6 +622,18 @@ body.editing #enter-edit-btn { display: none; }
   width: 5px; height: 5px; border-radius: 50%;
   background: var(--warn);
 }
+.cell-reshuffle-btn {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 5px;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  font-size: 11px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: opacity .12s, background .12s;
+  z-index: 5;
+}
+.s-table .editable-cell:hover .cell-reshuffle-btn { opacity: 1; }
+.cell-reshuffle-btn:hover { background: var(--bg-surface-2); }
 .s-table .holiday-cell {
   background: var(--bg-inset);
   color: var(--text-faint);
@@ -1187,6 +1199,23 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
 .diff-line .person { font-weight: 500; }
 .diff-line.add .person { color: var(--success); }
 .diff-line.rem .person { color: var(--danger); text-decoration: line-through; text-decoration-thickness: 1px; }
+.diff-line.chg .marker { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border); }
+.diff-line.chg .person { color: var(--text-primary); font-weight: 400; }
+
+/* Compare schedules modal */
+.compare-picker { display: flex; align-items: end; gap: 12px; }
+.compare-picker-col { flex: 1; min-width: 0; }
+.compare-picker-arrow { padding-bottom: 9px; color: var(--text-faint); font-size: 14px; }
+.compare-section-title {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  margin: 18px 0 8px;
+}
+.compare-section-title:first-child { margin-top: 0; }
+.compare-note {
+  font-size: 12px; color: var(--text-muted);
+  background: var(--bg-inset); border: 1px solid var(--border-subtle);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 12px;
+}
 
 /* ─── Misc ────────────────────────────────────────────────── */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
@@ -1479,6 +1508,7 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
       <div class="card saved">
         <div class="saved-head">
           <h3 class="panel-title">已儲存的班表</h3>
+          <button class="btn btn-secondary btn-sm" id="compare-schedules-btn">比較班表</button>
         </div>
         <ul id="saved-schedules-list" class="saved-list"></ul>
       </div>
@@ -1617,6 +1647,42 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
       <span style="flex:1"></span>
       <button class="btn btn-secondary" id="diff-modal-close-2">關閉</button>
       <button class="btn btn-primary" id="diff-modal-apply">套用變更</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: 比較已儲存班表 ── -->
+<div class="modal-backdrop" id="compare-modal">
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="cpm-title">
+    <div class="modal-head">
+      <div>
+        <div class="title" id="cpm-title">比較已儲存班表</div>
+        <div class="sub">選擇兩份班表，比對人員異動與勤務設定差異</div>
+      </div>
+      <button class="modal-close" title="關閉 (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="compare-picker">
+          <div class="compare-picker-col">
+            <div class="modal-section-label">班表 A</div>
+            <select class="select" id="compare-select-a"></select>
+          </div>
+          <div class="compare-picker-arrow">→</div>
+          <div class="compare-picker-col">
+            <div class="modal-section-label">班表 B</div>
+            <select class="select" id="compare-select-b"></select>
+          </div>
+          <button class="btn btn-primary" id="compare-run-btn">比較</button>
+        </div>
+      </div>
+      <div class="modal-section" id="compare-result"></div>
+    </div>
+    <div class="modal-foot">
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary" id="compare-modal-close-2">關閉</button>
     </div>
   </div>
 </div>
