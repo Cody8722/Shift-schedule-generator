@@ -144,6 +144,45 @@ describe('generateWeeklySchedule', () => {
     expect(李四Count).toBeGreaterThanOrEqual(張三Count);
   });
 
+  it('weekTaskShiftCounts 是 Map，且包含所有人員各自的勤務次數 Map', () => {
+    const result = generateWeeklySchedule(settings, allDays);
+    expect(result.weekTaskShiftCounts).toBeInstanceOf(Map);
+    settings.personnel.forEach((p) => {
+      expect(result.weekTaskShiftCounts.get(p.name)).toBeInstanceOf(Map);
+    });
+    // 早班每天需要 1 人，兩人加起來一週應該剛好排滿 5 次（5 個工作天）
+    const total = settings.personnel.reduce(
+      (sum, p) => sum + (result.weekTaskShiftCounts.get(p.name).get('早班') || 0),
+      0
+    );
+    expect(total).toBe(5);
+  });
+
+  it('跨週總班次打平時，cumulativeTaskShifts 影響「哪個勤務」被優先分配（少做過此勤務的人優先）', () => {
+    const s = {
+      tasks: [{ name: '早班', count: 1 }, { name: '晚班', count: 1 }],
+      personnel: [
+        { name: '張三', maxShifts: 10 },
+        { name: '李四', maxShifts: 10 },
+      ],
+    };
+    // 兩人跨週總班次打平，但張三跨週已經做過很多次早班，李四完全沒做過早班
+    const cumulativeShifts = new Map([['張三', 5], ['李四', 5]]);
+    const cumulativeTaskShifts = new Map([
+      ['張三', new Map([['早班', 5]])],
+      ['李四', new Map([['早班', 0]])],
+    ]);
+    const result = generateWeeklySchedule(s, allDays, cumulativeShifts, cumulativeTaskShifts);
+    const 李四早班次數 = result.weekTaskShiftCounts.get('李四').get('早班') || 0;
+    const 張三早班次數 = result.weekTaskShiftCounts.get('張三').get('早班') || 0;
+    expect(李四早班次數).toBeGreaterThanOrEqual(張三早班次數);
+  });
+
+  it('未提供 cumulativeTaskShifts 時行為與舊版相同（不拋錯，正常排班）', () => {
+    const result = generateWeeklySchedule(settings, allDays, new Map());
+    expect(result.weeklySchedule).toHaveLength(5);
+  });
+
   it('全部人員均休假時所有 slot 為空', () => {
     const s = {
       tasks: [{ name: '早班', count: 1 }],

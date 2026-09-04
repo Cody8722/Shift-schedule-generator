@@ -16,12 +16,20 @@ const getEffectiveScore = (person, taskName) => {
   return 2;                                        // 偏好其他班次
 };
 
-const generateWeeklySchedule = (settings, scheduleDays, cumulativeShifts = new Map()) => {
+const generateWeeklySchedule = (
+  settings,
+  scheduleDays,
+  cumulativeShifts = new Map(),
+  cumulativeTaskShifts = new Map()
+) => {
   const { personnel, tasks } = settings;
   const weeklySchedule = Array(5).fill(null).map(() =>
     Array(tasks.length).fill(null).map(() => [])
   );
   const shiftCounts = new Map(personnel.map((p) => [p.name, 0]));
+  // 每人在「本週」各勤務的次數，週結束後會累加進 cumulativeTaskShifts，
+  // 讓下一週知道「這個人這個勤務做過幾次」，藉此讓每個位置都能輪到不同的人。
+  const taskShiftCounts = new Map(personnel.map((p) => [p.name, new Map()]));
   // 每天已分配的人（同一天不重複排）
   const dailyAssigned = new Map(scheduleDays.map((_, i) => [i, new Set()]));
 
@@ -62,11 +70,17 @@ const generateWeeklySchedule = (settings, scheduleDays, cumulativeShifts = new M
     );
     if (available.length === 0) continue;
 
-    // 排序：跨週累積最少 → 本週已排最少 → 技能分 + 隨機
+    // 排序：跨週累積總班次最少 → 跨週累積「這個勤務」次數最少 → 本週已排最少 → 技能分 + 隨機
     available.sort((a, b) => {
       const cumDiff =
         (cumulativeShifts.get(a.name) || 0) - (cumulativeShifts.get(b.name) || 0);
       if (cumDiff !== 0) return cumDiff;
+      // 跨週總班次打平時，優先讓「這個勤務」做得較少的人上——避免有人總班次公平，
+      // 但長期下來卻一直被排同一個位置、從沒輪到其他勤務。
+      const taskCumDiff =
+        (cumulativeTaskShifts.get(a.name)?.get(task.name) || 0) -
+        (cumulativeTaskShifts.get(b.name)?.get(task.name) || 0);
+      if (taskCumDiff !== 0) return taskCumDiff;
       const usedDiff = (shiftCounts.get(a.name) || 0) - (shiftCounts.get(b.name) || 0);
       if (usedDiff !== 0) return usedDiff;
       const scoreA = (getEffectiveScore(a, task.name) / 5) * 0.6 + Math.random() * 0.4;
@@ -77,6 +91,8 @@ const generateWeeklySchedule = (settings, scheduleDays, cumulativeShifts = new M
     const person = available[0];
     weeklySchedule[dayIndex][taskIndex].push(person.name);
     shiftCounts.set(person.name, (shiftCounts.get(person.name) || 0) + 1);
+    const personTaskCounts = taskShiftCounts.get(person.name);
+    personTaskCounts.set(task.name, (personTaskCounts.get(task.name) || 0) + 1);
     assigned.add(person.name);
   }
 
@@ -99,7 +115,7 @@ const generateWeeklySchedule = (settings, scheduleDays, cumulativeShifts = new M
     debugSchedule('人員班次分佈:', Object.fromEntries(shiftCounts));
   }
 
-  return { weeklySchedule, fillStats, weekShiftCounts: shiftCounts };
+  return { weeklySchedule, fillStats, weekShiftCounts: shiftCounts, weekTaskShiftCounts: taskShiftCounts };
 };
 
 module.exports = { getEffectiveScore, generateWeeklySchedule };

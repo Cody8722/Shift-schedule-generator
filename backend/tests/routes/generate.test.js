@@ -76,6 +76,7 @@ beforeEach(() => {
     weeklySchedule: [[[]]],
     fillStats: [{ name: '早班', priority: 1, filled: 1, needed: 1, ok: true }],
     weekShiftCounts: new Map(),
+    weekTaskShiftCounts: new Map(),
   });
   generateScheduleHtml.mockReturnValue('<html>ok</html>');
 });
@@ -148,6 +149,27 @@ describe('POST /api/generate-schedule — 成功路徑', () => {
       .send({ ...validBody, numWeeks: 2 });
 
     expect(snapshotAtSecondCall.get('張三')).toBe(2);
+  });
+
+  it('weekTaskShiftCounts 累積到 cumulativeTaskShifts（跨週勤務輪替公平性）', async () => {
+    const snapshotAtSecondCall = new Map();
+    generateWeeklySchedule.mockImplementation((_s, _d, _cumulative, cumulativeTaskShifts) => {
+      if (generateWeeklySchedule.mock.calls.length === 2) {
+        for (const [k, v] of cumulativeTaskShifts) snapshotAtSecondCall.set(k, new Map(v));
+      }
+      return {
+        weeklySchedule: [[[]]],
+        fillStats: [],
+        weekShiftCounts: new Map([['張三', 2]]),
+        weekTaskShiftCounts: new Map([['張三', new Map([['早班', 2]])]]),
+      };
+    });
+
+    await request(app)
+      .post('/api/generate-schedule')
+      .send({ ...validBody, numWeeks: 2 });
+
+    expect(snapshotAtSecondCall.get('張三')?.get('早班')).toBe(2);
   });
 
   it('activeHolidays 正確標記為非排班日', async () => {
