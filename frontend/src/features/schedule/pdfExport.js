@@ -140,7 +140,14 @@ export async function exportToPdf() {
         .pdf-export-container table { font-size: ${density.fontSize}px !important; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
         .pdf-export-container th, .pdf-export-container td { padding: ${density.padding}px !important; line-height: 1.4 !important; word-wrap: break-word !important; }
         .pdf-export-container th { font-size: ${density.headerFontSize}px !important; font-weight: bold !important; }
-        .pdf-export-container .person-tag { padding: 3px 10px !important; white-space: nowrap !important; }
+        /* html2canvas 把這個字型的中文字一律貼齊文字框「底部」畫，不管 line-height
+           多少、也不管用 flex align-items 還是 table-cell vertical-align，多出來的
+           行高空間永遠只往上加，導致人名看起來偏下、標籤上方留白特別多（實測：
+           line-height:1.4 + 上下對稱 padding 時，文字上方留白約是下方的 50 倍）。
+           這是 html2canvas 對這個字型的文字基準線量測方式造成的，不是版面設定錯誤，
+           所以用不對稱的 padding-top/padding-bottom 反向補償：上留白歸零、下留白加大，
+           讓「偏下」的文字實際落在補償後的置中位置。數值是用真實截圖比對像素量出來的。 */
+        .pdf-export-container .person-tag { line-height: 1 !important; padding: 0px 10px 13px 10px !important; white-space: nowrap !important; }
         .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: normal !important; word-break: break-word !important; }
       `;
       document.head.appendChild(style);
