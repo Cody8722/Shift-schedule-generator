@@ -53,6 +53,7 @@ import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from '.
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
 import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
 import { getExportData, initExportWeekFilter } from './features/schedule/exportWeekFilter.js';
+import { computePersonTaskStats, initPersonTaskStats } from './features/schedule/personTaskStats.js';
 
 // ── Utils ──
 import { checkConnectionStatus } from './utils/connectionStatus.js';
@@ -564,6 +565,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         row.eachCell((cell) => { cell.alignment = { wrapText: true, vertical: 'top' }; });
       });
     });
+
+    const personNames = (getActiveProfile()?.settings?.personnel || []).map((p) => p.name);
+    const stats = computePersonTaskStats(exportData, personNames);
+    if (stats) {
+      const statsWs = wb.addWorksheet('值勤統計');
+      statsWs.columns = [{ width: 12 }, ...stats.taskNames.map(() => ({ width: 10 })), { width: 10 }];
+      const addStatsTable = (title, counts) => {
+        statsWs.addRow([title]).font = { bold: true };
+        statsWs.addRow(['人員', ...stats.taskNames, '合計']).font = { bold: true };
+        [...personNames, ...Object.keys(counts).filter((p) => !personNames.includes(p))].forEach((p) => {
+          const values = stats.taskNames.map((t) => counts[p]?.[t] || 0);
+          const rowTotal = values.reduce((s, v) => s + v, 0);
+          statsWs.addRow([p, ...values, rowTotal]);
+        });
+        statsWs.addRow([]);
+      };
+      addStatsTable(`整份班表加總（共 ${stats.weeks.length} 週）`, stats.total);
+      if (stats.weeks.length > 1) {
+        stats.weeks.forEach((w) => {
+          addStatsTable(`第 ${w.weekIndex + 1} 週（${w.dateRange || ''}）`, w.counts);
+        });
+      }
+    }
+
     await downloadWorkbook(wb, '班表.xlsx');
   });
 
@@ -687,6 +712,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initEditToolbarEvents();
   initScheduleCompare();
   initExportWeekFilter();
+  initPersonTaskStats();
 
   document.getElementById('enter-edit-btn')?.addEventListener('click', enableEditMode);
 

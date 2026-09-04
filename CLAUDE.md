@@ -123,7 +123,8 @@ frontend/
       editableSchedule.js        # 可編輯班表（含單格重排、拖曳對調）
       scheduleCompare.js         # 比較已儲存班表 Modal（人員異動/填補率/勤務設定差異）
       exportWeekFilter.js        # 匯出週次篩選（getExportData，供複製/Excel/PDF/人員Excel 共用）
-      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁）
+      personTaskStats.js         # 值勤統計 Modal（人員 × 勤務次數，加總 + 每週明細，Excel/PDF 匯出共用同一份計算）
+      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計）
       scheduleGenerator.js       # 前端排班產生流程
     features/settings/
       settingsRenderer.js        # 設定頁渲染
