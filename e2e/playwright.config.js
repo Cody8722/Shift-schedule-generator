@@ -16,6 +16,9 @@ module.exports = defineConfig({
 
   use: {
     baseURL: 'http://localhost:5173',
+    // 讓每個測試 context 一開始就視為「已看過新手教學」，避免 #tutorial-overlay
+    // 疊層擋住點擊——教學本身是正確的產品行為（首次訪問才會擋），不是要繞過的 bug。
+    storageState: './storageState.json',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     trace: 'retain-on-failure',
