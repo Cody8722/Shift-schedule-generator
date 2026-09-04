@@ -140,8 +140,8 @@ export async function exportToPdf() {
         .pdf-export-container table { font-size: ${density.fontSize}px !important; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
         .pdf-export-container th, .pdf-export-container td { padding: ${density.padding}px !important; line-height: 1.4 !important; word-wrap: break-word !important; }
         .pdf-export-container th { font-size: ${density.headerFontSize}px !important; font-weight: bold !important; }
-        .pdf-export-container .person-tag,
-        .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: nowrap !important; }
+        .pdf-export-container .person-tag { padding: 3px 10px !important; white-space: nowrap !important; }
+        .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: normal !important; word-break: break-word !important; }
       `;
       document.head.appendChild(style);
       activeStyle = style;
