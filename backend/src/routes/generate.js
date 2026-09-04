@@ -74,6 +74,7 @@ router.post('/api/generate-schedule', generateLimiter, async (req, res) => {
       { header: '#86198f', row: '#faf5ff' },
     ];
     const cumulativeShifts = new Map();
+    const cumulativeTaskShifts = new Map();
 
     for (let i = 0; i < numWeeks; i++) {
       const { weekDates, weekDayDates } = getWeekInfo(startWeek, i);
@@ -94,13 +95,21 @@ router.post('/api/generate-schedule', generateLimiter, async (req, res) => {
           description: isHoliday ? (originalHolidaysMap.get(date) || '假日') : (examName || ''),
         };
       });
-      const { weeklySchedule, fillStats, weekShiftCounts } = generateWeeklySchedule(
+      const { weeklySchedule, fillStats, weekShiftCounts, weekTaskShiftCounts } = generateWeeklySchedule(
         settings,
         scheduleDays,
-        cumulativeShifts
+        cumulativeShifts,
+        cumulativeTaskShifts
       );
       for (const [name, count] of weekShiftCounts) {
         cumulativeShifts.set(name, (cumulativeShifts.get(name) || 0) + count);
+      }
+      for (const [name, taskCounts] of weekTaskShiftCounts || []) {
+        if (!cumulativeTaskShifts.has(name)) cumulativeTaskShifts.set(name, new Map());
+        const personCumTaskCounts = cumulativeTaskShifts.get(name);
+        for (const [taskName, count] of taskCounts) {
+          personCumTaskCounts.set(taskName, (personCumTaskCounts.get(taskName) || 0) + count);
+        }
       }
       fullScheduleData.push({
         schedule: weeklySchedule,

@@ -13,6 +13,7 @@ import { api } from '../../api/client.js';
 import { showToast } from '../../ui/toast.js';
 import { showConfirm } from '../../ui/modal.js';
 import { showDiffModal } from './diffSummary.js';
+import { escapeHtml } from '../../utils/escapeHtml.js';
 let draggedPerson = null;
 let draggedFromCell = null;
 
@@ -97,7 +98,7 @@ function createEditableWeek(weekData, weekIndex) {
   weekHead.innerHTML = `
     <div class="week-label">
       <span class="week-num">W${weekIndex + 1}</span>
-      <span class="week-date">${dateRange}</span>
+      <span class="week-date">${escapeHtml(dateRange)}</span>
     </div>
     <div class="week-stats">填補 <span class="${fillClass}">${filled}/${demand}</span> · ${pct}%</div>`;
   weekDiv.appendChild(weekHead);
@@ -116,7 +117,7 @@ function createEditableWeek(weekData, weekIndex) {
 
   weekDayDates.forEach((date, dayIndex) => {
     const th = document.createElement('th');
-    th.innerHTML = `<span class="dow">星期${weekDayNames[dayIndex]}</span><span class="date">${date}</span>`;
+    th.innerHTML = `<span class="dow">星期${weekDayNames[dayIndex]}</span><span class="date">${escapeHtml(date)}</span>`;
     headerRow.appendChild(th);
   });
 
@@ -130,7 +131,7 @@ function createEditableWeek(weekData, weekIndex) {
     const tdTask = document.createElement('td');
     tdTask.className = 'task-cell';
     const priorityCls = `p${task.priority || 9}`;
-    tdTask.innerHTML = `<span class="priority-dot ${priorityCls}"></span>${task.name}<span class="task-meta">需 ${task.count} · P${task.priority || 9}</span>`;
+    tdTask.innerHTML = `<span class="priority-dot ${priorityCls}"></span>${escapeHtml(task.name)}<span class="task-meta">需 ${task.count} · P${task.priority || 9}</span>`;
     row.appendChild(tdTask);
 
     weekDayDates.forEach((date, dayIndex) => {
@@ -138,7 +139,7 @@ function createEditableWeek(weekData, weekIndex) {
 
       if (!scheduleDays[dayIndex].shouldSchedule) {
         td.className = 'holiday-cell';
-        td.innerHTML = `<span class="holiday-label">${scheduleDays[dayIndex].description}</span>`;
+        td.innerHTML = `<span class="holiday-label">${escapeHtml(scheduleDays[dayIndex].description)}</span>`;
       } else {
         td.className = 'editable-cell';
         td.dataset.weekIndex = weekIndex;
@@ -704,16 +705,16 @@ function showPersonnelDropdown(cell, weekIndex, dayIndex, taskIndex) {
 
     if (isOffDay) {
       option.className = 'px-3 py-2 rounded bg-red-50 text-red-400 cursor-not-allowed';
-      option.innerHTML = `<input type="checkbox" disabled class="mr-2">${person.name} <span class="text-xs">星期${weekDayNames[dayIndex]}固定排休</span>`;
+      option.innerHTML = `<input type="checkbox" disabled class="mr-2">${escapeHtml(person.name)} <span class="text-xs">星期${weekDayNames[dayIndex]}固定排休</span>`;
     } else if (isInOtherTask) {
       option.className = 'px-3 py-2 rounded bg-gray-100 text-gray-400 cursor-not-allowed';
-      option.innerHTML = `<input type="checkbox" disabled class="mr-2">${person.name} <span class="text-xs">(已在「${conflictTaskName}」)</span>`;
+      option.innerHTML = `<input type="checkbox" disabled class="mr-2">${escapeHtml(person.name)} <span class="text-xs">(已在「${escapeHtml(conflictTaskName)}」)</span>`;
     } else if (isFull && !isSelected) {
       option.className = 'px-3 py-2 rounded bg-orange-50 text-orange-400 cursor-not-allowed';
-      option.innerHTML = `<input type="checkbox" disabled class="mr-2">${person.name} <span class="text-xs">人數已滿 (${currentCount}/${taskRequiredCount})</span>`;
+      option.innerHTML = `<input type="checkbox" disabled class="mr-2">${escapeHtml(person.name)} <span class="text-xs">人數已滿 (${currentCount}/${taskRequiredCount})</span>`;
     } else {
       option.className = 'px-3 py-2 hover:bg-blue-50 cursor-pointer rounded';
-      option.innerHTML = `<input type="checkbox" ${isSelected ? 'checked' : ''} class="mr-2">${person.name}`;
+      option.innerHTML = `<input type="checkbox" ${isSelected ? 'checked' : ''} class="mr-2">${escapeHtml(person.name)}`;
       option.addEventListener('click', () => {
         if (isSelected) {
           const idx = currentPersonnel.indexOf(person.name);

@@ -1,8 +1,9 @@
-import { getEditingData } from '../../state/appState.js';
+import { getEditingData, getActiveProfile } from '../../state/appState.js';
 import { getExportData } from './exportWeekFilter.js';
 import { api } from '../../api/client.js';
 import { showToast } from '../../ui/toast.js';
 import { renderEditableSchedule } from './editableSchedule.js';
+import { renderPersonTaskStatsHtml } from './personTaskStats.js';
 
 export async function printSchedule() {
   const exportData = getExportData();
@@ -78,6 +79,53 @@ export async function exportToPdf() {
   let activeContainer = null;
   let activeStyle = null;
 
+  // 容器寬度固定，內容天生長寬比不一定貼近 A4——與其事後把截好的圖硬拉伸（表頭、
+  // 圓角標籤都會變形），改成截圖前先量出容器目前的長寬比，補上下（或左右）留白讓
+  // 長寬比先貼近目標頁面，這樣文字/標籤本身完全不變形，之後用等比例縮放去填滿
+  // 版面時才不會留下大片空白，也不會拉伸內容。同一段邏輯給班表頁與統計頁共用，
+  // 避免各自複製一份而後續改一邊漏改另一邊。
+  const addContainerAsPdfPage = async (container, scaleValue) => {
+    document.body.appendChild(container);
+    activeContainer = container;
+
+    const naturalWidth = container.offsetWidth;
+    const naturalHeight = container.offsetHeight;
+    const naturalAspect = naturalWidth / naturalHeight;
+    if (naturalAspect > targetAspect) {
+      const neededHeight = naturalWidth / targetAspect;
+      const extraHeight = Math.max(0, neededHeight - naturalHeight);
+      container.style.paddingTop = `${extraHeight / 2}px`;
+      container.style.paddingBottom = `${extraHeight / 2}px`;
+    } else if (naturalAspect < targetAspect) {
+      const neededWidth = naturalHeight * targetAspect;
+      const extraWidth = Math.max(0, neededWidth - naturalWidth);
+      container.style.paddingLeft = `${extraWidth / 2}px`;
+      container.style.paddingRight = `${extraWidth / 2}px`;
+    }
+
+    const canvas = await window.html2canvas(container, {
+      scale: scaleValue,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+    });
+    document.body.removeChild(container);
+    activeContainer = null;
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const imgProps = pdf.getImageProperties(imgData);
+    const scale = Math.min(availableWidth / imgProps.width, availableHeight / imgProps.height);
+    const pdfImageWidth = imgProps.width * scale;
+    const pdfImageHeight = imgProps.height * scale;
+
+    if (renderedAnyPage) pdf.addPage();
+    renderedAnyPage = true;
+
+    const xPosition = margin + (availableWidth - pdfImageWidth) / 2;
+    const yPosition = margin + (availableHeight - pdfImageHeight) / 2;
+    pdf.addImage(imgData, 'JPEG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
+  };
+
   try {
     for (const pageElements of pdfPages) {
       // 依「這一頁實際的週數」決定字級/間距，而不是用整體的「每頁週數」設定——
@@ -92,8 +140,15 @@ export async function exportToPdf() {
         .pdf-export-container table { font-size: ${density.fontSize}px !important; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
         .pdf-export-container th, .pdf-export-container td { padding: ${density.padding}px !important; line-height: 1.4 !important; word-wrap: break-word !important; }
         .pdf-export-container th { font-size: ${density.headerFontSize}px !important; font-weight: bold !important; }
-        .pdf-export-container .person-tag,
-        .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: nowrap !important; }
+        /* html2canvas 把這個字型的中文字一律貼齊文字框「底部」畫，不管 line-height
+           多少、也不管用 flex align-items 還是 table-cell vertical-align，多出來的
+           行高空間永遠只往上加，導致人名看起來偏下、標籤上方留白特別多（實測：
+           line-height:1.4 + 上下對稱 padding 時，文字上方留白約是下方的 50 倍）。
+           這是 html2canvas 對這個字型的文字基準線量測方式造成的，不是版面設定錯誤，
+           所以用不對稱的 padding-top/padding-bottom 反向補償：上留白歸零、下留白加大，
+           讓「偏下」的文字實際落在補償後的置中位置。數值是用真實截圖比對像素量出來的。 */
+        .pdf-export-container .person-tag { line-height: 1 !important; padding: 0px 10px 13px 10px !important; white-space: nowrap !important; }
+        .pdf-export-container .holiday-label { padding: 3px 10px !important; white-space: normal !important; word-break: break-word !important; }
       `;
       document.head.appendChild(style);
       activeStyle = style;
@@ -103,53 +158,42 @@ export async function exportToPdf() {
       pageElements.forEach((el) => container.appendChild(el.cloneNode(true)));
       container.style.position = 'absolute';
       container.style.left = '-9999px';
-      document.body.appendChild(container);
-      activeContainer = container;
 
-      // 容器寬度固定，週數越少內容天生越「扁」（比 A4 直向頁面更寬更矮）。與其事後
-      // 把截好的圖硬拉伸（表頭、圓角標籤都會變形），改成截圖前先量出容器目前的長寬比，
-      // 補上下（或左右）留白讓長寬比先貼近目標頁面，這樣文字/標籤本身完全不變形，
-      // 之後用等比例縮放去填滿版面時才不會留下大片空白，也不會拉伸內容。
-      const naturalWidth = container.offsetWidth;
-      const naturalHeight = container.offsetHeight;
-      const naturalAspect = naturalWidth / naturalHeight;
-      if (naturalAspect > targetAspect) {
-        const neededHeight = naturalWidth / targetAspect;
-        const extraHeight = Math.max(0, neededHeight - naturalHeight);
-        container.style.paddingTop = `${extraHeight / 2}px`;
-        container.style.paddingBottom = `${extraHeight / 2}px`;
-      } else if (naturalAspect < targetAspect) {
-        const neededWidth = naturalHeight * targetAspect;
-        const extraWidth = Math.max(0, neededWidth - naturalWidth);
-        container.style.paddingLeft = `${extraWidth / 2}px`;
-        container.style.paddingRight = `${extraWidth / 2}px`;
-      }
-
-      const canvas = await window.html2canvas(container, {
-        scale: density.scaleValue,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-      });
-      document.body.removeChild(container);
-      activeContainer = null;
+      await addContainerAsPdfPage(container, density.scaleValue);
       document.head.removeChild(style);
       activeStyle = null;
+    }
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.92);
-      const imgProps = pdf.getImageProperties(imgData);
-      // 截圖前已經把長寬比調整到接近 targetAspect，這裡用等比例縮放（不拉伸變形）
-      // 幾乎就能剛好填滿整個可用版面。
-      const scale = Math.min(availableWidth / imgProps.width, availableHeight / imgProps.height);
-      const pdfImageWidth = imgProps.width * scale;
-      const pdfImageHeight = imgProps.height * scale;
+    // 值勤統計頁：跟 Modal 共用同一份渲染邏輯，但這裡強制用固定的淺色配色（不管目前
+    // 深色/淺色模式），因為統計表用的是 CSS 變數（跟著主題變色），若使用者當下是
+    // 深色模式，直接截圖會變成白底配淺色文字、可能看不清楚。
+    const personNames = (getActiveProfile()?.settings?.personnel || []).map((p) => p.name);
+    const statsHtml = renderPersonTaskStatsHtml(exportData, personNames);
+    if (statsHtml) {
+      const statsStyle = document.createElement('style');
+      statsStyle.innerHTML = `
+        .pdf-stats-container, .pdf-stats-container * {
+          --bg-surface: #ffffff; --bg-inset: #fafaf9; --border-subtle: #d4cfc9;
+          --text-primary: #0c0a09; --text-secondary: #44403c; --text-muted: #78716c;
+          --accent: #c2410c;
+        }
+        .pdf-stats-container { display: block; padding: 16px; background: white; width: 1000px !important; min-width: 1000px !important; font-size: 14px; }
+        .pdf-stats-container h3 { font-size: 20px; font-weight: bold; margin-bottom: 12px; }
+        .pdf-stats-container .stats-table { font-size: 14px; }
+        .pdf-stats-container .stats-table th, .pdf-stats-container .stats-table td { padding: 8px 12px; }
+      `;
+      document.head.appendChild(statsStyle);
+      activeStyle = statsStyle;
 
-      if (renderedAnyPage) pdf.addPage();
-      renderedAnyPage = true;
+      const statsContainer = document.createElement('div');
+      statsContainer.className = 'pdf-stats-container';
+      statsContainer.innerHTML = `<h3>值勤統計</h3>${statsHtml}`;
+      statsContainer.style.position = 'absolute';
+      statsContainer.style.left = '-9999px';
 
-      const xPosition = margin + (availableWidth - pdfImageWidth) / 2;
-      const yPosition = margin + (availableHeight - pdfImageHeight) / 2;
-      pdf.addImage(imgData, 'JPEG', xPosition, yPosition, pdfImageWidth, pdfImageHeight);
+      await addContainerAsPdfPage(statsContainer, 1.4);
+      document.head.removeChild(statsStyle);
+      activeStyle = null;
     }
 
     pdf.save('班表.pdf');
