@@ -1,0 +1,11 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        { "name": "tutorialDone_v1", "value": "1" }
+      ]
+    }
+  ]
+}

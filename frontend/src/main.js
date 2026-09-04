@@ -43,16 +43,20 @@ import {
 import { showToast } from './ui/toast.js';
 import { showInput, showConfirm } from './ui/modal.js';
 import { applyTheme, currentTheme } from './ui/theme.js';
+import { initTutorial } from './ui/tutorial.js';
 
 // ── Features ──
 import { renderPersonnelView, exportPersonnelExcel } from './features/schedule/personnelView.js';
 import { printSchedule, exportToPdf } from './features/schedule/pdfExport.js';
 import { renderAll, renderSavedSchedules } from './features/settings/settingsRenderer.js';
-import { renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
+import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
+import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
+import { getExportData, initExportWeekFilter } from './features/schedule/exportWeekFilter.js';
 
 // ── Utils ──
 import { checkConnectionStatus } from './utils/connectionStatus.js';
+import { downloadWorkbook } from './utils/excelDownload.js';
 
 // ─────────────────────────────────────────────
 // DOM 元素集合（在 DOMContentLoaded 後填入）
@@ -82,6 +86,15 @@ const handleSettingsChange = async (updateFn) => {
   renderAll();
   await saveSettings();
   if (getGeneratedData()) {
+    if (getHasUnsavedChanges()) {
+      const ok = await showConfirm(
+        '班表有手動調整尚未儲存，變更設定會重新產生班表並覆蓋這些修改，確定要繼續嗎？'
+      );
+      if (!ok) {
+        showToast('設定已儲存，但班表未重新產生（手動修改已保留）', 'info', 4000);
+        return;
+      }
+    }
     elements.outputContainer.style.opacity = '0.5';
     await generateFullSchedule(Array.from(activeHolidayDates));
     elements.outputContainer.style.opacity = '1';
@@ -292,6 +305,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyTheme(isDark ? 'light' : 'dark');
   });
 
+  // 全域 modal × 關閉鈕（class="modal-close"，無 ID）
+  document.addEventListener('click', (e) => {
+    const closeBtn = e.target.closest('.modal-close');
+    if (!closeBtn) return;
+    const backdrop = closeBtn.closest('.modal-backdrop');
+    if (!backdrop) return;
+    // confirm/input modal 的 × 要走取消流程，讓 Promise 正確 resolve
+    const cancelBtn = backdrop.querySelector('#confirm-modal-cancel, #input-modal-cancel');
+    if (cancelBtn) {
+      cancelBtn.click();
+    } else {
+      backdrop.classList.remove('open');
+    }
+  });
+
   // 任務
   elements.addTaskBtn.addEventListener('click', () => {
     const name = elements.newTaskNameInput.value.trim();
@@ -479,12 +507,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 複製
   elements.copyBtn.addEventListener('click', () => {
-    const generatedData = getGeneratedData();
-    if (!generatedData) return;
+    const exportData = getExportData();
+    if (!exportData || exportData.length === 0) return;
     let textContent = '';
-    generatedData.forEach((data, index) => {
+    exportData.forEach((data) => {
       const { schedule, tasks, dateRange, weekDayDates, scheduleDays } = data;
-      textContent += `第 ${index + 1} 週班表 (${dateRange})\n`;
+      textContent += `第 ${data.weekIndex + 1} 週班表 (${dateRange})\n`;
       textContent +=
         ['勤務地點', '星期一', '星期二', '星期三', '星期四', '星期五'].join('\t') + '\n';
       tasks.forEach((task, taskIndex) => {
@@ -506,35 +534,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Excel
-  elements.exportExcelBtn.addEventListener('click', () => {
-    const generatedData = getGeneratedData();
-    if (!generatedData) return;
-    const wb = window.XLSX.utils.book_new();
-    generatedData.forEach((data, index) => {
+  elements.exportExcelBtn.addEventListener('click', async () => {
+    const exportData = getExportData();
+    if (!exportData || exportData.length === 0) return;
+    const wb = new window.ExcelJS.Workbook();
+    exportData.forEach((data) => {
       const { schedule, tasks, weekDayDates, scheduleDays } = data;
-      const header = [
+      const ws = wb.addWorksheet(`第${data.weekIndex + 1}週`);
+      ws.columns = Array(6).fill({ width: 15 });
+
+      const headerRow = ws.addRow([
         '勤務地點',
         ...weekDayDates.map(
           (date, i) => `星期${['一', '二', '三', '四', '五'][i]}\n(${date})`
         ),
-      ];
-      const ws_data = [header];
+      ]);
+      headerRow.eachCell((cell) => { cell.alignment = { wrapText: true, vertical: 'top' }; });
+
       tasks.forEach((task, taskIndex) => {
-        const row = [task.name];
+        const cells = [task.name];
         weekDayDates.forEach((_, dayIndex) => {
-          if (!scheduleDays[dayIndex].shouldSchedule) {
-            row.push(scheduleDays[dayIndex].description);
-          } else {
-            row.push(schedule[dayIndex][taskIndex].join('\n'));
-          }
+          cells.push(
+            scheduleDays[dayIndex].shouldSchedule
+              ? schedule[dayIndex][taskIndex].join('\n')
+              : scheduleDays[dayIndex].description
+          );
         });
-        ws_data.push(row);
+        const row = ws.addRow(cells);
+        row.eachCell((cell) => { cell.alignment = { wrapText: true, vertical: 'top' }; });
       });
-      const ws = window.XLSX.utils.aoa_to_sheet(ws_data);
-      ws['!cols'] = Array(6).fill({ wch: 15 });
-      window.XLSX.utils.book_append_sheet(wb, ws, `第${index + 1}週`);
     });
-    window.XLSX.writeFile(wb, '班表.xlsx');
+    await downloadWorkbook(wb, '班表.xlsx');
   });
 
   // PDF
@@ -631,7 +661,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('diff-modal').classList.remove('open');
   });
 
+  document.getElementById('diff-modal-close-2')?.addEventListener('click', () => {
+    document.getElementById('diff-modal').classList.remove('open');
+  });
+
+  document.getElementById('diff-modal-apply')?.addEventListener('click', () => {
+    document.getElementById('diff-modal').classList.remove('open');
+  });
+
+  document.getElementById('dm-revert')?.addEventListener('click', async () => {
+    document.getElementById('diff-modal').classList.remove('open');
+    const ok = await showConfirm('確定要捨棄所有變更，回到原始班表嗎？');
+    if (!ok) return;
+    clearDraft();
+    setEditingData(JSON.parse(JSON.stringify(getGeneratedData())));
+    setHasUnsavedChanges(false);
+    clearEditHistory();
+    const editStatus = document.getElementById('edit-status');
+    if (editStatus) { editStatus.textContent = ''; editStatus.className = ''; }
+    const saveEditsBtn = document.getElementById('save-edits-btn');
+    if (saveEditsBtn) saveEditsBtn.disabled = true;
+    renderEditableSchedule();
+  });
+
   initEditToolbarEvents();
+  initScheduleCompare();
+  initExportWeekFilter();
+
+  document.getElementById('enter-edit-btn')?.addEventListener('click', enableEditMode);
 
   // 人員/班表 tab 切換
   const personnelExcelBtn = document.getElementById('export-personnel-excel');
@@ -658,6 +715,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   personnelExcelBtn?.addEventListener('click', exportPersonnelExcel);
 
+  document.getElementById('undo')?.addEventListener('click', () => undoSettings(renderAll, saveSettings));
+  document.getElementById('redo')?.addEventListener('click', () => redoSettings(renderAll, saveSettings));
+
   // 全域鍵盤快捷鍵
   document.addEventListener('keydown', (e) => {
     const mod = navigator.platform.toUpperCase().includes('MAC') ? e.metaKey : e.ctrlKey;
@@ -678,6 +738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await initApp();
+  initTutorial();
 });
 
 

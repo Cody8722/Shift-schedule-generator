@@ -92,13 +92,13 @@ test.describe('進階編輯', () => {
     await expect(page.locator('#save-edits-btn')).toBeEnabled();
   });
 
-  test('有修改時點擊差異摘要，顯示 .diff-item', async ({ page }) => {
+  test('有修改時點擊差異摘要，顯示 .diff-line', async ({ page }) => {
     await generateMinimalSchedule(page);
     await modifyFirstCell(page);
 
     await page.locator('#diff-btn').click();
     await expect(page.locator('#diff-modal')).toHaveClass(/open/, { timeout: 3_000 });
-    await expect(page.locator('.diff-item')).toBeVisible();
+    await expect(page.locator('.diff-line').first()).toBeVisible();
   });
 
   test('無修改時點擊差異摘要，顯示 .diff-empty', async ({ page }) => {

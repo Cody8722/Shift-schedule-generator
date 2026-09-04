@@ -10,6 +10,7 @@ import { showToast } from '../../ui/toast.js';
 import { escapeHtml } from '../../utils/escapeHtml.js';
 import { renderPersonnelView } from './personnelView.js';
 import { enableEditMode } from './editableSchedule.js';
+import { renderExportWeekFilter } from './exportWeekFilter.js';
 
 const renderFillStats = (weekData) => {
   const panel = document.getElementById('fill-stats-panel');
@@ -90,6 +91,7 @@ export async function generateFullSchedule(activeHolidays = []) {
 export function displaySchedule(scheduleHtml) {
   document.getElementById('schedule-output').innerHTML = scheduleHtml;
   document.getElementById('output-container').classList.remove('hidden');
+  renderExportWeekFilter();
   enableEditMode();
   const isPersonnelActive = !document.getElementById('personnel-view').classList.contains('hidden');
   if (isPersonnelActive) {

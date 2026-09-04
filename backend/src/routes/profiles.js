@@ -23,10 +23,17 @@ router.put('/api/profiles/active', async (req, res) => {
   if (!getIsDbConnected()) return res.status(503).json({ message: '資料庫未連線' });
   try {
     const { name } = req.body;
+    const validation = validateProfileName(name);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.error });
+    }
     await repo.setActiveProfile(name);
     res.json({ message: '作用中的設定檔已更新' });
   } catch (error) {
     debugDb('更新作用中設定檔失敗:', error);
+    if (error.status === 404) {
+      return res.status(404).json({ message: error.message });
+    }
     res.status(500).json({ message: '更新作用中設定檔時發生錯誤' });
   }
 });

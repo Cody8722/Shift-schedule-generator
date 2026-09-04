@@ -17,6 +17,7 @@ let _generatedData = null;
 let _editingData = null;
 let _hasUnsavedChanges = false;
 let _currentScheduleName = null;
+let _selectedWeeks = new Set();
 
 // ── appState ──
 export const getAppState = () => _appState;
@@ -30,6 +31,14 @@ export const getActiveProfile = () => _appState.profiles[_appState.activeProfile
 export const getGeneratedData = () => _generatedData;
 export const setGeneratedData = (data) => {
   _generatedData = data;
+  // 每次拿到新班表（產生或載入）就重設匯出週次篩選為全選，避免殘留上一份班表的選擇
+  _selectedWeeks = new Set(data ? data.map((_, i) => i) : []);
+};
+
+// ── selectedWeeks（匯出用的週次篩選）──
+export const getSelectedWeeks = () => _selectedWeeks;
+export const setSelectedWeeks = (weeks) => {
+  _selectedWeeks = weeks;
 };
 
 // ── editingData ──

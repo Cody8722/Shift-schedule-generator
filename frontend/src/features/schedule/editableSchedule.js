@@ -152,7 +152,7 @@ function createEditableWeek(weekData, weekIndex) {
         td.addEventListener('drop', handleCellDrop);
         td.addEventListener('dragleave', handleCellDragLeave);
         td.addEventListener('click', (e) => {
-          if (!e.target.closest('.person-tag')) {
+          if (!e.target.closest('.person-tag:not(.unfilled)')) {
             showPersonnelDropdown(td, weekIndex, dayIndex, taskIndex);
           }
         });
@@ -242,11 +242,25 @@ function renderCellPersonnel(cell, personnelList) {
   cell.innerHTML = '';
 
   const weekIndex = parseInt(cell.dataset.weekIndex, 10);
+  const dayIndex = parseInt(cell.dataset.dayIndex, 10);
   const taskIndex = parseInt(cell.dataset.taskIndex, 10);
   const editingData = getEditingData();
   if (!editingData[weekIndex]?.tasks?.[taskIndex]) return;
   const taskRequiredCount = editingData[weekIndex].tasks[taskIndex].count;
   const currentCount = personnelList.length;
+
+  const reshuffleBtn = document.createElement('button');
+  reshuffleBtn.type = 'button';
+  reshuffleBtn.className = 'cell-reshuffle-btn';
+  reshuffleBtn.title = '只重排這一格';
+  reshuffleBtn.textContent = '🎲';
+  reshuffleBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+  reshuffleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    reshuffleCell(weekIndex, dayIndex, taskIndex);
+  });
+  cell.appendChild(reshuffleBtn);
 
   const countEl = document.createElement('div');
   countEl.style.cssText = 'font:500 10px var(--font-mono);margin-bottom:4px;';
@@ -310,52 +324,92 @@ function renderCellPersonnel(cell, personnelList) {
   requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(scrollX, scrollY)));
 }
 
-function canAddPersonToCell(weekIndex, dayIndex, taskIndex, personName, ignoreSameCell = false) {
-  const editingData = getEditingData();
-  if (!editingData?.[weekIndex]) return { canAdd: false, reason: '數據無效' };
+function getOriginCoords() {
+  if (!draggedFromCell) return null;
+  return {
+    weekIndex: parseInt(draggedFromCell.dataset.weekIndex, 10),
+    dayIndex: parseInt(draggedFromCell.dataset.dayIndex, 10),
+    taskIndex: parseInt(draggedFromCell.dataset.taskIndex, 10),
+  };
+}
 
-  const personnelList = editingData[weekIndex].schedule[dayIndex][taskIndex];
-  const tasks = editingData[weekIndex].tasks;
-
-  if (personnelList.includes(personName)) return { canAdd: false, reason: '已在此勤務' };
-
-  const taskRequiredCount = tasks[taskIndex].count;
-  const currentCount = personnelList.length;
-
-  let isDraggingFromSameCell = false;
-  if (draggedFromCell) {
-    const fw = parseInt(draggedFromCell.dataset.weekIndex, 10);
-    const fd = parseInt(draggedFromCell.dataset.dayIndex, 10);
-    const ft = parseInt(draggedFromCell.dataset.taskIndex, 10);
-    isDraggingFromSameCell = fw === weekIndex && fd === dayIndex && ft === taskIndex;
-  }
-
-  if (!isDraggingFromSameCell && currentCount >= taskRequiredCount) {
-    return { canAdd: false, reason: `人數已滿 (${currentCount}/${taskRequiredCount})` };
-  }
-
+/**
+ * 檢查某人能否進入某格（不含「格子是否已滿」的判斷）：固定排休、當天已在其他勤務。
+ * ignoreCoords 用來排除「來源格」本身造成的假衝突（因為那個人即將離開該格）。
+ */
+function canPersonEnterCell(personName, weekIndex, dayIndex, taskIndex, ignoreCoords = null) {
   const personnelSettings = getActiveProfile().settings.personnel || [];
   const person = personnelSettings.find((p) => p.name === personName);
+  const weekDayNames = ['一', '二', '三', '四', '五'];
   if (person?.offDays?.includes(dayIndex)) {
-    const weekDayNames = ['一', '二', '三', '四', '五'];
-    return { canAdd: false, reason: `星期${weekDayNames[dayIndex]}固定排休` };
+    return { ok: false, reason: `星期${weekDayNames[dayIndex]}固定排休` };
   }
 
+  const editingData = getEditingData();
   const allTasksThisDay = editingData[weekIndex].schedule[dayIndex];
+  const tasks = editingData[weekIndex].tasks;
   for (let i = 0; i < allTasksThisDay.length; i++) {
-    if (i !== taskIndex && allTasksThisDay[i].includes(personName)) {
-      if (ignoreSameCell && draggedFromCell) {
-        const fw = parseInt(draggedFromCell.dataset.weekIndex, 10);
-        const fd = parseInt(draggedFromCell.dataset.dayIndex, 10);
-        const ft = parseInt(draggedFromCell.dataset.taskIndex, 10);
-        if (fw === weekIndex && fd === dayIndex && ft === i) continue;
-      }
-      const conflictTaskName = tasks[i].name;
-      return { canAdd: false, reason: `已在「${conflictTaskName}」` };
+    if (i === taskIndex) continue;
+    if (
+      ignoreCoords &&
+      ignoreCoords.weekIndex === weekIndex &&
+      ignoreCoords.dayIndex === dayIndex &&
+      ignoreCoords.taskIndex === i
+    ) {
+      continue;
+    }
+    if (allTasksThisDay[i].includes(personName)) {
+      return { ok: false, reason: `已在「${tasks[i].name}」` };
     }
   }
+  return { ok: true };
+}
 
-  return { canAdd: true, reason: '' };
+/**
+ * 評估把 personName 拖放到指定格子的結果：
+ * - 'add'：直接加入
+ * - 'swap'：格子已滿，但可以跟裡面的某人對調
+ * - 'blocked'：不可放（附原因）
+ */
+function evaluateCellDrop(weekIndex, dayIndex, taskIndex, personName) {
+  const editingData = getEditingData();
+  if (!editingData?.[weekIndex]) return { mode: 'blocked', reason: '數據無效' };
+
+  const personnelList = editingData[weekIndex].schedule[dayIndex][taskIndex];
+  if (personnelList.includes(personName)) return { mode: 'blocked', reason: '已在此勤務' };
+
+  const origin = getOriginCoords();
+  const entryCheck = canPersonEnterCell(personName, weekIndex, dayIndex, taskIndex, origin);
+  if (!entryCheck.ok) return { mode: 'blocked', reason: entryCheck.reason };
+
+  const taskRequiredCount = editingData[weekIndex].tasks[taskIndex].count;
+  if (personnelList.length < taskRequiredCount) return { mode: 'add' };
+
+  if (!origin) {
+    return { mode: 'blocked', reason: `人數已滿 (${personnelList.length}/${taskRequiredCount})` };
+  }
+
+  const originList = editingData[origin.weekIndex].schedule[origin.dayIndex][origin.taskIndex];
+  // 從目標格挑一個可對調的人：不能是來源格已經有的人（否則會造成同格重複），
+  // 且要能合法進入來源格（沒有排休/當天其他勤務衝突）。
+  let blockedReason = `人數已滿 (${personnelList.length}/${taskRequiredCount})`;
+  for (const candidate of personnelList) {
+    if (originList.includes(candidate)) {
+      blockedReason = `人數已滿，且 ${candidate} 已在來源格所在的星期`;
+      continue;
+    }
+    const bumpedCheck = canPersonEnterCell(candidate, origin.weekIndex, origin.dayIndex, origin.taskIndex, {
+      weekIndex,
+      dayIndex,
+      taskIndex,
+    });
+    if (!bumpedCheck.ok) {
+      blockedReason = `人數已滿，且無法與 ${candidate} 對調（${bumpedCheck.reason}）`;
+      continue;
+    }
+    return { mode: 'swap', bumpedPerson: candidate };
+  }
+  return { mode: 'blocked', reason: blockedReason };
 }
 
 function highlightAvailableCells(personName) {
@@ -365,11 +419,11 @@ function highlightAvailableCells(personName) {
     const wi = parseInt(cell.dataset.weekIndex, 10);
     const di = parseInt(cell.dataset.dayIndex, 10);
     const ti = parseInt(cell.dataset.taskIndex, 10);
-    const result = canAddPersonToCell(wi, di, ti, personName, true);
+    const result = evaluateCellDrop(wi, di, ti, personName);
 
     cell.classList.remove('bg-green-100', 'border-green-400', 'bg-red-100', 'border-red-400', 'drop-allowed', 'drop-forbidden');
 
-    if (result.canAdd) {
+    if (result.mode === 'add' || result.mode === 'swap') {
       cell.classList.add('drop-allowed');
       cell.style.border = '2px dashed #4ade80';
       cell.style.backgroundColor = 'rgba(74, 222, 128, 0.1)';
@@ -378,7 +432,7 @@ function highlightAvailableCells(personName) {
       cell.style.border = '2px dashed #ef4444';
       cell.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
       cell.style.cursor = 'not-allowed';
-      if (!cell.querySelector('.drop-hint')) {
+      if (!cell.querySelector('.drop-hint') && result.reason) {
         const hint = document.createElement('div');
         hint.className = 'drop-hint text-xs text-red-600 font-semibold';
         hint.style.cssText = 'position:absolute;bottom:2px;left:2px;right:2px;background:rgba(254,242,242,0.95);padding:2px 4px;border-radius:4px;z-index:10;';
@@ -406,6 +460,7 @@ function clearAllHighlights() {
 function handlePersonDragStart(e) {
   draggedPerson = e.target.dataset.personName;
   draggedFromCell = null;
+  e.dataTransfer.setData('text/plain', draggedPerson);
   e.target.classList.add('opacity-50');
   highlightAvailableCells(draggedPerson);
 }
@@ -418,6 +473,7 @@ function handlePersonDragEnd(e) {
 function handleTagDragStart(e) {
   draggedPerson = e.target.dataset.personName;
   draggedFromCell = e.target.closest('.editable-cell');
+  e.dataTransfer.setData('text/plain', draggedPerson);
   e.target.classList.add('opacity-50');
   highlightAvailableCells(draggedPerson);
 }
@@ -456,26 +512,51 @@ function handleCellDrop(e) {
   const di = parseInt(cell.dataset.dayIndex, 10);
   const ti = parseInt(cell.dataset.taskIndex, 10);
 
-  const canAdd = canAddPersonToCell(wi, di, ti, draggedPerson, true);
-  if (!canAdd.canAdd) { draggedPerson = null; draggedFromCell = null; return; }
+  const result = evaluateCellDrop(wi, di, ti, draggedPerson);
+  if (result.mode === 'blocked') {
+    if (result.reason) showToast(result.reason, 'warning');
+    draggedPerson = null;
+    draggedFromCell = null;
+    return;
+  }
 
   pushEditHistory();
   setHistoryLock(true);
 
-  if (draggedFromCell) {
-    const fw = parseInt(draggedFromCell.dataset.weekIndex, 10);
-    const fd = parseInt(draggedFromCell.dataset.dayIndex, 10);
-    const ft = parseInt(draggedFromCell.dataset.taskIndex, 10);
+  if (result.mode === 'swap') {
+    const origin = getOriginCoords();
     const editingData = getEditingData();
-    const personIndex = editingData[fw].schedule[fd][ft].indexOf(draggedPerson);
-    if (personIndex > -1) {
-      editingData[fw].schedule[fd][ft].splice(personIndex, 1);
-      renderCellPersonnel(draggedFromCell, editingData[fw].schedule[fd][ft]);
-      if (fw !== wi) updateWeeklyStats(fw);
+    const originList = editingData[origin.weekIndex].schedule[origin.dayIndex][origin.taskIndex];
+    const targetList = editingData[wi].schedule[di][ti];
+
+    const bumpedIndex = targetList.indexOf(result.bumpedPerson);
+    if (bumpedIndex > -1) targetList.splice(bumpedIndex, 1);
+    const draggedIndex = originList.indexOf(draggedPerson);
+    if (draggedIndex > -1) originList.splice(draggedIndex, 1);
+    targetList.push(draggedPerson);
+    originList.push(result.bumpedPerson);
+
+    renderCellPersonnel(cell, targetList);
+    renderCellPersonnel(draggedFromCell, originList);
+    updateWeeklyStats(wi);
+    if (origin.weekIndex !== wi) updateWeeklyStats(origin.weekIndex);
+    markAsModified();
+    showToast(`已將「${draggedPerson}」與「${result.bumpedPerson}」對調`, 'success', 2000);
+  } else {
+    if (draggedFromCell) {
+      const origin = getOriginCoords();
+      const editingData = getEditingData();
+      const originList = editingData[origin.weekIndex].schedule[origin.dayIndex][origin.taskIndex];
+      const personIndex = originList.indexOf(draggedPerson);
+      if (personIndex > -1) {
+        originList.splice(personIndex, 1);
+        renderCellPersonnel(draggedFromCell, originList);
+        if (origin.weekIndex !== wi) updateWeeklyStats(origin.weekIndex);
+      }
     }
+    addPersonToCell(wi, di, ti, draggedPerson);
   }
 
-  addPersonToCell(wi, di, ti, draggedPerson);
   setHistoryLock(false);
 
   requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(scrollX, scrollY)));
@@ -529,6 +610,61 @@ function removePersonFromCell(weekIndex, dayIndex, taskIndex, personIndex) {
   requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(scrollX, scrollY)));
   updateWeeklyStats(weekIndex);
   markAsModified();
+}
+
+/**
+ * 只重排單一格：從目前可用人員中重新挑選，不影響班表其他格子。
+ * 依「本週已排班次較少」優先，其餘隨機，藉此貼近產生班表時的公平性邏輯。
+ */
+function reshuffleCell(weekIndex, dayIndex, taskIndex) {
+  const editingData = getEditingData();
+  if (!editingData?.[weekIndex]) return;
+  if (!editingData[weekIndex].scheduleDays[dayIndex].shouldSchedule) return;
+
+  const task = editingData[weekIndex].tasks[taskIndex];
+  const allTasksThisDay = editingData[weekIndex].schedule[dayIndex];
+  const personnel = getActiveProfile().settings.personnel || [];
+
+  const shiftCounts = {};
+  personnel.forEach((p) => { shiftCounts[p.name] = 0; });
+  editingData[weekIndex].schedule.forEach((daySlots, di) => {
+    daySlots.forEach((list, ti) => {
+      if (di === dayIndex && ti === taskIndex) return; // 排除這一格自己目前的人
+      list.forEach((name) => { shiftCounts[name] = (shiftCounts[name] || 0) + 1; });
+    });
+  });
+
+  const candidates = personnel.filter((p) => {
+    if (p.offDays?.includes(dayIndex)) return false;
+    for (let i = 0; i < allTasksThisDay.length; i++) {
+      if (i !== taskIndex && allTasksThisDay[i].includes(p.name)) return false;
+    }
+    return true;
+  });
+
+  if (candidates.length === 0) {
+    showToast('沒有其他可排班的人員了', 'warning');
+    return;
+  }
+
+  candidates.sort((a, b) => {
+    const diff = (shiftCounts[a.name] || 0) - (shiftCounts[b.name] || 0);
+    if (diff !== 0) return diff;
+    return Math.random() - 0.5;
+  });
+
+  const picked = candidates.slice(0, task.count).map((p) => p.name);
+
+  pushEditHistory();
+  editingData[weekIndex].schedule[dayIndex][taskIndex] = picked;
+
+  const cell = document.querySelector(
+    `[data-week-index="${weekIndex}"][data-day-index="${dayIndex}"][data-task-index="${taskIndex}"]`
+  );
+  renderCellPersonnel(cell, picked);
+  updateWeeklyStats(weekIndex);
+  markAsModified();
+  showToast('已重新排這一格', 'success', 1500);
 }
 
 function showPersonnelDropdown(cell, weekIndex, dayIndex, taskIndex) {
@@ -682,6 +818,11 @@ async function cancelEdits() {
   clearDraft();
   setEditingData(JSON.parse(JSON.stringify(getGeneratedData())));
   setHasUnsavedChanges(false);
+  clearEditHistory();
+  const editStatus = document.getElementById('edit-status');
+  if (editStatus) { editStatus.textContent = ''; editStatus.className = ''; }
+  const saveEditsBtn = document.getElementById('save-edits-btn');
+  if (saveEditsBtn) saveEditsBtn.disabled = true;
   renderEditableSchedule();
 }
 

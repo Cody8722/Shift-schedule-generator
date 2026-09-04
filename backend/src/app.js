@@ -28,7 +28,6 @@ app.use(helmet({
         "'self'",
         "'unsafe-inline'",           // Tailwind 需要 inline script 注入 config
         'https://cdn.tailwindcss.com',
-        'https://cdn.sheetjs.com',
         'https://cdnjs.cloudflare.com',
       ],
       styleSrc: [
@@ -47,6 +46,12 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false,  // CDN 資源不帶 COEP header，啟用會導致阻擋
 }));
+
+// helmet v8 不含 Permissions-Policy，手動加
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  next();
+});
 
 // API 回應加 no-store，避免快取敏感資料
 app.use('/api/', (req, res, next) => {
@@ -95,6 +100,11 @@ app.use(profilesRouter);
 app.use(schedulesRouter);
 app.use(generateRouter);
 app.use(schoolCalendarRouter);
+
+// robots.txt（爬蟲不索引 API 路徑）
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send('User-agent: *\nDisallow: /api/\n');
+});
 
 // Production：serve 前端 dist 靜態檔
 const distPath = path.join(__dirname, '..', 'public');
