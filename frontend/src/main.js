@@ -59,6 +59,7 @@ import { computePersonTaskStats, initPersonTaskStats } from './features/schedule
 // ── Utils ──
 import { checkConnectionStatus } from './utils/connectionStatus.js';
 import { downloadWorkbook } from './utils/excelDownload.js';
+import { buildExportFilename } from './utils/exportFilename.js';
 
 // ─────────────────────────────────────────────
 // DOM 元素集合（在 DOMContentLoaded 後填入）
@@ -590,7 +591,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    await downloadWorkbook(wb, '班表.xlsx');
+    await downloadWorkbook(wb, buildExportFilename(exportData, 'xlsx'));
   });
 
   // PDF

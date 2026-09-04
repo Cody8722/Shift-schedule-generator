@@ -4,6 +4,7 @@ import { api } from '../../api/client.js';
 import { showToast } from '../../ui/toast.js';
 import { renderEditableSchedule } from './editableSchedule.js';
 import { renderPersonTaskStatsHtml } from './personTaskStats.js';
+import { buildExportFilename } from '../../utils/exportFilename.js';
 
 export async function printSchedule() {
   const exportData = getExportData();
@@ -196,7 +197,7 @@ export async function exportToPdf() {
       activeStyle = null;
     }
 
-    pdf.save('班表.pdf');
+    pdf.save(buildExportFilename(exportData, 'pdf'));
   } catch (err) {
     console.error('html2canvas failed:', err);
     showToast('PDF 導出失敗，請稍後再試', 'error');

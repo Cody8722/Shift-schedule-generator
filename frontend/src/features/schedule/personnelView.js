@@ -2,6 +2,7 @@ import { escapeHtml } from '../../utils/escapeHtml.js';
 import { getAppState } from '../../state/appState.js';
 import { downloadWorkbook } from '../../utils/excelDownload.js';
 import { getExportData } from './exportWeekFilter.js';
+import { buildExportFilename } from '../../utils/exportFilename.js';
 
 export const TASK_COLORS = [
   'pv-task-0',
@@ -145,5 +146,5 @@ export const exportPersonnelExcel = async () => {
     ]);
   });
 
-  await downloadWorkbook(wb, '人員班表.xlsx');
+  await downloadWorkbook(wb, buildExportFilename(data, 'xlsx', { suffix: '_人員' }));
 };

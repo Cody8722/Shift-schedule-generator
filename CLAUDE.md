@@ -117,6 +117,7 @@ frontend/
       capacityStatus.js          # 容量/填補率狀態計算
       connectionStatus.js        # 後端連線狀態顯示
       excelDownload.js           # ExcelJS Workbook → Blob 觸發瀏覽器下載
+      exportFilename.js          # 組合匯出檔名（班表名稱_日期範圍_時間戳記），PDF/Excel/人員Excel 共用
     features/schedule/
       personnelView.js           # 人員月曆視圖 + Excel 下載
       diffSummary.js             # 變更摘要 Modal（buildDiff、共用 renderDiffSection）
