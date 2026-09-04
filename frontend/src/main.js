@@ -8,6 +8,7 @@
 
 // ── 工具 ──
 import { debounce } from './utils/debounce.js';
+import { escapeHtml } from './utils/escapeHtml.js';
 
 // ── API ──
 import { api } from './api/client.js';
@@ -167,7 +168,7 @@ const openPersonnelModal = (index) => {
     tasks
       .map(
         (task) =>
-          `<option value="${task.name}" ${person.preferredTask === task.name ? 'selected' : ''}>${task.name}</option>`
+          `<option value="${escapeHtml(task.name)}" ${person.preferredTask === task.name ? 'selected' : ''}>${escapeHtml(task.name)}</option>`
       )
       .join('');
   elements.personnelModal.classList.add('open');
@@ -653,8 +654,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       .map(
         (holiday) => `
       <label class="holiday-item">
-        <input type="checkbox" class="holiday-checkbox" value="${holiday.date}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
-        <span style="flex:1">${holiday.name}</span>
+        <input type="checkbox" class="holiday-checkbox" value="${escapeHtml(holiday.date)}" ${activeHolidayDates.has(holiday.date) ? 'checked' : ''}>
+        <span style="flex:1">${escapeHtml(holiday.name)}</span>
         <span class="hdate">${holiday.date.substring(4, 6)}/${holiday.date.substring(6, 8)}</span>
       </label>`
       )
