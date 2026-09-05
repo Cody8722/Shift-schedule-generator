@@ -695,12 +695,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 從 PDF 匯入班表
-  elements.importPdfBtn?.addEventListener('click', () => elements.pdfFileInput.click());
+  // 選檔案的原生對話框本身會擋掉重複點擊，但選好檔案後到匯入處理完成（讀檔+解密的
+  // 非同步空檔）這段期間按鈕仍可再次點擊，快速連續匯入兩個檔案會互相干擾，跟先前
+  // 匯出按鈕連點的問題是同一類，用同樣的 disabled 防呆處理。
+  elements.importPdfBtn?.addEventListener('click', () => {
+    if (elements.importPdfBtn.disabled) return;
+    elements.pdfFileInput.click();
+  });
   elements.pdfFileInput?.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    await importScheduleFromPdfFile(file);
+    elements.importPdfBtn.disabled = true;
+    try {
+      await importScheduleFromPdfFile(file);
+    } finally {
+      elements.importPdfBtn.disabled = false;
+    }
   });
 
   // 假日設定
