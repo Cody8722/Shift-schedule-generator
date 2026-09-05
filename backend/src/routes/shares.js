@@ -54,6 +54,47 @@ router.post('/api/schedule-shares', async (req, res) => {
   }
 });
 
+// 列出某份班表底下已產生的分享連結，供後台管理介面顯示「已產生的連結」清單。
+router.get('/api/schedule-shares', async (req, res) => {
+  if (!getIsDbConnected()) return res.status(503).json({ message: '資料庫未連線' });
+  try {
+    const { profile, scheduleName } = req.query;
+
+    const profileValidation = validateProfileName(profile);
+    if (!profileValidation.valid) return res.status(400).json({ message: profileValidation.error });
+
+    const nameValidation = validateScheduleName(scheduleName);
+    if (!nameValidation.valid) return res.status(400).json({ message: nameValidation.error });
+
+    const shares = await shareRepo.listShares(profile, scheduleName);
+    res.json(
+      shares.map((s) => ({
+        token: s._id,
+        personFilter: s.personFilter,
+        createdAt: s.createdAt,
+        expiresAt: s.expiresAt || null,
+      }))
+    );
+  } catch (error) {
+    debug('列出分享連結失敗:', error);
+    res.status(500).json({ message: '列出分享連結時發生錯誤' });
+  }
+});
+
+// 撤銷（刪除）一個已產生的分享連結，撤銷後該連結立即失效。
+router.delete('/api/schedule-shares/:token', async (req, res) => {
+  if (!getIsDbConnected()) return res.status(503).json({ message: '資料庫未連線' });
+  try {
+    const { token } = req.params;
+    const deleted = await shareRepo.deleteShare(token);
+    if (!deleted) return res.status(404).json({ message: '此分享連結不存在或已被撤銷' });
+    res.json({ message: '分享連結已撤銷' });
+  } catch (error) {
+    debug('撤銷分享連結失敗:', error);
+    res.status(500).json({ message: '撤銷分享連結時發生錯誤' });
+  }
+});
+
 // 公開端點，刻意不需要登入——分享連結的重點就是讓拿到連結的人直接看，不用進到後台。
 router.get('/api/schedule-shares/:token', async (req, res) => {
   if (!getIsDbConnected()) return res.status(503).json({ message: '資料庫未連線' });

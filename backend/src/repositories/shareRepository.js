@@ -27,4 +27,15 @@ const getShare = async (token) => {
   return collection.findOne({ _id: token });
 };
 
-module.exports = { createShare, getShare };
+const listShares = async (profile, scheduleName) => {
+  const collection = getScheduleSharesCollection();
+  return collection.find({ profile, scheduleName }).sort({ createdAt: -1 }).toArray();
+};
+
+const deleteShare = async (token) => {
+  const collection = getScheduleSharesCollection();
+  const result = await collection.deleteOne({ _id: token });
+  return result.deletedCount > 0;
+};
+
+module.exports = { createShare, getShare, listShares, deleteShare };

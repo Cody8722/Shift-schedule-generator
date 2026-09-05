@@ -7,12 +7,17 @@ jest.mock('../../src/db/connect', () => ({
 }));
 
 const { getScheduleSharesCollection } = require('../../src/db/connect');
-const { createShare, getShare } = require('../../src/repositories/shareRepository');
+const { createShare, getShare, listShares, deleteShare } = require('../../src/repositories/shareRepository');
 
-const makeCol = () => ({
-  insertOne: jest.fn().mockResolvedValue({ acknowledged: true }),
-  findOne: jest.fn().mockResolvedValue(null),
-});
+const makeCol = () => {
+  const sortMock = jest.fn().mockReturnValue({ toArray: jest.fn().mockResolvedValue([]) });
+  return {
+    insertOne: jest.fn().mockResolvedValue({ acknowledged: true }),
+    findOne: jest.fn().mockResolvedValue(null),
+    find: jest.fn().mockReturnValue({ sort: sortMock }),
+    deleteOne: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+  };
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -88,5 +93,40 @@ describe('getShare', () => {
     getScheduleSharesCollection.mockReturnValue(col);
     const result = await getShare('nope');
     expect(result).toBeNull();
+  });
+});
+
+describe('listShares', () => {
+  it('依 profile 與 scheduleName 查詢，並依 createdAt 由新到舊排序', async () => {
+    const col = makeCol();
+    const docs = [{ _id: 'tok1' }, { _id: 'tok2' }];
+    const sortMock = jest.fn().mockReturnValue({ toArray: jest.fn().mockResolvedValue(docs) });
+    col.find = jest.fn().mockReturnValue({ sort: sortMock });
+    getScheduleSharesCollection.mockReturnValue(col);
+
+    const result = await listShares('default', 'A');
+
+    expect(col.find).toHaveBeenCalledWith({ profile: 'default', scheduleName: 'A' });
+    expect(sortMock).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(result).toEqual(docs);
+  });
+});
+
+describe('deleteShare', () => {
+  it('刪除成功時回傳 true', async () => {
+    const col = makeCol();
+    col.deleteOne.mockResolvedValue({ deletedCount: 1 });
+    getScheduleSharesCollection.mockReturnValue(col);
+    const result = await deleteShare('tok');
+    expect(col.deleteOne).toHaveBeenCalledWith({ _id: 'tok' });
+    expect(result).toBe(true);
+  });
+
+  it('找不到對應 token 時回傳 false', async () => {
+    const col = makeCol();
+    col.deleteOne.mockResolvedValue({ deletedCount: 0 });
+    getScheduleSharesCollection.mockReturnValue(col);
+    const result = await deleteShare('nope');
+    expect(result).toBe(false);
   });
 });

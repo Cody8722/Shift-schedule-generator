@@ -50,6 +50,8 @@ POST   /api/school-events/refresh
 POST   /api/pdf-payload/encrypt
 POST   /api/pdf-payload/decrypt
 POST   /api/schedule-shares
+GET    /api/schedule-shares
+DELETE /api/schedule-shares/:token
 GET    /api/schedule-shares/:token
 GET    /
 GET    /robots.txt
@@ -134,7 +136,7 @@ frontend/
       personTaskStats.js         # 值勤統計 Modal（人員 × 勤務次數，加總 + 每週明細，Excel/PDF 匯出共用同一份計算）
       pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計；若後端有設定 PDF_PAYLOAD_SECRET 會額外把班表資料加密嵌入 PDF metadata）
       pdfImport.js               # 從匯出的 PDF 檔案讀出隱藏資料還原班表（需搭配 pdf-lib 解析 metadata + 後端解密）
-      scheduleShare.js           # 分享班表 Modal：產生免登入連結（可選只分享單一人員）
+      scheduleShare.js           # 分享班表 Modal：產生免登入連結（可選只分享單一人員、可設有效期限），並列出/撤銷已產生的連結
       sharedView.js              # 免登入分享連結的頁面（接管整個 document.body，不含後台功能）
       scheduleGenerator.js       # 前端排班產生流程
     features/settings/
@@ -310,7 +312,7 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 這是全站唯一一個刻意設計成公開、無需任何驗證就能讀取的端點——分享連結的目的就是讓拿到連結的人不用進後台。安全性完全依賴 token 本身夠隨機（128 bits，`crypto.randomBytes(16)`），不是靠登入機制擋。
 
 - 建立連結時可選「永久有效」或設定 1-365 天後失效（`expiresInDays`）。過期判斷在 `GET /api/schedule-shares/:token` 讀取當下即時檢查，不能只依賴 MongoDB TTL index（`expiresAt` 欄位，`expireAfterSeconds: 0`）——TTL 背景清除任務約每 60 秒才跑一次，不是精準即時刪除，永久連結因為沒有 `expiresAt` 欄位不受 TTL index 影響。
-- **目前沒有前端介面可以撤銷/刪除已產生的連結**（只能等它自然過期，或永久連結完全沒有辦法讓它失效）。若要加撤銷功能，需另外討論。
+- 分享 Modal 內會列出該份班表已產生的所有連結（`GET /api/schedule-shares?profile=&scheduleName=`），可用「撤銷」按鈕呼叫 `DELETE /api/schedule-shares/:token` 立即刪除、讓連結失效。這兩個管理端點本身沒有額外驗證（跟系統其他管理端點一樣，整個後台沒有登入機制），只是回傳/操作 token 中繼資料，不會外洩班表內容。
 - `personFilter` 的過濾**必須在後端做**（`shares.js` 的 `filterScheduleForPerson`），不能改成前端拿到完整班表 JSON 後才用 CSS/JS 隱藏其他人——那樣瀏覽器開發者工具的網路分頁還是看得到完整資料，等於沒做過濾。
 - 分享連結對應的是**某一份已儲存班表的快照**（`profile` + `scheduleName`），不會跟著該班表之後的修改自動更新；若使用者事後編輯並重新儲存同名班表，舊分享連結會顯示新內容（因為是即時查 `getSchedule`，不是存快照），但若該班表被刪除，連結會直接 404。
 

@@ -14,6 +14,8 @@ jest.mock('../../src/repositories/profileRepository', () => ({
 jest.mock('../../src/repositories/shareRepository', () => ({
   createShare: jest.fn(),
   getShare: jest.fn(),
+  listShares: jest.fn(),
+  deleteShare: jest.fn(),
 }));
 
 const request = require('supertest');
@@ -181,5 +183,57 @@ describe('GET /api/schedule-shares/:token', () => {
     expect(res.body.html).toContain('張三');
     expect(res.body.html).not.toContain('李四');
     expect(res.body.personFilter).toBe('張三');
+  });
+});
+
+describe('GET /api/schedule-shares（列出分享連結）', () => {
+  it('DB 未連線時回傳 503', async () => {
+    getIsDbConnected.mockReturnValue(false);
+    const res = await request(app).get('/api/schedule-shares').query({ profile: 'default', scheduleName: 'A' });
+    expect(res.status).toBe(503);
+  });
+
+  it('profile 不合法時回傳 400', async () => {
+    const res = await request(app).get('/api/schedule-shares').query({ profile: 'a/b', scheduleName: 'A' });
+    expect(res.status).toBe(400);
+  });
+
+  it('scheduleName 不合法時回傳 400', async () => {
+    const res = await request(app).get('/api/schedule-shares').query({ profile: 'default', scheduleName: '' });
+    expect(res.status).toBe(400);
+  });
+
+  it('成功時回傳精簡欄位的陣列（不含 profile/scheduleName，只給 token/personFilter/createdAt/expiresAt）', async () => {
+    shareRepo.listShares.mockResolvedValue([
+      { _id: 'tok1', profile: 'default', scheduleName: 'A', personFilter: '張三', createdAt: new Date(1), expiresAt: null },
+      { _id: 'tok2', profile: 'default', scheduleName: 'A', personFilter: null, createdAt: new Date(2), expiresAt: new Date(3) },
+    ]);
+    const res = await request(app).get('/api/schedule-shares').query({ profile: 'default', scheduleName: 'A' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      { token: 'tok1', personFilter: '張三', createdAt: new Date(1).toISOString(), expiresAt: null },
+      { token: 'tok2', personFilter: null, createdAt: new Date(2).toISOString(), expiresAt: new Date(3).toISOString() },
+    ]);
+  });
+});
+
+describe('DELETE /api/schedule-shares/:token（撤銷分享連結）', () => {
+  it('DB 未連線時回傳 503', async () => {
+    getIsDbConnected.mockReturnValue(false);
+    const res = await request(app).delete('/api/schedule-shares/xxx');
+    expect(res.status).toBe(503);
+  });
+
+  it('成功刪除時回傳 200', async () => {
+    shareRepo.deleteShare.mockResolvedValue(true);
+    const res = await request(app).delete('/api/schedule-shares/xxx');
+    expect(res.status).toBe(200);
+    expect(shareRepo.deleteShare).toHaveBeenCalledWith('xxx');
+  });
+
+  it('token 不存在時回傳 404', async () => {
+    shareRepo.deleteShare.mockResolvedValue(false);
+    const res = await request(app).delete('/api/schedule-shares/xxx');
+    expect(res.status).toBe(404);
   });
 });
