@@ -153,6 +153,8 @@ const openPersonnelModal = (index) => {
   currentEditingPersonnelIndex = index;
   const person = getActiveProfile().settings.personnel[index];
   elements.modalPersonnelName.textContent = person.name;
+  elements.pmMax.textContent = person.maxShifts || 5;
+  elements.pmMaxshifts.value = person.maxShifts || 5;
   const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
   elements.offDaysContainer.innerHTML = weekDays
     .map(
@@ -277,6 +279,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusText: document.getElementById('status-text'),
     personnelModal: document.getElementById('personnel-modal'),
     modalPersonnelName: document.getElementById('modal-personnel-name'),
+    pmMax: document.getElementById('pm-max'),
+    pmMaxshifts: document.getElementById('pm-maxshifts'),
     offDaysContainer: document.getElementById('off-days-container'),
     preferredTaskSelect: document.getElementById('preferred-task-select'),
     modalCloseBtn: document.getElementById('modal-close-btn'),
@@ -402,6 +406,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           elements.offDaysContainer.querySelectorAll('input:checked')
         ).map((cb) => parseInt(cb.value, 10));
         person.preferredTask = elements.preferredTaskSelect.value;
+        const maxShifts = parseInt(elements.pmMaxshifts.value, 10);
+        person.maxShifts = isNaN(maxShifts) || maxShifts < 1 ? 1 : maxShifts;
       });
       closePersonnelModal();
     }
