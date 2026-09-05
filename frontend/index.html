@@ -1549,8 +1549,12 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
       <div class="card saved">
         <div class="saved-head">
           <h3 class="panel-title">已儲存的班表</h3>
-          <button class="btn btn-secondary btn-sm" id="compare-schedules-btn">比較班表</button>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" id="import-pdf-btn">從 PDF 匯入</button>
+            <button class="btn btn-secondary btn-sm" id="compare-schedules-btn">比較班表</button>
+          </div>
         </div>
+        <input type="file" id="pdf-file-input" accept="application/pdf" style="display:none" />
         <ul id="saved-schedules-list" class="saved-list"></ul>
       </div>
 

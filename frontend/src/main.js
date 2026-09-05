@@ -52,6 +52,7 @@ import { printSchedule, exportToPdf } from './features/schedule/pdfExport.js';
 import { renderAll, renderSavedSchedules } from './features/settings/settingsRenderer.js';
 import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
+import { importScheduleFromPdfFile } from './features/schedule/pdfImport.js';
 import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
 import { getExportData, initExportWeekFilter } from './features/schedule/exportWeekFilter.js';
 import { computePersonTaskStats, initPersonTaskStats } from './features/schedule/personTaskStats.js';
@@ -286,6 +287,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     exportImagePdfBtn: document.getElementById('export-image-pdf'),
     saveScheduleBtn: document.getElementById('save-schedule-btn'),
     savedSchedulesList: document.getElementById('saved-schedules-list'),
+    importPdfBtn: document.getElementById('import-pdf-btn'),
+    pdfFileInput: document.getElementById('pdf-file-input'),
     themeToggle: document.getElementById('theme-toggle'),
     statusContainer: document.getElementById('status-container'),
     statusIndicator: document.getElementById('status-indicator'),
@@ -668,6 +671,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     }
+  });
+
+  // 從 PDF 匯入班表
+  elements.importPdfBtn?.addEventListener('click', () => elements.pdfFileInput.click());
+  elements.pdfFileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    await importScheduleFromPdfFile(file);
   });
 
   // 假日設定

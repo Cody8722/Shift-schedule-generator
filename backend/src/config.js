@@ -10,6 +10,8 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'scheduleApp';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+// PDF 匯入/匯出的隱藏資料加密金鑰：64 字元 hex 字串（32 bytes）。未設定時該功能停用。
+const PDF_PAYLOAD_SECRET = process.env.PDF_PAYLOAD_SECRET;
 
 module.exports = {
   SAFE_PROFILE_NAME_REGEX,
@@ -19,4 +21,5 @@ module.exports = {
   MONGODB_URI,
   DB_NAME,
   CORS_ORIGIN,
+  PDF_PAYLOAD_SECRET,
 };

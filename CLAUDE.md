@@ -47,6 +47,8 @@ POST   /api/generate-schedule
 POST   /api/render-schedule
 GET    /api/school-events
 POST   /api/school-events/refresh
+POST   /api/pdf-payload/encrypt
+POST   /api/pdf-payload/decrypt
 GET    /
 GET    /robots.txt
 ```
@@ -86,12 +88,13 @@ backend/
     config.js                    # 環境變數
     validators.js                # 輸入驗證（profile/schedule 名稱、settings）
     db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents 三個 collection）
-    routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar
+    routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar, pdfPayload
     services/
       scheduleAlgorithm.js       # 排班核心演算法（純函數）
       scheduleRenderer.js        # HTML 渲染
       holidayService.js          # 假日快取、CDN 更新
       schoolCalendar.js          # 學校行事曆（記憶體 6h + MongoDB 7 天持久快取）
+      pdfPayloadCrypto.js        # PDF 匯入/匯出隱藏資料的 AES-256-GCM 加解密（金鑰來自 PDF_PAYLOAD_SECRET）
     repositories/
       profileRepository.js       # MongoDB CRUD（profiles、schedules）
   tests/
@@ -125,7 +128,8 @@ frontend/
       scheduleCompare.js         # 比較已儲存班表 Modal（人員異動/填補率/勤務設定差異）
       exportWeekFilter.js        # 匯出週次篩選（getExportData，供複製/Excel/PDF/人員Excel 共用）
       personTaskStats.js         # 值勤統計 Modal（人員 × 勤務次數，加總 + 每週明細，Excel/PDF 匯出共用同一份計算）
-      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計）
+      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計；若後端有設定 PDF_PAYLOAD_SECRET 會額外把班表資料加密嵌入 PDF metadata）
+      pdfImport.js               # 從匯出的 PDF 檔案讀出隱藏資料還原班表（需搭配 pdf-lib 解析 metadata + 後端解密）
       scheduleGenerator.js       # 前端排班產生流程
     features/settings/
       settingsRenderer.js        # 設定頁渲染
@@ -186,9 +190,11 @@ MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/
 DB_NAME=scheduleApp      # 預設值
 PORT=3000                # 預設值
 CORS_ORIGIN=*            # 預設值；未設定時 config.js 也會 fallback 成 *，僅適合開發環境
+PDF_PAYLOAD_SECRET=      # 選填，64 字元 hex（32 bytes）。未設定時 PDF 匯入/匯出隱藏資料功能自動停用，其他功能不受影響
 ```
 
 若未提供 `MONGODB_URI`，伺服器仍會啟動，但所有資料庫功能停用（會顯示警告）。
+若未提供 `PDF_PAYLOAD_SECRET`，`/api/pdf-payload/encrypt`、`/api/pdf-payload/decrypt` 會回傳 503，前端的 PDF 匯入按鈕與匯出時的隱藏資料嵌入都會靜默跳過（不影響一般匯出/檢視）。
 
 ---
 
