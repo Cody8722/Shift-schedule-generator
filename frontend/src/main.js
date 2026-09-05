@@ -195,6 +195,19 @@ const setInitialAccordionState = () => {
   }
 };
 
+// 切換/重新命名/刪除設定檔後，畫面上顯示的班表編輯狀態（未儲存旗標、undo/redo 歷史、
+// 「可用人員」側邊欄）都是針對「舊的作用中設定檔」而存在，換了設定檔後必須清乾淨，
+// 否則會殘留指向已不存在（或不相關）設定檔資料的殘影，儲存時甚至可能寫錯設定檔。
+const resetScheduleEditingState = () => {
+  clearEditHistory();
+  clearSettingsHistory();
+  setGeneratedData(null);
+  setCurrentScheduleName(null);
+  setEditingData(null);
+  setHasUnsavedChanges(false);
+  elements.outputContainer.classList.add('hidden');
+};
+
 const initApp = async () => {
   await checkConnectionStatus();
   const data = await api.get('profiles');
@@ -292,6 +305,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     modalHolidayList: document.getElementById('modal-holiday-list'),
     modalHolidayCloseBtn: document.getElementById('modal-holiday-close-btn'),
     modalHolidaySaveBtn: document.getElementById('modal-holiday-save-btn'),
+    hmCount: document.getElementById('hm-count'),
   };
 
   const debouncedUpdateHolidays = debounce(updateHolidaySelectionUI, 400);
@@ -418,20 +432,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (getHasUnsavedChanges()) {
       const ok = await showConfirm('班表有未儲存的修改，切換設定檔將會遺失這些修改，確定要繼續？');
       if (!ok) { e.target.value = getAppState().activeProfile; return; }
-      setHasUnsavedChanges(false);
     }
-    clearEditHistory();
-    clearSettingsHistory();
+    resetScheduleEditingState();
     const newProfileName = e.target.value;
     setAppState({ activeProfile: newProfileName });
     sessionStorage.setItem('activeProfile', newProfileName);
     renderAll();
     api.put('profiles/active', { name: newProfileName }).catch(() => {});
-    setGeneratedData(null);
-    setCurrentScheduleName(null);
-    setEditingData(null);
-    setHasUnsavedChanges(false);
-    elements.outputContainer.classList.add('hidden');
   });
 
   elements.newProfileBtn.addEventListener('click', async () => {
@@ -449,7 +456,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (newName && newName !== oldName) {
       if (getAppState().profiles[newName]) { showToast('該名稱已存在！', 'warning'); return; }
       const result = await api.put(`profiles/${oldName}/rename`, { newName });
-      if (result) await initApp();
+      if (result) {
+        resetScheduleEditingState();
+        await initApp();
+      }
     }
   });
 
@@ -462,7 +472,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ok = await showConfirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`);
     if (ok) {
       const result = await api.delete(`profiles/${nameToDelete}`);
-      if (result) await initApp();
+      if (result) {
+        resetScheduleEditingState();
+        await initApp();
+      }
     }
   });
 
@@ -658,6 +671,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 假日設定
+  const updateHolidayModalCount = () => {
+    if (!elements.hmCount) return;
+    elements.hmCount.textContent = elements.modalHolidayList.querySelectorAll('.holiday-checkbox:checked').length;
+  };
+
   elements.holidaySettingsBtn.addEventListener('click', () => {
     if (availableHolidays.length === 0) return;
     elements.modalHolidayList.innerHTML = availableHolidays
@@ -670,7 +688,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       </label>`
       )
       .join('');
+    updateHolidayModalCount();
     elements.holidayModal.classList.add('open');
+  });
+
+  elements.modalHolidayList.addEventListener('change', (e) => {
+    if (e.target.matches('.holiday-checkbox')) updateHolidayModalCount();
   });
 
   elements.modalHolidayCloseBtn.addEventListener('click', () => {
