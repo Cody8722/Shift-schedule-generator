@@ -35,6 +35,15 @@ const PAGE_DENSITY_STYLES = {
 export async function exportToPdf() {
   const exportData = getExportData();
   if (!exportData || exportData.length === 0) return;
+
+  // 匯出過程要跑好幾秒 html2canvas，沒有這個防呆的話連點兩下會同時跑兩個匯出
+  // 流程互相干擾（共用同一份 <style> class 名稱、互搶 DOM），常常其中一個靜默
+  // 失敗。按鈕 disable 期間會自動套用全域的 button:disabled 樣式（變淡+游標
+  // 變成 not-allowed），同時也讓使用者知道匯出正在進行中，不用額外做 loading UI。
+  const button = document.getElementById('export-pdf');
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+
   const scheduleOutput = document.getElementById('schedule-output');
   const wasEditing = getEditingData() !== null;
   try {
@@ -45,6 +54,7 @@ export async function exportToPdf() {
     console.error('載入預覽 HTML 失敗:', err);
     showToast('無法載入班表，請稍後再試', 'error');
     if (wasEditing) renderEditableSchedule();
+    if (button) button.disabled = false;
     return;
   }
 
@@ -205,5 +215,6 @@ export async function exportToPdf() {
     if (activeStyle && document.head.contains(activeStyle)) document.head.removeChild(activeStyle);
   } finally {
     if (wasEditing) renderEditableSchedule();
+    if (button) button.disabled = false;
   }
 }

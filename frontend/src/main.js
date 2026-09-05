@@ -538,8 +538,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Excel
   elements.exportExcelBtn.addEventListener('click', async () => {
+    if (elements.exportExcelBtn.disabled) return;
     const exportData = getExportData();
     if (!exportData || exportData.length === 0) return;
+    elements.exportExcelBtn.disabled = true;
     const wb = new window.ExcelJS.Workbook();
     exportData.forEach((data) => {
       const { schedule, tasks, weekDayDates, scheduleDays } = data;
@@ -592,6 +594,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     await downloadWorkbook(wb, buildExportFilename(exportData, 'xlsx'));
+    elements.exportExcelBtn.disabled = false;
   });
 
   // PDF
