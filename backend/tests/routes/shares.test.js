@@ -84,14 +84,37 @@ describe('POST /api/schedule-shares', () => {
       .send({ profile: 'default', scheduleName: 'A', personFilter: '張三' });
     expect(res.status).toBe(201);
     expect(res.body.token).toBe('abc123token');
-    expect(shareRepo.createShare).toHaveBeenCalledWith('default', 'A', '張三');
+    expect(shareRepo.createShare).toHaveBeenCalledWith('default', 'A', '張三', null);
   });
 
-  it('不帶 personFilter 時以 null 建立（分享整份班表）', async () => {
+  it('不帶 personFilter/expiresInDays 時以 null 建立（永久分享整份班表）', async () => {
     profileRepo.getSchedule.mockResolvedValue(SAMPLE_SCHEDULE);
     shareRepo.createShare.mockResolvedValue('token2');
     await request(app).post('/api/schedule-shares').send({ profile: 'default', scheduleName: 'A' });
-    expect(shareRepo.createShare).toHaveBeenCalledWith('default', 'A', null);
+    expect(shareRepo.createShare).toHaveBeenCalledWith('default', 'A', null, null);
+  });
+
+  it('帶合法 expiresInDays 時一併傳給 createShare', async () => {
+    profileRepo.getSchedule.mockResolvedValue(SAMPLE_SCHEDULE);
+    shareRepo.createShare.mockResolvedValue('token3');
+    await request(app)
+      .post('/api/schedule-shares')
+      .send({ profile: 'default', scheduleName: 'A', expiresInDays: 7 });
+    expect(shareRepo.createShare).toHaveBeenCalledWith('default', 'A', null, 7);
+  });
+
+  it('expiresInDays 不是整數時回傳 400', async () => {
+    const res = await request(app)
+      .post('/api/schedule-shares')
+      .send({ profile: 'default', scheduleName: 'A', expiresInDays: 7.5 });
+    expect(res.status).toBe(400);
+  });
+
+  it('expiresInDays 超出 1-365 範圍時回傳 400', async () => {
+    const res = await request(app)
+      .post('/api/schedule-shares')
+      .send({ profile: 'default', scheduleName: 'A', expiresInDays: 400 });
+    expect(res.status).toBe(400);
   });
 });
 
@@ -106,6 +129,31 @@ describe('GET /api/schedule-shares/:token', () => {
     shareRepo.getShare.mockResolvedValue(null);
     const res = await request(app).get('/api/schedule-shares/xxx');
     expect(res.status).toBe(404);
+  });
+
+  it('token 存在但 expiresAt 已過期時回傳 404，且不去查班表資料', async () => {
+    shareRepo.getShare.mockResolvedValue({
+      profile: 'default',
+      scheduleName: 'A',
+      personFilter: null,
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const res = await request(app).get('/api/schedule-shares/xxx');
+    expect(res.status).toBe(404);
+    expect(res.body.message).toContain('過期');
+    expect(profileRepo.getSchedule).not.toHaveBeenCalled();
+  });
+
+  it('token 存在且 expiresAt 尚未到期時正常回傳', async () => {
+    shareRepo.getShare.mockResolvedValue({
+      profile: 'default',
+      scheduleName: 'A',
+      personFilter: null,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    profileRepo.getSchedule.mockResolvedValue(SAMPLE_SCHEDULE);
+    const res = await request(app).get('/api/schedule-shares/xxx');
+    expect(res.status).toBe(200);
   });
 
   it('token 存在但班表已被刪除時回傳 404', async () => {

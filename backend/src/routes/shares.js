@@ -22,7 +22,7 @@ const filterScheduleForPerson = (fullScheduleData, personName) =>
 router.post('/api/schedule-shares', async (req, res) => {
   if (!getIsDbConnected()) return res.status(503).json({ message: '資料庫未連線' });
   try {
-    const { profile, scheduleName, personFilter } = req.body;
+    const { profile, scheduleName, personFilter, expiresInDays } = req.body;
 
     const profileValidation = validateProfileName(profile);
     if (!profileValidation.valid) return res.status(400).json({ message: profileValidation.error });
@@ -34,10 +34,19 @@ router.post('/api/schedule-shares', async (req, res) => {
       return res.status(400).json({ message: 'personFilter 必須是字串' });
     }
 
+    // expiresInDays 為 null/undefined 代表永久有效；有帶值時限制在合理範圍（1-365 天）。
+    if (
+      expiresInDays !== undefined &&
+      expiresInDays !== null &&
+      (!Number.isInteger(expiresInDays) || expiresInDays < 1 || expiresInDays > 365)
+    ) {
+      return res.status(400).json({ message: 'expiresInDays 必須是 1-365 之間的整數' });
+    }
+
     const scheduleData = await profileRepo.getSchedule(profile, scheduleName);
     if (!scheduleData) return res.status(404).json({ message: '找不到指定的班表' });
 
-    const token = await shareRepo.createShare(profile, scheduleName, personFilter || null);
+    const token = await shareRepo.createShare(profile, scheduleName, personFilter || null, expiresInDays || null);
     res.status(201).json({ token });
   } catch (error) {
     debug('建立分享連結失敗:', error);
@@ -52,6 +61,12 @@ router.get('/api/schedule-shares/:token', async (req, res) => {
     const { token } = req.params;
     const share = await shareRepo.getShare(token);
     if (!share) return res.status(404).json({ message: '此分享連結不存在或已失效' });
+
+    // MongoDB 的 TTL 背景清除任務約每 60 秒才跑一次，不是精準即時刪除，
+    // 這裡自己再檢查一次 expiresAt，確保過期的瞬間就正確擋下，不用等背景任務清掉文件。
+    if (share.expiresAt && new Date(share.expiresAt) < new Date()) {
+      return res.status(404).json({ message: '此分享連結已過期' });
+    }
 
     const scheduleData = await profileRepo.getSchedule(share.profile, share.scheduleName);
     if (!scheduleData) return res.status(404).json({ message: '此分享連結對應的班表已被刪除' });

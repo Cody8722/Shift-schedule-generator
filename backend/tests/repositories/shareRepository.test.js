@@ -49,6 +49,28 @@ describe('createShare', () => {
     await createShare('default', 'A');
     expect(col.insertOne).toHaveBeenCalledWith(expect.objectContaining({ personFilter: null }));
   });
+
+  it('未指定 expiresInDays 時不寫入 expiresAt 欄位（永久有效）', async () => {
+    const col = makeCol();
+    getScheduleSharesCollection.mockReturnValue(col);
+    await createShare('default', 'A', null, null);
+    const doc = col.insertOne.mock.calls[0][0];
+    expect(doc).not.toHaveProperty('expiresAt');
+  });
+
+  it('指定 expiresInDays 時寫入正確的 expiresAt（未來時間）', async () => {
+    const col = makeCol();
+    getScheduleSharesCollection.mockReturnValue(col);
+    const before = Date.now();
+    await createShare('default', 'A', null, 7);
+    const after = Date.now();
+    const doc = col.insertOne.mock.calls[0][0];
+    expect(doc.expiresAt).toBeInstanceOf(Date);
+    const expectedMin = before + 7 * 24 * 60 * 60 * 1000;
+    const expectedMax = after + 7 * 24 * 60 * 60 * 1000;
+    expect(doc.expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin);
+    expect(doc.expiresAt.getTime()).toBeLessThanOrEqual(expectedMax);
+  });
 });
 
 describe('getShare', () => {

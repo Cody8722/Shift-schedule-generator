@@ -1776,6 +1776,14 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
         <select class="select" id="share-person-select">
           <option value="">全部人（完整班表）</option>
         </select>
+        <div class="modal-section-label" style="margin-top:12px;">有效期限</div>
+        <select class="select" id="share-expiry-select">
+          <option value="">永久有效</option>
+          <option value="1">1 天後失效</option>
+          <option value="7">7 天後失效</option>
+          <option value="30">30 天後失效</option>
+          <option value="90">90 天後失效</option>
+        </select>
         <button class="btn btn-primary" id="share-generate-btn" style="margin-top:10px;">產生連結</button>
       </div>
       <div class="modal-section hidden" id="share-result-section">

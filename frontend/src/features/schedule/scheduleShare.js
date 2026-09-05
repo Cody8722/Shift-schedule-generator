@@ -16,10 +16,13 @@ const ensureWired = () => {
     btn.disabled = true;
     try {
       const personFilter = document.getElementById('share-person-select').value || null;
+      const expiryRaw = document.getElementById('share-expiry-select').value;
+      const expiresInDays = expiryRaw ? parseInt(expiryRaw, 10) : null;
       const result = await api.post('schedule-shares', {
         profile: getAppState().activeProfile,
         scheduleName: currentScheduleName,
         personFilter,
+        expiresInDays,
       });
       if (result?.token) {
         const url = `${location.origin}${location.pathname}?share=${result.token}`;
@@ -55,6 +58,7 @@ export async function openShareModal(scheduleName) {
 
   document.getElementById('share-result-section').classList.add('hidden');
   document.getElementById('share-result-link').value = '';
+  document.getElementById('share-expiry-select').value = '';
 
   const select = document.getElementById('share-person-select');
   select.innerHTML = '<option value="">全部人（完整班表）</option>';
