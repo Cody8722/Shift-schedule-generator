@@ -140,6 +140,28 @@ describe('POST /api/profiles', () => {
     const res = await request(app).post('/api/profiles').send({ name: 'valid' });
     expect(res.status).toBe(500);
   });
+
+  it('不帶 settings 時 createProfile 只收到 name（沿用空白設定檔行為）', async () => {
+    repo.createProfile.mockResolvedValue();
+    await request(app).post('/api/profiles').send({ name: 'valid-profile' });
+    expect(repo.createProfile).toHaveBeenCalledWith('valid-profile');
+  });
+
+  it('帶合法 settings 時（複製設定檔）會一併傳給 createProfile', async () => {
+    repo.createProfile.mockResolvedValue();
+    const settings = { tasks: [{ name: '早班', count: 1 }], personnel: [{ name: '張三', maxShifts: 5 }] };
+    const res = await request(app).post('/api/profiles').send({ name: 'copied-profile', settings });
+    expect(res.status).toBe(201);
+    expect(repo.createProfile).toHaveBeenCalledWith('copied-profile', settings);
+  });
+
+  it('帶不合法 settings 時回傳 400，不呼叫 createProfile', async () => {
+    const res = await request(app)
+      .post('/api/profiles')
+      .send({ name: 'copied-profile', settings: { tasks: 'not-an-array' } });
+    expect(res.status).toBe(400);
+    expect(repo.createProfile).not.toHaveBeenCalled();
+  });
 });
 
 // ── PUT /api/profiles/:name ───────────────────────────────────────────────────

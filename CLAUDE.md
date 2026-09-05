@@ -118,7 +118,7 @@ frontend/
       escapeHtml.js
       debounce.js
       capacityStatus.js          # 容量/填補率狀態計算
-      connectionStatus.js        # 後端連線狀態顯示
+      connectionStatus.js        # 後端連線狀態顯示；同時解讀 /api/status 的假日/學校行事曆自動更新結果，異常時顯示警示圖示（點擊看原因）
       excelDownload.js           # ExcelJS Workbook → Blob 觸發瀏覽器下載
       exportFilename.js          # 組合匯出檔名（班表名稱_日期範圍_時間戳記），PDF/Excel/人員Excel 共用
     features/schedule/

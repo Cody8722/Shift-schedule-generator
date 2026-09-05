@@ -1326,6 +1326,9 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
         <span class="dot" id="status-indicator"></span>
         <span id="status-text">正在檢查連線...</span>
       </div>
+      <button class="icon-btn hidden" id="autofetch-warning" style="color:#f59e0b;" title="自動更新異常，點擊查看詳情">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </button>
       <button class="icon-btn" id="undo" title="復原 (⌘Z)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/></svg>
         <span class="count-badge" id="undo-badge" style="display:none">0</span>
@@ -1360,6 +1363,7 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
             </div>
             <div class="profile-actions">
               <button class="btn btn-secondary" id="new-profile-btn">新增</button>
+              <button class="btn btn-secondary" id="duplicate-profile-btn" title="複製目前設定檔的勤務與人員設定，建立一個新設定檔">複製</button>
               <button class="btn btn-secondary" id="rename-profile-btn">命名</button>
               <button class="btn btn-secondary" id="import-profile-btn">匯入</button>
               <button class="btn btn-secondary" id="export-profile-btn">匯出</button>

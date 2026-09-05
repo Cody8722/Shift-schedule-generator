@@ -41,12 +41,23 @@ router.put('/api/profiles/active', async (req, res) => {
 router.post('/api/profiles', async (req, res) => {
   if (!getIsDbConnected()) return res.status(503).json({ message: '資料庫未連線' });
   try {
-    const { name } = req.body;
+    const { name, settings } = req.body;
     const validation = validateProfileName(name);
     if (!validation.valid) {
       return res.status(400).json({ message: validation.error });
     }
-    await repo.createProfile(name);
+
+    // settings 為選填：不帶就沿用舊行為建立空白設定檔；帶了（複製現有設定檔用）就驗證後套用。
+    if (settings !== undefined) {
+      const settingsValidation = validateSettings(settings);
+      if (!settingsValidation.valid) {
+        return res.status(400).json({ message: settingsValidation.error });
+      }
+      await repo.createProfile(name, settings);
+    } else {
+      await repo.createProfile(name);
+    }
+
     res.status(201).json({ message: '設定檔已新增' });
   } catch (error) {
     debugDb('新增設定檔失敗:', error);

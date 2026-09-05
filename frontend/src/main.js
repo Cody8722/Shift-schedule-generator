@@ -262,6 +262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements = {
     profileSelect: document.getElementById('profile-select'),
     newProfileBtn: document.getElementById('new-profile-btn'),
+    duplicateProfileBtn: document.getElementById('duplicate-profile-btn'),
     renameProfileBtn: document.getElementById('rename-profile-btn'),
     deleteProfileBtn: document.getElementById('delete-profile-btn'),
     importProfileBtn: document.getElementById('import-profile-btn'),
@@ -327,6 +328,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   elements.themeToggle.addEventListener('click', () => {
     const isDark = document.documentElement.classList.contains('dark');
     applyTheme(isDark ? 'light' : 'dark');
+  });
+
+  // 假日/學校行事曆自動更新異常警示（資料由 checkConnectionStatus 定期輪詢 /api/status 填入）
+  document.getElementById('autofetch-warning')?.addEventListener('click', (e) => {
+    const reasons = JSON.parse(e.currentTarget.dataset.reasons || '[]');
+    reasons.forEach((reason) => showToast(reason, 'warning', 6000));
   });
 
   // 全域 modal × 關閉鈕（class="modal-close"，無 ID）
@@ -450,6 +457,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (getAppState().profiles[name]) { showToast('該名稱已存在！', 'warning'); return; }
       const result = await api.post('profiles', { name });
       if (result) await initApp();
+    }
+  });
+
+  elements.duplicateProfileBtn.addEventListener('click', async () => {
+    const sourceName = getAppState().activeProfile;
+    const name = await showInput(`複製「${sourceName}」為新設定檔`, `${sourceName}-複製`);
+    if (name) {
+      if (getAppState().profiles[name]) { showToast('該名稱已存在！', 'warning'); return; }
+      const settings = JSON.parse(JSON.stringify(getActiveProfile().settings));
+      const result = await api.post('profiles', { name, settings });
+      if (result) {
+        await initApp();
+        showToast(`已複製「${sourceName}」的勤務與人員設定`, 'success');
+      }
     }
   });
 
@@ -807,6 +828,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? redoEdit(renderEditableSchedule)
         : redoSettings(renderAll, saveSettings);
     }
+  });
+
+  // 有未儲存的編輯修改時，離開頁面（重新整理/關閉分頁）前跳出瀏覽器原生確認——
+  // localStorage 草稿只防得住「忘記存」，防不住使用者手滑關掉分頁；瀏覽器對
+  // beforeunload 的訊息內容有限制（各家瀏覽器一律顯示自己的固定文字，e.returnValue
+  // 只是拿來判斷「要不要問」，實際文字不受控制），只能靠有沒有跳出這個提示本身。
+  window.addEventListener('beforeunload', (e) => {
+    if (!getHasUnsavedChanges()) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
 
   await initApp();
