@@ -9,6 +9,13 @@ const MONGO_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
 // 學校行事曆快取（6小時）
 let schoolEventsCache = { data: null, fetchedAt: 0 };
 
+// 記錄「最近一次即時抓取」（不含快取命中）的結果，讓 /api/status 能回報這個
+// scraper 是否還正常運作。這裡是整套機制最脆弱的一環：靠 regex 解析學校網站的
+// HTML，網站一旦改版、class 名稱跑掉，fetch 仍會是 200 成功、但完全解析不到
+// 任何考試資料，程式本身不會拋出任何錯誤——所以額外判斷「回傳 0 筆」視為可疑。
+let lastFetchStatus = { at: null, success: null, eventCount: null, warning: null };
+const getLastFetchStatus = () => lastFetchStatus;
+
 // 自動計算當前學期代碼（民國年+學期，例：1142）
 const getCurrentPeriod = () => {
   const now = new Date();
@@ -218,6 +225,17 @@ const getSchoolEvents = async () => {
   const fetchedAt = Date.now();
   schoolEventsCache = { data: events, fetchedAt };
 
+  const suspiciouslyEmpty = events.length === 0;
+  lastFetchStatus = {
+    at: fetchedAt,
+    success: !suspiciouslyEmpty,
+    eventCount: events.length,
+    warning: suspiciouslyEmpty ? '本次即時抓取沒有找到任何考試資料，可能是學校網站格式已變更' : null,
+  };
+  if (suspiciouslyEmpty) {
+    console.warn(`[schoolCalendar] 即時抓取結果為 0 筆考試資料（period=${period}），請確認目標網站格式是否變更: ${BASE}`);
+  }
+
   // 存入 MongoDB 持久快取
   if (getIsDbConnected()) {
     try {
@@ -235,4 +253,4 @@ const getSchoolEvents = async () => {
   return { cached: false, data: events };
 };
 
-module.exports = { getSchoolEvents, schoolEventsCache };
+module.exports = { getSchoolEvents, schoolEventsCache, getLastFetchStatus };

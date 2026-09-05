@@ -309,6 +309,8 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 不會自動更新的是：**去年（含）以前**的資料、以及最初從 `holidays/*.json` 植入（無 `source:'cdn'` 標記）的資料。要強制整批重抓三年資料，呼叫 `POST /api/holidays/reseed`（清空整個 collection + 記憶體快取，全部重新從 CDN 拉）。
 直接修改 `holidays/*.json` 不會生效——只有 collection 是空的時候（`seedHolidays()`）才會讀本地檔案；reseed 走的是 CDN，不讀本地 JSON。
 
+假日 CDN 與學校行事曆（`schoolCalendar.js`）這兩個自動抓資料機制若失敗，過去完全沒有地方看得出來（只寫 `debug` log，正式環境預設不顯示）。現在 `GET /api/status` 會回報 `holidaysLastRefresh`（最近一次自動更新每個年份的成功/筆數/錯誤）與 `schoolCalendarLastFetch`（最近一次即時抓取的成功與筆數；`eventCount: 0` 通常代表學校網站格式已改版，regex 抓不到東西了）。
+
 ### 🟡 backend/tests/ 的端點路徑
 
 測試直接打 `/api/status`（含前綴），改動路由時要對照確認測試路徑一致。
