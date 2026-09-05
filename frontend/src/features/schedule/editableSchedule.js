@@ -50,12 +50,14 @@ export function initEditToolbarEvents() {
   document.getElementById('save-edits-btn')?.addEventListener('click', saveEdits);
   document.getElementById('cancel-edits-btn')?.addEventListener('click', cancelEdits);
   document.getElementById('exit-edit-mode-btn')?.addEventListener('click', exitEditMode);
-  document.getElementById('undo-edit-btn')?.addEventListener('click', () =>
-    undoEdit(renderEditableSchedule)
-  );
-  document.getElementById('redo-edit-btn')?.addEventListener('click', () =>
-    redoEdit(renderEditableSchedule)
-  );
+  document.getElementById('undo-edit-btn')?.addEventListener('click', () => {
+    undoEdit(renderEditableSchedule);
+    syncModifiedState();
+  });
+  document.getElementById('redo-edit-btn')?.addEventListener('click', () => {
+    redoEdit(renderEditableSchedule);
+    syncModifiedState();
+  });
   document.getElementById('diff-btn')?.addEventListener('click', showDiffModal);
 }
 
@@ -762,6 +764,30 @@ function markAsModified() {
     editStatus.classList.add('text-orange-600', 'font-medium');
   }
   autoSaveDraft();
+}
+
+// undo/redo 可能讓 editingData 回到與 generatedData 完全相同的狀態，
+// 此時「未儲存修改」旗標與 UI 必須重新比對後同步，不能只靠單向的 markAsModified()。
+function syncModifiedState() {
+  const isDirty = JSON.stringify(getEditingData()) !== JSON.stringify(getGeneratedData());
+  setHasUnsavedChanges(isDirty);
+  const saveEditsBtn = document.getElementById('save-edits-btn');
+  const editStatus = document.getElementById('edit-status');
+  if (saveEditsBtn) saveEditsBtn.disabled = !isDirty;
+  if (editStatus) {
+    if (isDirty) {
+      editStatus.textContent = '有未儲存的修改';
+      editStatus.className = 'text-orange-600 font-medium';
+    } else {
+      editStatus.textContent = '';
+      editStatus.className = '';
+    }
+  }
+  if (isDirty) {
+    autoSaveDraft();
+  } else {
+    clearDraft();
+  }
 }
 
 async function saveEdits() {
