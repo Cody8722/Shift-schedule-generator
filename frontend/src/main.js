@@ -184,6 +184,27 @@ const closePersonnelModal = () => {
 };
 
 
+const isMacPlatform = navigator.platform.toUpperCase().includes('MAC');
+
+// 快捷鍵的「功能」判斷（keydown 監聽器裡的 mod 邏輯）本來就有分平台，但畫面上顯示
+// 給使用者看的按鍵提示（⌘）是寫死的 Mac 符號，在 Windows/Linux 上顯示 ⌘ 沒有意義、
+// 使用者鍵盤上根本沒有這個鍵。非 Mac 平台時把提示文字換成 Ctrl。
+const applyPlatformKeyboardHints = () => {
+  if (isMacPlatform) return;
+  const undoBtn = document.getElementById('undo');
+  const redoBtn = document.getElementById('redo');
+  if (undoBtn) undoBtn.title = '復原 (Ctrl+Z)';
+  if (redoBtn) redoBtn.title = '重做 (Ctrl+Shift+Z)';
+  const generateHint = document.getElementById('kbd-hint-generate');
+  if (generateHint) generateHint.textContent = 'Ctrl ↵';
+  const footerK = document.getElementById('kbd-hint-footer-k');
+  if (footerK) footerK.textContent = 'Ctrl K';
+  const footerEnter = document.getElementById('kbd-hint-footer-enter');
+  if (footerEnter) footerEnter.textContent = 'Ctrl ↵';
+  const footerZ = document.getElementById('kbd-hint-footer-z');
+  if (footerZ) footerZ.textContent = 'Ctrl Z';
+};
+
 // ─────────────────────────────────────────────
 // 初始化
 // ─────────────────────────────────────────────
@@ -259,6 +280,8 @@ const initApp = async () => {
 // DOMContentLoaded
 // ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  applyPlatformKeyboardHints();
+
   elements = {
     profileSelect: document.getElementById('profile-select'),
     newProfileBtn: document.getElementById('new-profile-btn'),
@@ -838,7 +861,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 全域鍵盤快捷鍵
   document.addEventListener('keydown', (e) => {
-    const mod = navigator.platform.toUpperCase().includes('MAC') ? e.metaKey : e.ctrlKey;
+    const mod = isMacPlatform ? e.metaKey : e.ctrlKey;
     if (!mod) return;
 
     // 「產生智慧班表」按鈕上直接印著 ⌘↵ 的按鍵提示，但先前完全沒有對應的監聽器——
