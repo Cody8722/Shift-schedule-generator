@@ -337,11 +337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 全域 modal × 關閉鈕（class="modal-close"，無 ID）
-  document.addEventListener('click', (e) => {
-    const closeBtn = e.target.closest('.modal-close');
-    if (!closeBtn) return;
-    const backdrop = closeBtn.closest('.modal-backdrop');
-    if (!backdrop) return;
+  const closeModalBackdrop = (backdrop) => {
     // confirm/input modal 的 × 要走取消流程，讓 Promise 正確 resolve
     const cancelBtn = backdrop.querySelector('#confirm-modal-cancel, #input-modal-cancel');
     if (cancelBtn) {
@@ -349,6 +345,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       backdrop.classList.remove('open');
     }
+  };
+
+  document.addEventListener('click', (e) => {
+    const closeBtn = e.target.closest('.modal-close');
+    if (!closeBtn) return;
+    const backdrop = closeBtn.closest('.modal-backdrop');
+    if (!backdrop) return;
+    closeModalBackdrop(backdrop);
+  });
+
+  // 每個 Modal 的關閉鈕 title 都寫著「關閉 (Esc)」，但除了 input-modal 自己內部有做
+  // Escape 監聽外，其餘（含最常用的 confirm-modal）按 Esc 完全沒反應——tooltip 等於
+  // 開了空頭支票。這裡補一個全域監聽，讓 Esc 對所有 Modal 都真的有效；即使 input-modal
+  // 因為 field 本身已有 keydown 監聽而重複觸發，關閉邏輯本身是幂等的，不會有副作用。
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const backdrop = document.querySelector('.modal-backdrop.open');
+    if (backdrop) closeModalBackdrop(backdrop);
   });
 
   // 任務
