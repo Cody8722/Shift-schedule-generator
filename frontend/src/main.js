@@ -840,6 +840,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('keydown', (e) => {
     const mod = navigator.platform.toUpperCase().includes('MAC') ? e.metaKey : e.ctrlKey;
     if (!mod) return;
+
+    // 「產生智慧班表」按鈕上直接印著 ⌘↵ 的按鍵提示，但先前完全沒有對應的監聽器——
+    // 這裡放在 input/textarea 排除判斷之前，讓在設定欄位打完字後直接 ⌘↵ 也能觸發，
+    // 不用特地把游標移開再按。
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      elements.generateBtn.click();
+      return;
+    }
+
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
     if (e.key === 'z' && !e.shiftKey) {
