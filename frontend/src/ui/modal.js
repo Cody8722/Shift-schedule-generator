@@ -59,14 +59,22 @@ export const showConfirm = (message) => {
       cleanup();
       resolve(false);
     };
+    // showInput 的輸入框本來就有 Enter 送出，這裡也補上讓兩種通用 Modal 的鍵盤操作一致
+    // （原本完全沒有鍵盤支援，連最基本的 Enter 確認都要用滑鼠點）。Escape 由全域的
+    // Modal 監聽器統一處理，這裡不重複做。
+    const onKeydown = (e) => {
+      if (e.key === 'Enter') onOk();
+    };
 
     function cleanup() {
       document.getElementById('confirm-modal').classList.remove('open');
       document.getElementById('confirm-modal-ok').removeEventListener('click', onOk);
       document.getElementById('confirm-modal-cancel').removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKeydown);
     }
 
     document.getElementById('confirm-modal-ok').addEventListener('click', onOk);
     document.getElementById('confirm-modal-cancel').addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKeydown);
   });
 };

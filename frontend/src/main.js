@@ -197,8 +197,6 @@ const applyPlatformKeyboardHints = () => {
   if (redoBtn) redoBtn.title = '重做 (Ctrl+Shift+Z)';
   const generateHint = document.getElementById('kbd-hint-generate');
   if (generateHint) generateHint.textContent = 'Ctrl ↵';
-  const footerK = document.getElementById('kbd-hint-footer-k');
-  if (footerK) footerK.textContent = 'Ctrl K';
   const footerEnter = document.getElementById('kbd-hint-footer-enter');
   if (footerEnter) footerEnter.textContent = 'Ctrl ↵';
   const footerZ = document.getElementById('kbd-hint-footer-z');
