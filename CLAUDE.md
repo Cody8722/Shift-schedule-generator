@@ -49,6 +49,8 @@ GET    /api/school-events
 POST   /api/school-events/refresh
 POST   /api/pdf-payload/encrypt
 POST   /api/pdf-payload/decrypt
+POST   /api/schedule-shares
+GET    /api/schedule-shares/:token
 GET    /
 GET    /robots.txt
 ```
@@ -63,6 +65,7 @@ MongoDB 集合清單（`scheduleApp` 資料庫）：
 - `profiles`：設定檔與排班資料
 - `holidays`：台灣國定假日（`_id` 為日期字串如 `2025-01-01`）
 - `schoolEvents`：學校行事曆快取（`_id` 為學期代碼如 `1142`，7 天 TTL）
+- `scheduleShares`：班表分享連結（`_id` 為隨機 token，記錄對應的 profile/scheduleName/personFilter，無過期機制）
 
 ---
 
@@ -87,8 +90,8 @@ backend/
     app.js                       # Express 設定、middleware、路由掛載
     config.js                    # 環境變數
     validators.js                # 輸入驗證（profile/schedule 名稱、settings）
-    db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents 三個 collection）
-    routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar, pdfPayload
+    db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents、scheduleShares 四個 collection）
+    routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar, pdfPayload, shares
     services/
       scheduleAlgorithm.js       # 排班核心演算法（純函數）
       scheduleRenderer.js        # HTML 渲染
@@ -97,6 +100,7 @@ backend/
       pdfPayloadCrypto.js        # PDF 匯入/匯出隱藏資料的 AES-256-GCM 加解密（金鑰來自 PDF_PAYLOAD_SECRET）
     repositories/
       profileRepository.js       # MongoDB CRUD（profiles、schedules）
+      shareRepository.js         # 班表分享連結的 token 產生/查詢（scheduleShares collection）
   tests/
 
 frontend/
@@ -130,6 +134,8 @@ frontend/
       personTaskStats.js         # 值勤統計 Modal（人員 × 勤務次數，加總 + 每週明細，Excel/PDF 匯出共用同一份計算）
       pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計；若後端有設定 PDF_PAYLOAD_SECRET 會額外把班表資料加密嵌入 PDF metadata）
       pdfImport.js               # 從匯出的 PDF 檔案讀出隱藏資料還原班表（需搭配 pdf-lib 解析 metadata + 後端解密）
+      scheduleShare.js           # 分享班表 Modal：產生免登入連結（可選只分享單一人員）
+      sharedView.js              # 免登入分享連結的頁面（接管整個 document.body，不含後台功能）
       scheduleGenerator.js       # 前端排班產生流程
     features/settings/
       settingsRenderer.js        # 設定頁渲染
@@ -298,6 +304,14 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 未設定 `MONGODB_URI` 時，伺服器仍會正常啟動。`profiles`/`schedules`/`holidays` 相關路由都有 `getIsDbConnected()` 檢查，會明確回傳 503「資料庫未連線」給前端。
 但 `POST /api/generate-schedule`、`POST /api/render-schedule` **沒有**這層檢查：內部呼叫的 `getHolidaysForYear()` 在無 DB 時直接回傳空 `Map`，假日/行事曆資料會被靜默忽略、班表照樣「成功」產生，前端不會收到任何錯誤或警告。
 診斷方式：`GET /api/status` 確認 `"database": "connected"` 還是 `"disconnected"`。
+
+### 🟡 班表分享連結（`GET /api/schedule-shares/:token`）刻意不需要登入
+
+這是全站唯一一個刻意設計成公開、無需任何驗證就能讀取的端點——分享連結的目的就是讓拿到連結的人不用進後台。安全性完全依賴 token 本身夠隨機（128 bits，`crypto.randomBytes(16)`），不是靠登入機制擋。
+
+- **目前沒有過期機制、也沒有前端介面可以撤銷/刪除已產生的連結**（`scheduleShares` collection 會一直累積）。若要加上過期時間或撤銷功能，需另外討論。
+- `personFilter` 的過濾**必須在後端做**（`shares.js` 的 `filterScheduleForPerson`），不能改成前端拿到完整班表 JSON 後才用 CSS/JS 隱藏其他人——那樣瀏覽器開發者工具的網路分頁還是看得到完整資料，等於沒做過濾。
+- 分享連結對應的是**某一份已儲存班表的快照**（`profile` + `scheduleName`），不會跟著該班表之後的修改自動更新；若使用者事後編輯並重新儲存同名班表，舊分享連結會顯示新內容（因為是即時查 `getSchedule`，不是存快照），但若該班表被刪除，連結會直接 404。
 
 ### 🟡 Tailwind CDN 動態 HTML 限制
 

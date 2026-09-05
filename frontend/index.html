@@ -1758,6 +1758,41 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
   </div>
 </div>
 
+<!-- ── Modal: 分享班表連結 ── -->
+<div class="modal-backdrop" id="share-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+    <div class="modal-head">
+      <div>
+        <div class="title" id="share-modal-title">分享班表</div>
+        <div class="sub">產生免登入的連結，拿到連結的人不需要進到後台就能查看</div>
+      </div>
+      <button class="modal-close" title="關閉 (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section" id="share-modal-picker">
+        <div class="modal-section-label">分享對象</div>
+        <select class="select" id="share-person-select">
+          <option value="">全部人（完整班表）</option>
+        </select>
+        <button class="btn btn-primary" id="share-generate-btn" style="margin-top:10px;">產生連結</button>
+      </div>
+      <div class="modal-section hidden" id="share-result-section">
+        <div class="modal-section-label">分享連結</div>
+        <div style="display:flex; gap:8px;">
+          <input class="input" id="share-result-link" type="text" readonly style="flex:1;" />
+          <button class="btn btn-secondary" id="share-copy-btn">複製</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary" id="share-modal-close-2">關閉</button>
+    </div>
+  </div>
+</div>
+
 <!-- Tailwind safelist (ensure dynamic classes aren't purged) -->
 <div aria-hidden="true" style="display:none"
   class="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200

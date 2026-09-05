@@ -53,6 +53,8 @@ import { renderAll, renderSavedSchedules } from './features/settings/settingsRen
 import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
 import { importScheduleFromPdfFile } from './features/schedule/pdfImport.js';
+import { renderSharedViewIfPresent } from './features/schedule/sharedView.js';
+import { openShareModal } from './features/schedule/scheduleShare.js';
 import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
 import { getExportData, initExportWeekFilter } from './features/schedule/exportWeekFilter.js';
 import { computePersonTaskStats, initPersonTaskStats } from './features/schedule/personTaskStats.js';
@@ -278,6 +280,8 @@ const initApp = async () => {
 // DOMContentLoaded
 // ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  if (await renderSharedViewIfPresent()) return;
+
   applyPlatformKeyboardHints();
 
   elements = {
@@ -698,11 +702,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 載入/刪除已儲存班表
+  // 載入/刪除/分享已儲存班表
   elements.savedSchedulesList.addEventListener('click', async (e) => {
     e.preventDefault();
     const link = e.target.closest('.load-schedule-link');
     const btn = e.target.closest('.delete-schedule-btn');
+    const shareBtn = e.target.closest('.share-schedule-btn');
+    if (shareBtn) {
+      await openShareModal(shareBtn.dataset.name);
+      return;
+    }
     if (link) {
       const name = link.dataset.name;
       const scheduleData = await api.get(
