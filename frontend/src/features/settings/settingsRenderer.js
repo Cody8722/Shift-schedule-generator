@@ -81,7 +81,10 @@ export const renderSavedSchedules = () => {
     li.className = 'flex justify-between items-center';
     li.innerHTML = `
       <a href="#" class="load-schedule-link hover:underline" data-name="${escapeHtml(name)}">${escapeHtml(name)}</a>
-      <button class="delete-schedule-btn text-red-500 hover:text-red-700 text-xs p-1" data-name="${escapeHtml(name)}">刪除</button>
+      <span class="flex items-center gap-1">
+        <button class="share-schedule-btn text-xs p-1" data-name="${escapeHtml(name)}" title="產生分享連結">分享</button>
+        <button class="delete-schedule-btn text-red-500 hover:text-red-700 text-xs p-1" data-name="${escapeHtml(name)}">刪除</button>
+      </span>
     `;
     savedSchedulesList.appendChild(li);
   });

@@ -23,11 +23,11 @@ const setActiveProfile = async (name) => {
   // matchedCount > 0 但 modifiedCount 為 0 代表本來就是目前的作用中設定檔，視為成功（冪等）
 };
 
-const createProfile = async (name) => {
+const createProfile = async (name, settings = { tasks: [], personnel: [] }) => {
   const configCollection = getConfigCollection();
   const update = {
     $set: {
-      [`profiles.${name}`]: { settings: { tasks: [], personnel: [] }, schedules: {} },
+      [`profiles.${name}`]: { settings, schedules: {} },
     },
   };
   const result = await configCollection.updateOne(

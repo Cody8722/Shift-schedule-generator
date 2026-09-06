@@ -4,6 +4,8 @@ import { api } from '../../api/client.js';
 import { showToast } from '../../ui/toast.js';
 import { renderEditableSchedule } from './editableSchedule.js';
 import { renderPersonTaskStatsHtml } from './personTaskStats.js';
+import { buildExportFilename } from '../../utils/exportFilename.js';
+import { buildKeywordsWithPayload } from '../../utils/pdfPayload.js';
 
 export async function printSchedule() {
   const exportData = getExportData();
@@ -34,6 +36,15 @@ const PAGE_DENSITY_STYLES = {
 export async function exportToPdf() {
   const exportData = getExportData();
   if (!exportData || exportData.length === 0) return;
+
+  // 匯出過程要跑好幾秒 html2canvas，沒有這個防呆的話連點兩下會同時跑兩個匯出
+  // 流程互相干擾（共用同一份 <style> class 名稱、互搶 DOM），常常其中一個靜默
+  // 失敗。按鈕 disable 期間會自動套用全域的 button:disabled 樣式（變淡+游標
+  // 變成 not-allowed），同時也讓使用者知道匯出正在進行中，不用額外做 loading UI。
+  const button = document.getElementById('export-pdf');
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+
   const scheduleOutput = document.getElementById('schedule-output');
   const wasEditing = getEditingData() !== null;
   try {
@@ -44,6 +55,7 @@ export async function exportToPdf() {
     console.error('載入預覽 HTML 失敗:', err);
     showToast('無法載入班表，請稍後再試', 'error');
     if (wasEditing) renderEditableSchedule();
+    if (button) button.disabled = false;
     return;
   }
 
@@ -196,7 +208,13 @@ export async function exportToPdf() {
       activeStyle = null;
     }
 
-    pdf.save('班表.pdf');
+    // 若後端有設定 PDF_PAYLOAD_SECRET，把這份班表資料加密後嵌入 PDF 的 keywords 欄位——
+    // 一般開啟 PDF 完全看不到，只有本系統的「從 PDF 匯入班表」能解密還原。後端未設定
+    // 該金鑰、或加密請求失敗，都靜默略過，不影響 PDF 本身正常匯出。
+    const keywords = await buildKeywordsWithPayload(exportData);
+    if (keywords) pdf.setProperties({ keywords });
+
+    pdf.save(buildExportFilename(exportData, 'pdf'));
   } catch (err) {
     console.error('html2canvas failed:', err);
     showToast('PDF 導出失敗，請稍後再試', 'error');
@@ -204,5 +222,6 @@ export async function exportToPdf() {
     if (activeStyle && document.head.contains(activeStyle)) document.head.removeChild(activeStyle);
   } finally {
     if (wasEditing) renderEditableSchedule();
+    if (button) button.disabled = false;
   }
 }

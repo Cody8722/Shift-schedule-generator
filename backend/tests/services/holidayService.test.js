@@ -24,6 +24,7 @@ const fsMock = require('fs');
 
 const {
   holidaysCache,
+  lastRefreshStatus,
   getWeekInfo,
   getHolidaysForYear,
   refreshHolidaysFromCDN,
@@ -219,6 +220,52 @@ describe('refreshHolidaysFromCDN', () => {
 
     expect(holidaysCache.has(currentYear)).toBe(false);
     expect(holidaysCache.has(currentYear + 1)).toBe(false);
+  });
+
+  it('成功抓到資料時 lastRefreshStatus 記錄 success 與筆數', async () => {
+    getIsDbConnected.mockReturnValue(true);
+    const currentYear = new Date().getFullYear();
+    const col = makeCol();
+    // deleteMany 後 toArray 回傳非空（模擬 CDN 重新植入成功）
+    col.toArray.mockResolvedValue([{ _id: `${currentYear}0101`, name: '元旦', isHoliday: true }]);
+    getHolidaysCollection.mockReturnValue(col);
+
+    await refreshHolidaysFromCDN();
+
+    expect(lastRefreshStatus.at).not.toBeNull();
+    expect(lastRefreshStatus.years[currentYear]).toEqual({ success: true, count: 1 });
+  });
+
+  it('CDN 與資料庫都抓不到資料時（0 筆）標記 success:false 並發出 console.warn', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    getIsDbConnected.mockReturnValue(true);
+    const currentYear = new Date().getFullYear();
+    const col = makeCol();
+    col.toArray.mockResolvedValue([]); // DB 無資料
+    getHolidaysCollection.mockReturnValue(col);
+    global.fetch.mockResolvedValue({ ok: false }); // CDN 也失敗
+
+    await refreshHolidaysFromCDN();
+
+    expect(lastRefreshStatus.years[currentYear]).toEqual({ success: false, count: 0 });
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('deleteMany 拋出例外時該年份記錄 error 訊息（非只是吞掉錯誤）', async () => {
+    getIsDbConnected.mockReturnValue(true);
+    const currentYear = new Date().getFullYear();
+    const col = makeCol();
+    col.deleteMany.mockRejectedValue(new Error('query timeout'));
+    getHolidaysCollection.mockReturnValue(col);
+
+    await refreshHolidaysFromCDN();
+
+    expect(lastRefreshStatus.years[currentYear]).toEqual({
+      success: false,
+      count: 0,
+      error: 'query timeout',
+    });
   });
 });
 

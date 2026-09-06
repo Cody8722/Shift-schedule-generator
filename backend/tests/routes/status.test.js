@@ -17,6 +17,7 @@ jest.mock('../../src/db/connect', () => ({
 
 jest.mock('../../src/services/holidayService', () => ({
   holidaysCache: new Map(),
+  lastRefreshStatus: { at: null, years: {} },
   getWeekInfo: jest.fn(),
   getHolidaysForYear: jest.fn().mockResolvedValue(new Map()),
   seedHolidays: jest.fn(),
@@ -38,6 +39,7 @@ jest.mock('../../src/repositories/profileRepository', () => ({
 jest.mock('../../src/services/schoolCalendar', () => ({
   getSchoolEvents: jest.fn(),
   schoolEventsCache: { data: null, fetchedAt: 0 },
+  getLastFetchStatus: jest.fn().mockReturnValue({ at: null, success: null, eventCount: null, warning: null }),
 }));
 
 // ── 測試主體 ──────────────────────────────────────────────────────────────────
@@ -45,7 +47,8 @@ jest.mock('../../src/services/schoolCalendar', () => ({
 const request = require('supertest');
 const app = require('../../server');
 const { getIsDbConnected, getHolidaysCollection, getConfigCollection } = require('../../src/db/connect');
-const { holidaysCache } = require('../../src/services/holidayService');
+const { holidaysCache, lastRefreshStatus } = require('../../src/services/holidayService');
+const { getLastFetchStatus } = require('../../src/services/schoolCalendar');
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -96,5 +99,31 @@ describe('GET /api/status', () => {
     expect(res.status).toBe(200);
     expect(res.body.database).toBe('connected');
     expect(res.body.dbError).toBe('query timeout');
+  });
+
+  it('回傳假日自動更新與學校行事曆抓取的最近一次結果', async () => {
+    getIsDbConnected.mockReturnValue(false);
+    lastRefreshStatus.at = 1234567890;
+    lastRefreshStatus.years = { 2026: { success: true, count: 47 } };
+
+    const res = await request(app).get('/api/status');
+
+    expect(res.body.holidaysLastRefresh).toEqual({ at: 1234567890, years: { 2026: { success: true, count: 47 } } });
+    expect(res.body.schoolCalendarLastFetch).toEqual({ at: null, success: null, eventCount: null, warning: null });
+  });
+
+  it('學校行事曆抓取結果為 0 筆時，狀態帶有 warning', async () => {
+    getIsDbConnected.mockReturnValue(false);
+    getLastFetchStatus.mockReturnValue({
+      at: 1234567890,
+      success: false,
+      eventCount: 0,
+      warning: '本次即時抓取沒有找到任何考試資料，可能是學校網站格式已變更',
+    });
+
+    const res = await request(app).get('/api/status');
+
+    expect(res.body.schoolCalendarLastFetch.success).toBe(false);
+    expect(res.body.schoolCalendarLastFetch.warning).toContain('格式已變更');
   });
 });

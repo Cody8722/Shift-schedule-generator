@@ -47,6 +47,12 @@ POST   /api/generate-schedule
 POST   /api/render-schedule
 GET    /api/school-events
 POST   /api/school-events/refresh
+POST   /api/pdf-payload/encrypt
+POST   /api/pdf-payload/decrypt
+POST   /api/schedule-shares
+GET    /api/schedule-shares
+DELETE /api/schedule-shares/:token
+GET    /api/schedule-shares/:token
 GET    /
 GET    /robots.txt
 ```
@@ -61,6 +67,7 @@ MongoDB 集合清單（`scheduleApp` 資料庫）：
 - `profiles`：設定檔與排班資料
 - `holidays`：台灣國定假日（`_id` 為日期字串如 `2025-01-01`）
 - `schoolEvents`：學校行事曆快取（`_id` 為學期代碼如 `1142`，7 天 TTL）
+- `scheduleShares`：班表分享連結（`_id` 為隨機 token，記錄對應的 profile/scheduleName/personFilter，無過期機制）
 
 ---
 
@@ -85,15 +92,17 @@ backend/
     app.js                       # Express 設定、middleware、路由掛載
     config.js                    # 環境變數
     validators.js                # 輸入驗證（profile/schedule 名稱、settings）
-    db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents 三個 collection）
-    routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar
+    db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents、scheduleShares 四個 collection）
+    routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar, pdfPayload, shares
     services/
       scheduleAlgorithm.js       # 排班核心演算法（純函數）
       scheduleRenderer.js        # HTML 渲染
       holidayService.js          # 假日快取、CDN 更新
       schoolCalendar.js          # 學校行事曆（記憶體 6h + MongoDB 7 天持久快取）
+      pdfPayloadCrypto.js        # PDF 匯入/匯出隱藏資料的 AES-256-GCM 加解密（金鑰來自 PDF_PAYLOAD_SECRET）
     repositories/
       profileRepository.js       # MongoDB CRUD（profiles、schedules）
+      shareRepository.js         # 班表分享連結的 token 產生/查詢（scheduleShares collection）
   tests/
 
 frontend/
@@ -115,8 +124,9 @@ frontend/
       escapeHtml.js
       debounce.js
       capacityStatus.js          # 容量/填補率狀態計算
-      connectionStatus.js        # 後端連線狀態顯示
+      connectionStatus.js        # 後端連線狀態顯示；同時解讀 /api/status 的假日/學校行事曆自動更新結果，異常時顯示警示圖示（點擊看原因）
       excelDownload.js           # ExcelJS Workbook → Blob 觸發瀏覽器下載
+      exportFilename.js          # 組合匯出檔名（班表名稱_日期範圍_時間戳記），PDF/Excel/人員Excel 共用
     features/schedule/
       personnelView.js           # 人員月曆視圖 + Excel 下載
       diffSummary.js             # 變更摘要 Modal（buildDiff、共用 renderDiffSection）
@@ -124,7 +134,10 @@ frontend/
       scheduleCompare.js         # 比較已儲存班表 Modal（人員異動/填補率/勤務設定差異）
       exportWeekFilter.js        # 匯出週次篩選（getExportData，供複製/Excel/PDF/人員Excel 共用）
       personTaskStats.js         # 值勤統計 Modal（人員 × 勤務次數，加總 + 每週明細，Excel/PDF 匯出共用同一份計算）
-      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計）
+      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計；若後端有設定 PDF_PAYLOAD_SECRET 會額外把班表資料加密嵌入 PDF metadata）
+      pdfImport.js               # 從匯出的 PDF 檔案讀出隱藏資料還原班表（需搭配 pdf-lib 解析 metadata + 後端解密）
+      scheduleShare.js           # 分享班表 Modal：產生免登入連結（可選只分享單一人員、可設有效期限），並列出/撤銷已產生的連結
+      sharedView.js              # 免登入分享連結的頁面（接管整個 document.body，不含後台功能）
       scheduleGenerator.js       # 前端排班產生流程
     features/settings/
       settingsRenderer.js        # 設定頁渲染
@@ -185,9 +198,11 @@ MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/
 DB_NAME=scheduleApp      # 預設值
 PORT=3000                # 預設值
 CORS_ORIGIN=*            # 預設值；未設定時 config.js 也會 fallback 成 *，僅適合開發環境
+PDF_PAYLOAD_SECRET=      # 選填，64 字元 hex（32 bytes）。未設定時 PDF 匯入/匯出隱藏資料功能自動停用，其他功能不受影響
 ```
 
 若未提供 `MONGODB_URI`，伺服器仍會啟動，但所有資料庫功能停用（會顯示警告）。
+若未提供 `PDF_PAYLOAD_SECRET`，`/api/pdf-payload/encrypt`、`/api/pdf-payload/decrypt` 會回傳 503，前端的 PDF 匯入按鈕與匯出時的隱藏資料嵌入都會靜默跳過（不影響一般匯出/檢視）。
 
 ---
 
@@ -292,6 +307,15 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 但 `POST /api/generate-schedule`、`POST /api/render-schedule` **沒有**這層檢查：內部呼叫的 `getHolidaysForYear()` 在無 DB 時直接回傳空 `Map`，假日/行事曆資料會被靜默忽略、班表照樣「成功」產生，前端不會收到任何錯誤或警告。
 診斷方式：`GET /api/status` 確認 `"database": "connected"` 還是 `"disconnected"`。
 
+### 🟡 班表分享連結（`GET /api/schedule-shares/:token`）刻意不需要登入
+
+這是全站唯一一個刻意設計成公開、無需任何驗證就能讀取的端點——分享連結的目的就是讓拿到連結的人不用進後台。安全性完全依賴 token 本身夠隨機（128 bits，`crypto.randomBytes(16)`），不是靠登入機制擋。
+
+- 建立連結時可選「永久有效」或設定 1-365 天後失效（`expiresInDays`）。過期判斷在 `GET /api/schedule-shares/:token` 讀取當下即時檢查，不能只依賴 MongoDB TTL index（`expiresAt` 欄位，`expireAfterSeconds: 0`）——TTL 背景清除任務約每 60 秒才跑一次，不是精準即時刪除，永久連結因為沒有 `expiresAt` 欄位不受 TTL index 影響。
+- 分享 Modal 內會列出該份班表已產生的所有連結（`GET /api/schedule-shares?profile=&scheduleName=`），可用「撤銷」按鈕呼叫 `DELETE /api/schedule-shares/:token` 立即刪除、讓連結失效。這兩個管理端點本身沒有額外驗證（跟系統其他管理端點一樣，整個後台沒有登入機制），只是回傳/操作 token 中繼資料，不會外洩班表內容。
+- `personFilter` 的過濾**必須在後端做**（`shares.js` 的 `filterScheduleForPerson`），不能改成前端拿到完整班表 JSON 後才用 CSS/JS 隱藏其他人——那樣瀏覽器開發者工具的網路分頁還是看得到完整資料，等於沒做過濾。
+- 分享連結對應的是**某一份已儲存班表的快照**（`profile` + `scheduleName`），不會跟著該班表之後的修改自動更新；若使用者事後編輯並重新儲存同名班表，舊分享連結會顯示新內容（因為是即時查 `getSchedule`，不是存快照），但若該班表被刪除，連結會直接 404。
+
 ### 🟡 Tailwind CDN 動態 HTML 限制
 
 前端使用 Tailwind CDN（JIT 模式），**動態注入的 innerHTML 中的 `dark:` class 不會被編譯**。
@@ -307,6 +331,8 @@ GitHub Actions（`.github/workflows/ci-cd.yml`）在推送到 `develop`/`release
 `server.js` 啟動時、以及之後**每 24 小時**都會自動呼叫 `refreshHolidaysFromCDN()`，重新從 CDN 拉「今年 + 明年」的假日資料並清掉對應快取——這兩年的資料其實會自動更新。
 不會自動更新的是：**去年（含）以前**的資料、以及最初從 `holidays/*.json` 植入（無 `source:'cdn'` 標記）的資料。要強制整批重抓三年資料，呼叫 `POST /api/holidays/reseed`（清空整個 collection + 記憶體快取，全部重新從 CDN 拉）。
 直接修改 `holidays/*.json` 不會生效——只有 collection 是空的時候（`seedHolidays()`）才會讀本地檔案；reseed 走的是 CDN，不讀本地 JSON。
+
+假日 CDN 與學校行事曆（`schoolCalendar.js`）這兩個自動抓資料機制若失敗，過去完全沒有地方看得出來（只寫 `debug` log，正式環境預設不顯示）。現在 `GET /api/status` 會回報 `holidaysLastRefresh`（最近一次自動更新每個年份的成功/筆數/錯誤）與 `schoolCalendarLastFetch`（最近一次即時抓取的成功與筆數；`eventCount: 0` 通常代表學校網站格式已改版，regex 抓不到東西了）。
 
 ### 🟡 backend/tests/ 的端點路徑
 

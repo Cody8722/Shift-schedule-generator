@@ -174,6 +174,24 @@ describe('getSchoolEvents — 無 DB，fetch 成功空 HTML', () => {
     expect(result.cached).toBe(false);
     expect(result.data).toEqual([]);
   });
+
+  it('即時抓取結果為 0 筆時，getLastFetchStatus() 標記 success:false 並帶 warning，同時發出 console.warn', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(EMPTY_HTML)),
+    });
+
+    await mod.getSchoolEvents();
+
+    const status = mod.getLastFetchStatus();
+    expect(status.success).toBe(false);
+    expect(status.eventCount).toBe(0);
+    expect(status.warning).toContain('格式已變更');
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });
 
 // ── 無 DB，fetch 成功（含考試 HTML）──────────────────────────────────────────
@@ -193,6 +211,23 @@ describe('getSchoolEvents — 無 DB，解析考試資料', () => {
     expect(ev).toHaveProperty('startDate');
     expect(ev).toHaveProperty('endDate');
     expect(ev).toHaveProperty('type', 'exam');
+  });
+
+  it('抓到資料時 getLastFetchStatus() 標記 success:true，且不發出 console.warn', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const mod = loadModule();
+    getIsDbConnected.mockReturnValue(false);
+    global.fetch.mockResolvedValue({
+      arrayBuffer: jest.fn().mockResolvedValue(makeArrayBuffer(EXAM_HTML)),
+    });
+
+    await mod.getSchoolEvents();
+
+    const status = mod.getLastFetchStatus();
+    expect(status.success).toBe(true);
+    expect(status.warning).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
 

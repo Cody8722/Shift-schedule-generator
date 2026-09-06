@@ -8,6 +8,12 @@ const debugServer = debug('app:server');
 
 const holidaysCache = new Map();
 
+// 記錄「最近一次自動更新」的結果，讓 /api/status 能回報這個機制是否還正常運作——
+// 光靠 debugDb 完全不夠，因為 debug log 正式環境預設不會顯示，CDN 掛掉或格式跑掉
+// 時不會有任何地方看得出來。success 用「有沒有實際抓到資料」判斷，而不是「有沒有
+// 拋例外」，因為 getHolidaysForYear() 在 CDN 失敗時是回傳空 Map、不拋例外。
+const lastRefreshStatus = { at: null, years: {} };
+
 const getWeekInfo = (weekString, weekIndex) => {
   const [year, weekNum] = weekString.split('-W').map(Number);
   const simpleDate = new Date(Date.UTC(year, 0, 1 + (weekNum - 1) * 7));
@@ -95,15 +101,25 @@ const refreshHolidaysFromCDN = async () => {
   if (!getIsDbConnected()) return;
   const holidaysCollection = getHolidaysCollection();
   const currentYear = new Date().getFullYear();
+  const years = {};
   for (const year of [currentYear, currentYear + 1]) {
     try {
       await holidaysCollection.deleteMany({ _id: { $regex: `^${year}` }, source: 'cdn' });
       holidaysCache.delete(year);
-      await getHolidaysForYear(year);
-      debugDb(`已自動更新 ${year} 年假日資料`);
+      const holidayMap = await getHolidaysForYear(year);
+      // 舊資料已經刪了，這裡如果抓到 0 筆，代表這個年份現在完全沒有假日資料
+      // （CDN 那時剛好打不到），不能當成「更新成功」。
+      years[year] = { success: holidayMap.size > 0, count: holidayMap.size };
+      debugDb(`已自動更新 ${year} 年假日資料（${holidayMap.size} 筆）`);
     } catch (e) {
+      years[year] = { success: false, count: 0, error: e.message };
       debugDb(`自動更新 ${year} 年假日資料失敗:`, e.message);
     }
+  }
+  lastRefreshStatus.at = Date.now();
+  lastRefreshStatus.years = years;
+  if (Object.values(years).some((y) => !y.success)) {
+    console.warn('[holidayService] 假日自動更新有年份失敗或抓到 0 筆資料:', years);
   }
 };
 
@@ -178,6 +194,7 @@ const seedHolidays = async () => {
 
 module.exports = {
   holidaysCache,
+  lastRefreshStatus,
   getWeekInfo,
   getHolidaysForYear,
   refreshHolidaysFromCDN,

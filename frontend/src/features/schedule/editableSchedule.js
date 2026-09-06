@@ -20,9 +20,12 @@ let draggedFromCell = null;
 export function enableEditMode() {
   if (!getGeneratedData()) return;
   setEditingData(JSON.parse(JSON.stringify(getGeneratedData())));
-  setHasUnsavedChanges(false);
   clearEditHistory();
   renderEditableSchedule();
+  // 用 syncModifiedState() 而非直接 setHasUnsavedChanges(false)：
+  // 這樣無論工具列的按鈕/文字先前處於什麼殘留狀態（例如換了設定檔後才重新產生班表），
+  // 進入編輯模式當下一定會被強制校正回「乾淨」的視覺狀態，不會沿用上一段編輯留下的殘影。
+  syncModifiedState();
 }
 
 export function renderEditableSchedule() {
@@ -50,12 +53,14 @@ export function initEditToolbarEvents() {
   document.getElementById('save-edits-btn')?.addEventListener('click', saveEdits);
   document.getElementById('cancel-edits-btn')?.addEventListener('click', cancelEdits);
   document.getElementById('exit-edit-mode-btn')?.addEventListener('click', exitEditMode);
-  document.getElementById('undo-edit-btn')?.addEventListener('click', () =>
-    undoEdit(renderEditableSchedule)
-  );
-  document.getElementById('redo-edit-btn')?.addEventListener('click', () =>
-    redoEdit(renderEditableSchedule)
-  );
+  document.getElementById('undo-edit-btn')?.addEventListener('click', () => {
+    undoEdit(renderEditableSchedule);
+    syncModifiedState();
+  });
+  document.getElementById('redo-edit-btn')?.addEventListener('click', () => {
+    redoEdit(renderEditableSchedule);
+    syncModifiedState();
+  });
   document.getElementById('diff-btn')?.addEventListener('click', showDiffModal);
 }
 
@@ -372,7 +377,7 @@ function canPersonEnterCell(personName, weekIndex, dayIndex, taskIndex, ignoreCo
  * - 'swap'：格子已滿，但可以跟裡面的某人對調
  * - 'blocked'：不可放（附原因）
  */
-function evaluateCellDrop(weekIndex, dayIndex, taskIndex, personName) {
+function evaluateCellDrop(weekIndex, dayIndex, taskIndex, personName, preferredBumpTarget = null) {
   const editingData = getEditingData();
   if (!editingData?.[weekIndex]) return { mode: 'blocked', reason: '數據無效' };
 
@@ -393,8 +398,12 @@ function evaluateCellDrop(weekIndex, dayIndex, taskIndex, personName) {
   const originList = editingData[origin.weekIndex].schedule[origin.dayIndex][origin.taskIndex];
   // 從目標格挑一個可對調的人：不能是來源格已經有的人（否則會造成同格重複），
   // 且要能合法進入來源格（沒有排休/當天其他勤務衝突）。
+  // 優先嘗試使用者實際拖放到的那個人（preferredBumpTarget），若他不可對調才 fallback 掃描其他人選。
   let blockedReason = `人數已滿 (${personnelList.length}/${taskRequiredCount})`;
-  for (const candidate of personnelList) {
+  const candidateOrder = preferredBumpTarget && personnelList.includes(preferredBumpTarget)
+    ? [preferredBumpTarget, ...personnelList.filter((p) => p !== preferredBumpTarget)]
+    : personnelList;
+  for (const candidate of candidateOrder) {
     if (originList.includes(candidate)) {
       blockedReason = `人數已滿，且 ${candidate} 已在來源格所在的星期`;
       continue;
@@ -513,7 +522,11 @@ function handleCellDrop(e) {
   const di = parseInt(cell.dataset.dayIndex, 10);
   const ti = parseInt(cell.dataset.taskIndex, 10);
 
-  const result = evaluateCellDrop(wi, di, ti, draggedPerson);
+  // 使用者實際放開滑鼠的那個人員標籤：格子已滿時優先跟這個人對調，而不是永遠對調格內第一個人。
+  const targetTag = e.target.closest('.person-tag:not(.unfilled)');
+  const preferredBumpTarget = targetTag ? targetTag.dataset.personName : null;
+
+  const result = evaluateCellDrop(wi, di, ti, draggedPerson, preferredBumpTarget);
   if (result.mode === 'blocked') {
     if (result.reason) showToast(result.reason, 'warning');
     draggedPerson = null;
@@ -762,6 +775,30 @@ function markAsModified() {
     editStatus.classList.add('text-orange-600', 'font-medium');
   }
   autoSaveDraft();
+}
+
+// undo/redo 可能讓 editingData 回到與 generatedData 完全相同的狀態，
+// 此時「未儲存修改」旗標與 UI 必須重新比對後同步，不能只靠單向的 markAsModified()。
+function syncModifiedState() {
+  const isDirty = JSON.stringify(getEditingData()) !== JSON.stringify(getGeneratedData());
+  setHasUnsavedChanges(isDirty);
+  const saveEditsBtn = document.getElementById('save-edits-btn');
+  const editStatus = document.getElementById('edit-status');
+  if (saveEditsBtn) saveEditsBtn.disabled = !isDirty;
+  if (editStatus) {
+    if (isDirty) {
+      editStatus.textContent = '有未儲存的修改';
+      editStatus.className = 'text-orange-600 font-medium';
+    } else {
+      editStatus.textContent = '';
+      editStatus.className = '';
+    }
+  }
+  if (isDirty) {
+    autoSaveDraft();
+  } else {
+    clearDraft();
+  }
 }
 
 async function saveEdits() {

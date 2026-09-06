@@ -52,6 +52,9 @@ import { printSchedule, exportToPdf } from './features/schedule/pdfExport.js';
 import { renderAll, renderSavedSchedules } from './features/settings/settingsRenderer.js';
 import { enableEditMode, renderEditableSchedule, initEditToolbarEvents } from './features/schedule/editableSchedule.js';
 import { generateFullSchedule, displaySchedule } from './features/schedule/scheduleGenerator.js';
+import { importScheduleFromPdfFile } from './features/schedule/pdfImport.js';
+import { renderSharedViewIfPresent } from './features/schedule/sharedView.js';
+import { openShareModal } from './features/schedule/scheduleShare.js';
 import { initScheduleCompare } from './features/schedule/scheduleCompare.js';
 import { getExportData, initExportWeekFilter } from './features/schedule/exportWeekFilter.js';
 import { computePersonTaskStats, initPersonTaskStats } from './features/schedule/personTaskStats.js';
@@ -59,6 +62,7 @@ import { computePersonTaskStats, initPersonTaskStats } from './features/schedule
 // ── Utils ──
 import { checkConnectionStatus } from './utils/connectionStatus.js';
 import { downloadWorkbook } from './utils/excelDownload.js';
+import { buildExportFilename } from './utils/exportFilename.js';
 
 // ─────────────────────────────────────────────
 // DOM 元素集合（在 DOMContentLoaded 後填入）
@@ -152,6 +156,8 @@ const openPersonnelModal = (index) => {
   currentEditingPersonnelIndex = index;
   const person = getActiveProfile().settings.personnel[index];
   elements.modalPersonnelName.textContent = person.name;
+  elements.pmMax.textContent = person.maxShifts || 5;
+  elements.pmMaxshifts.value = person.maxShifts || 5;
   const weekDays = ['星期一', '星期二', '星期三', '星期四', '星期五'];
   elements.offDaysContainer.innerHTML = weekDays
     .map(
@@ -180,6 +186,25 @@ const closePersonnelModal = () => {
 };
 
 
+const isMacPlatform = navigator.platform.toUpperCase().includes('MAC');
+
+// 快捷鍵的「功能」判斷（keydown 監聽器裡的 mod 邏輯）本來就有分平台，但畫面上顯示
+// 給使用者看的按鍵提示（⌘）是寫死的 Mac 符號，在 Windows/Linux 上顯示 ⌘ 沒有意義、
+// 使用者鍵盤上根本沒有這個鍵。非 Mac 平台時把提示文字換成 Ctrl。
+const applyPlatformKeyboardHints = () => {
+  if (isMacPlatform) return;
+  const undoBtn = document.getElementById('undo');
+  const redoBtn = document.getElementById('redo');
+  if (undoBtn) undoBtn.title = '復原 (Ctrl+Z)';
+  if (redoBtn) redoBtn.title = '重做 (Ctrl+Shift+Z)';
+  const generateHint = document.getElementById('kbd-hint-generate');
+  if (generateHint) generateHint.textContent = 'Ctrl ↵';
+  const footerEnter = document.getElementById('kbd-hint-footer-enter');
+  if (footerEnter) footerEnter.textContent = 'Ctrl ↵';
+  const footerZ = document.getElementById('kbd-hint-footer-z');
+  if (footerZ) footerZ.textContent = 'Ctrl Z';
+};
+
 // ─────────────────────────────────────────────
 // 初始化
 // ─────────────────────────────────────────────
@@ -190,6 +215,19 @@ const setInitialAccordionState = () => {
   } else {
     accordions[3]?.classList.add('active');
   }
+};
+
+// 切換/重新命名/刪除設定檔後，畫面上顯示的班表編輯狀態（未儲存旗標、undo/redo 歷史、
+// 「可用人員」側邊欄）都是針對「舊的作用中設定檔」而存在，換了設定檔後必須清乾淨，
+// 否則會殘留指向已不存在（或不相關）設定檔資料的殘影，儲存時甚至可能寫錯設定檔。
+const resetScheduleEditingState = () => {
+  clearEditHistory();
+  clearSettingsHistory();
+  setGeneratedData(null);
+  setCurrentScheduleName(null);
+  setEditingData(null);
+  setHasUnsavedChanges(false);
+  elements.outputContainer.classList.add('hidden');
 };
 
 const initApp = async () => {
@@ -242,9 +280,14 @@ const initApp = async () => {
 // DOMContentLoaded
 // ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  if (await renderSharedViewIfPresent()) return;
+
+  applyPlatformKeyboardHints();
+
   elements = {
     profileSelect: document.getElementById('profile-select'),
     newProfileBtn: document.getElementById('new-profile-btn'),
+    duplicateProfileBtn: document.getElementById('duplicate-profile-btn'),
     renameProfileBtn: document.getElementById('rename-profile-btn'),
     deleteProfileBtn: document.getElementById('delete-profile-btn'),
     importProfileBtn: document.getElementById('import-profile-btn'),
@@ -270,12 +313,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     exportImagePdfBtn: document.getElementById('export-image-pdf'),
     saveScheduleBtn: document.getElementById('save-schedule-btn'),
     savedSchedulesList: document.getElementById('saved-schedules-list'),
+    importPdfBtn: document.getElementById('import-pdf-btn'),
+    pdfFileInput: document.getElementById('pdf-file-input'),
     themeToggle: document.getElementById('theme-toggle'),
     statusContainer: document.getElementById('status-container'),
     statusIndicator: document.getElementById('status-indicator'),
     statusText: document.getElementById('status-text'),
     personnelModal: document.getElementById('personnel-modal'),
     modalPersonnelName: document.getElementById('modal-personnel-name'),
+    pmMax: document.getElementById('pm-max'),
+    pmMaxshifts: document.getElementById('pm-maxshifts'),
     offDaysContainer: document.getElementById('off-days-container'),
     preferredTaskSelect: document.getElementById('preferred-task-select'),
     modalCloseBtn: document.getElementById('modal-close-btn'),
@@ -287,6 +334,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     modalHolidayList: document.getElementById('modal-holiday-list'),
     modalHolidayCloseBtn: document.getElementById('modal-holiday-close-btn'),
     modalHolidaySaveBtn: document.getElementById('modal-holiday-save-btn'),
+    hmCount: document.getElementById('hm-count'),
   };
 
   const debouncedUpdateHolidays = debounce(updateHolidaySelectionUI, 400);
@@ -307,12 +355,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyTheme(isDark ? 'light' : 'dark');
   });
 
+  // 假日/學校行事曆自動更新異常警示（資料由 checkConnectionStatus 定期輪詢 /api/status 填入）
+  document.getElementById('autofetch-warning')?.addEventListener('click', (e) => {
+    const reasons = JSON.parse(e.currentTarget.dataset.reasons || '[]');
+    reasons.forEach((reason) => showToast(reason, 'warning', 6000));
+  });
+
   // 全域 modal × 關閉鈕（class="modal-close"，無 ID）
-  document.addEventListener('click', (e) => {
-    const closeBtn = e.target.closest('.modal-close');
-    if (!closeBtn) return;
-    const backdrop = closeBtn.closest('.modal-backdrop');
-    if (!backdrop) return;
+  const closeModalBackdrop = (backdrop) => {
     // confirm/input modal 的 × 要走取消流程，讓 Promise 正確 resolve
     const cancelBtn = backdrop.querySelector('#confirm-modal-cancel, #input-modal-cancel');
     if (cancelBtn) {
@@ -320,6 +370,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       backdrop.classList.remove('open');
     }
+  };
+
+  document.addEventListener('click', (e) => {
+    const closeBtn = e.target.closest('.modal-close');
+    if (!closeBtn) return;
+    const backdrop = closeBtn.closest('.modal-backdrop');
+    if (!backdrop) return;
+    closeModalBackdrop(backdrop);
+  });
+
+  // 每個 Modal 的關閉鈕 title 都寫著「關閉 (Esc)」，但除了 input-modal 自己內部有做
+  // Escape 監聽外，其餘（含最常用的 confirm-modal）按 Esc 完全沒反應——tooltip 等於
+  // 開了空頭支票。這裡補一個全域監聽，讓 Esc 對所有 Modal 都真的有效；即使 input-modal
+  // 因為 field 本身已有 keydown 監聽而重複觸發，關閉邏輯本身是幂等的，不會有副作用。
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const backdrop = document.querySelector('.modal-backdrop.open');
+    if (backdrop) closeModalBackdrop(backdrop);
   });
 
   // 任務
@@ -401,6 +469,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           elements.offDaysContainer.querySelectorAll('input:checked')
         ).map((cb) => parseInt(cb.value, 10));
         person.preferredTask = elements.preferredTaskSelect.value;
+        const maxShifts = parseInt(elements.pmMaxshifts.value, 10);
+        person.maxShifts = isNaN(maxShifts) || maxShifts < 1 ? 1 : maxShifts;
       });
       closePersonnelModal();
     }
@@ -411,20 +481,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (getHasUnsavedChanges()) {
       const ok = await showConfirm('班表有未儲存的修改，切換設定檔將會遺失這些修改，確定要繼續？');
       if (!ok) { e.target.value = getAppState().activeProfile; return; }
-      setHasUnsavedChanges(false);
     }
-    clearEditHistory();
-    clearSettingsHistory();
+    resetScheduleEditingState();
     const newProfileName = e.target.value;
     setAppState({ activeProfile: newProfileName });
     sessionStorage.setItem('activeProfile', newProfileName);
     renderAll();
     api.put('profiles/active', { name: newProfileName }).catch(() => {});
-    setGeneratedData(null);
-    setCurrentScheduleName(null);
-    setEditingData(null);
-    setHasUnsavedChanges(false);
-    elements.outputContainer.classList.add('hidden');
   });
 
   elements.newProfileBtn.addEventListener('click', async () => {
@@ -436,13 +499,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  elements.duplicateProfileBtn.addEventListener('click', async () => {
+    const sourceName = getAppState().activeProfile;
+    const name = await showInput(`複製「${sourceName}」為新設定檔`, `${sourceName}-複製`);
+    if (name) {
+      if (getAppState().profiles[name]) { showToast('該名稱已存在！', 'warning'); return; }
+      const settings = JSON.parse(JSON.stringify(getActiveProfile().settings));
+      const result = await api.post('profiles', { name, settings });
+      if (result) {
+        await initApp();
+        showToast(`已複製「${sourceName}」的勤務與人員設定`, 'success');
+      }
+    }
+  });
+
   elements.renameProfileBtn.addEventListener('click', async () => {
     const oldName = getAppState().activeProfile;
     const newName = await showInput(`重新命名「${oldName}」`, oldName);
     if (newName && newName !== oldName) {
       if (getAppState().profiles[newName]) { showToast('該名稱已存在！', 'warning'); return; }
       const result = await api.put(`profiles/${oldName}/rename`, { newName });
-      if (result) await initApp();
+      if (result) {
+        resetScheduleEditingState();
+        await initApp();
+      }
     }
   });
 
@@ -455,7 +535,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ok = await showConfirm(`確定要刪除設定檔「${nameToDelete}」嗎？此操作無法復原。`);
     if (ok) {
       const result = await api.delete(`profiles/${nameToDelete}`);
-      if (result) await initApp();
+      if (result) {
+        resetScheduleEditingState();
+        await initApp();
+      }
     }
   });
 
@@ -537,8 +620,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Excel
   elements.exportExcelBtn.addEventListener('click', async () => {
+    if (elements.exportExcelBtn.disabled) return;
     const exportData = getExportData();
     if (!exportData || exportData.length === 0) return;
+    elements.exportExcelBtn.disabled = true;
     const wb = new window.ExcelJS.Workbook();
     exportData.forEach((data) => {
       const { schedule, tasks, weekDayDates, scheduleDays } = data;
@@ -590,7 +675,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    await downloadWorkbook(wb, '班表.xlsx');
+    await downloadWorkbook(wb, buildExportFilename(exportData, 'xlsx'));
+    elements.exportExcelBtn.disabled = false;
   });
 
   // PDF
@@ -616,11 +702,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 載入/刪除已儲存班表
+  // 載入/刪除/分享已儲存班表
   elements.savedSchedulesList.addEventListener('click', async (e) => {
     e.preventDefault();
     const link = e.target.closest('.load-schedule-link');
     const btn = e.target.closest('.delete-schedule-btn');
+    const shareBtn = e.target.closest('.share-schedule-btn');
+    if (shareBtn) {
+      await openShareModal(shareBtn.dataset.name);
+      return;
+    }
     if (link) {
       const name = link.dataset.name;
       const scheduleData = await api.get(
@@ -647,7 +738,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // 從 PDF 匯入班表
+  // 選檔案的原生對話框本身會擋掉重複點擊，但選好檔案後到匯入處理完成（讀檔+解密的
+  // 非同步空檔）這段期間按鈕仍可再次點擊，快速連續匯入兩個檔案會互相干擾，跟先前
+  // 匯出按鈕連點的問題是同一類，用同樣的 disabled 防呆處理。
+  elements.importPdfBtn?.addEventListener('click', () => {
+    if (elements.importPdfBtn.disabled) return;
+    elements.pdfFileInput.click();
+  });
+  elements.pdfFileInput?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    elements.importPdfBtn.disabled = true;
+    try {
+      await importScheduleFromPdfFile(file);
+    } finally {
+      elements.importPdfBtn.disabled = false;
+    }
+  });
+
   // 假日設定
+  const updateHolidayModalCount = () => {
+    if (!elements.hmCount) return;
+    elements.hmCount.textContent = elements.modalHolidayList.querySelectorAll('.holiday-checkbox:checked').length;
+  };
+
   elements.holidaySettingsBtn.addEventListener('click', () => {
     if (availableHolidays.length === 0) return;
     elements.modalHolidayList.innerHTML = availableHolidays
@@ -660,7 +776,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       </label>`
       )
       .join('');
+    updateHolidayModalCount();
     elements.holidayModal.classList.add('open');
+  });
+
+  elements.modalHolidayList.addEventListener('change', (e) => {
+    if (e.target.matches('.holiday-checkbox')) updateHolidayModalCount();
   });
 
   elements.modalHolidayCloseBtn.addEventListener('click', () => {
@@ -747,8 +868,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 全域鍵盤快捷鍵
   document.addEventListener('keydown', (e) => {
-    const mod = navigator.platform.toUpperCase().includes('MAC') ? e.metaKey : e.ctrlKey;
+    const mod = isMacPlatform ? e.metaKey : e.ctrlKey;
     if (!mod) return;
+
+    // 「產生智慧班表」按鈕上直接印著 ⌘↵ 的按鍵提示，但先前完全沒有對應的監聽器——
+    // 這裡放在 input/textarea 排除判斷之前，讓在設定欄位打完字後直接 ⌘↵ 也能觸發，
+    // 不用特地把游標移開再按。
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      elements.generateBtn.click();
+      return;
+    }
+
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) return;
     if (e.key === 'z' && !e.shiftKey) {
@@ -762,6 +893,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? redoEdit(renderEditableSchedule)
         : redoSettings(renderAll, saveSettings);
     }
+  });
+
+  // 有未儲存的編輯修改時，離開頁面（重新整理/關閉分頁）前跳出瀏覽器原生確認——
+  // localStorage 草稿只防得住「忘記存」，防不住使用者手滑關掉分頁；瀏覽器對
+  // beforeunload 的訊息內容有限制（各家瀏覽器一律顯示自己的固定文字，e.returnValue
+  // 只是拿來判斷「要不要問」，實際文字不受控制），只能靠有沒有跳出這個提示本身。
+  window.addEventListener('beforeunload', (e) => {
+    if (!getHasUnsavedChanges()) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
 
   await initApp();

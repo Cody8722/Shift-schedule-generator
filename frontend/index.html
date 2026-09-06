@@ -328,7 +328,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* ─── Profile dropdown row ─────────────────────────────────── */
 .profile-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .profile-row .select { flex: 1; }
-.profile-actions { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.profile-actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .profile-actions .btn { padding: 6px 0; font-size: 12px; }
 
 /* ─── Task/Personnel list ──────────────────────────────────── */
@@ -1258,6 +1258,11 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
   .topbar { display: none !important; }
   aside { display: none !important; }
   .panel-head > .panel-actions { display: none !important; }
+  #edit-toolbar { display: none !important; }
+  .remove-person { display: none !important; }
+  .person-tag.unfilled { display: none !important; }
+  .card.saved { display: none !important; }
+  .app-footer { display: none !important; }
   #output-container { margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; background: white !important; }
   #schedule-output { overflow: visible !important; }
   .s-table { page-break-inside: avoid; width: 100% !important; }
@@ -1323,6 +1328,9 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
         <span class="dot" id="status-indicator"></span>
         <span id="status-text">正在檢查連線...</span>
       </div>
+      <button class="icon-btn hidden" id="autofetch-warning" style="color:#f59e0b;" title="自動更新異常，點擊查看詳情">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </button>
       <button class="icon-btn" id="undo" title="復原 (⌘Z)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-4"/></svg>
         <span class="count-badge" id="undo-badge" style="display:none">0</span>
@@ -1357,6 +1365,7 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
             </div>
             <div class="profile-actions">
               <button class="btn btn-secondary" id="new-profile-btn">新增</button>
+              <button class="btn btn-secondary" id="duplicate-profile-btn" title="複製目前設定檔的勤務與人員設定，建立一個新設定檔">複製</button>
               <button class="btn btn-secondary" id="rename-profile-btn">命名</button>
               <button class="btn btn-secondary" id="import-profile-btn">匯入</button>
               <button class="btn btn-secondary" id="export-profile-btn">匯出</button>
@@ -1450,7 +1459,7 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
             <button class="generate-cta" id="generate-schedule">
               <span id="generate-btn-text">產生智慧班表</span>
               <span id="generate-spinner" class="cta-spinner hidden"></span>
-              <span class="kbd">⌘ ↵</span>
+              <span class="kbd" id="kbd-hint-generate">⌘ ↵</span>
             </button>
           </div>
         </div>
@@ -1546,14 +1555,18 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
       <div class="card saved">
         <div class="saved-head">
           <h3 class="panel-title">已儲存的班表</h3>
-          <button class="btn btn-secondary btn-sm" id="compare-schedules-btn">比較班表</button>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" id="import-pdf-btn">從 PDF 匯入</button>
+            <button class="btn btn-secondary btn-sm" id="compare-schedules-btn">比較班表</button>
+          </div>
         </div>
+        <input type="file" id="pdf-file-input" accept="application/pdf" style="display:none" />
         <ul id="saved-schedules-list" class="saved-list"></ul>
       </div>
 
       <div class="app-footer">
         <div>智慧排班系統 v2 · © <span id="footer-year"></span></div>
-        <div>快捷鍵 <span class="kbd">⌘ K</span> <span class="kbd">⌘ ↵</span> <span class="kbd">⌘ Z</span></div>
+        <div>快捷鍵 <span class="kbd" id="kbd-hint-footer-enter">⌘ ↵</span> <span class="kbd" id="kbd-hint-footer-z">⌘ Z</span></div>
       </div>
 
     </main>
@@ -1588,7 +1601,7 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
       </div>
       <div class="modal-section">
         <div class="modal-section-label">每週班次上限</div>
-        <input class="input num" id="pm-maxshifts" type="number" min="0" max="5" style="width: 100px;" />
+        <input class="input num" id="pm-maxshifts" type="number" min="1" max="7" style="width: 100px;" />
       </div>
     </div>
     <div class="modal-foot">
@@ -1741,6 +1754,53 @@ html.dark .modal-backdrop { background: rgba(0,0,0,.65); }
     <div class="modal-foot">
       <span style="flex:1"></span>
       <button class="btn btn-secondary" id="person-task-stats-close-2">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: 分享班表連結 ── -->
+<div class="modal-backdrop" id="share-modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+    <div class="modal-head">
+      <div>
+        <div class="title" id="share-modal-title">分享班表</div>
+        <div class="sub">產生免登入的連結，拿到連結的人不需要進到後台就能查看</div>
+      </div>
+      <button class="modal-close" title="關閉 (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section hidden" id="share-existing-section">
+        <div class="modal-section-label">已產生的連結</div>
+        <ul id="share-existing-list" class="saved-list"></ul>
+      </div>
+      <div class="modal-section" id="share-modal-picker">
+        <div class="modal-section-label">分享對象</div>
+        <select class="select" id="share-person-select">
+          <option value="">全部人（完整班表）</option>
+        </select>
+        <div class="modal-section-label" style="margin-top:12px;">有效期限</div>
+        <select class="select" id="share-expiry-select">
+          <option value="">永久有效</option>
+          <option value="1">1 天後失效</option>
+          <option value="7">7 天後失效</option>
+          <option value="30">30 天後失效</option>
+          <option value="90">90 天後失效</option>
+        </select>
+        <button class="btn btn-primary" id="share-generate-btn" style="margin-top:10px;">產生連結</button>
+      </div>
+      <div class="modal-section hidden" id="share-result-section">
+        <div class="modal-section-label">分享連結</div>
+        <div style="display:flex; gap:8px;">
+          <input class="input" id="share-result-link" type="text" readonly style="flex:1;" />
+          <button class="btn btn-secondary" id="share-copy-btn">複製</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span style="flex:1"></span>
+      <button class="btn btn-secondary" id="share-modal-close-2">關閉</button>
     </div>
   </div>
 </div>

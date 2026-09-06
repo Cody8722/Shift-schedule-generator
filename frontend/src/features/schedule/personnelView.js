@@ -2,6 +2,7 @@ import { escapeHtml } from '../../utils/escapeHtml.js';
 import { getAppState } from '../../state/appState.js';
 import { downloadWorkbook } from '../../utils/excelDownload.js';
 import { getExportData } from './exportWeekFilter.js';
+import { buildExportFilename } from '../../utils/exportFilename.js';
 
 export const TASK_COLORS = [
   'pv-task-0',
@@ -97,8 +98,11 @@ export const renderPersonnelView = (data) => {
  * 匯出人員班表為 Excel。
  */
 export const exportPersonnelExcel = async () => {
+  const button = document.getElementById('export-personnel-excel');
+  if (button?.disabled) return;
   const data = getExportData();
   if (!data || data.length === 0) return;
+  if (button) button.disabled = true;
 
   const dayNames = ['一', '二', '三', '四', '五'];
   const appState = getAppState();
@@ -145,5 +149,6 @@ export const exportPersonnelExcel = async () => {
     ]);
   });
 
-  await downloadWorkbook(wb, '人員班表.xlsx');
+  await downloadWorkbook(wb, buildExportFilename(data, 'xlsx', { suffix: '_人員' }));
+  if (button) button.disabled = false;
 };

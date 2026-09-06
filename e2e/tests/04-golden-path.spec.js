@@ -95,7 +95,7 @@ test.describe('黃金路徑', () => {
     await expect(page.locator('#save-edits-btn')).toBeDisabled();
   });
 
-  test('匯出 Excel 觸發下載，檔名為 班表.xlsx', async ({ page }) => {
+  test('匯出 Excel 觸發下載，檔名符合「班表_日期範圍_時間戳記」規則', async ({ page }) => {
     await generateMinimalSchedule(page);
 
     const [download] = await Promise.all([
@@ -103,10 +103,12 @@ test.describe('黃金路徑', () => {
       page.locator('#export-excel').click(),
     ]);
 
-    expect(download.suggestedFilename()).toBe('班表.xlsx');
+    // 未儲存班表時檔名開頭固定用「班表」；日期範圍+時間戳記每次匯出都不同，
+    // 用正則比對格式而非固定字串（避免每次執行 CI 都要更新期望值）。
+    expect(download.suggestedFilename()).toMatch(/^班表_\d{4}~\d{4}_\d{8}-\d{6}\.xlsx$/);
   });
 
-  test('匯出 PDF 觸發下載，檔名為 班表.pdf', async ({ page }) => {
+  test('匯出 PDF 觸發下載，檔名符合「班表_日期範圍_時間戳記」規則', async ({ page }) => {
     await generateMinimalSchedule(page);
 
     const [download] = await Promise.all([
@@ -114,6 +116,6 @@ test.describe('黃金路徑', () => {
       page.locator('#export-pdf').click(),
     ]);
 
-    expect(download.suggestedFilename()).toBe('班表.pdf');
+    expect(download.suggestedFilename()).toMatch(/^班表_\d{4}~\d{4}_\d{8}-\d{6}\.pdf$/);
   });
 });

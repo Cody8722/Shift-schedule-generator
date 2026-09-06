@@ -10,6 +10,7 @@ let db;
 let configCollection;
 let holidaysCollection;
 let schoolEventsCollection;
+let scheduleSharesCollection;
 let isDbConnected = false;
 
 if (MONGODB_URI) {
@@ -38,6 +39,8 @@ const getHolidaysCollection = () => holidaysCollection;
 
 const getSchoolEventsCollection = () => schoolEventsCollection;
 
+const getScheduleSharesCollection = () => scheduleSharesCollection;
+
 const connect = async () => {
   if (!client) return;
   debugServer('正在連線至 MongoDB...');
@@ -48,6 +51,11 @@ const connect = async () => {
   configCollection = db.collection('profiles');
   holidaysCollection = db.collection('holidays');
   schoolEventsCollection = db.collection('schoolEvents');
+  scheduleSharesCollection = db.collection('scheduleShares');
+  // TTL index：只會刪除「有 expiresAt 欄位且已過期」的文件，沒有這個欄位的永久
+  // 分享連結不受影響。MongoDB 背景清除任務約每 60 秒跑一次，不是精準即時刪除，
+  // 所以 GET /api/schedule-shares/:token 仍須自行檢查 expiresAt，不能只靠這個 index。
+  await scheduleSharesCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   isDbConnected = true;
 };
 
@@ -87,6 +95,7 @@ module.exports = {
   getConfigCollection,
   getHolidaysCollection,
   getSchoolEventsCollection,
+  getScheduleSharesCollection,
   connect,
   disconnect,
   ensureConfigDocument,

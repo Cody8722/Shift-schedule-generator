@@ -13,6 +13,8 @@ const profilesRouter = require('./routes/profiles');
 const schedulesRouter = require('./routes/schedules');
 const generateRouter = require('./routes/generate');
 const schoolCalendarRouter = require('./routes/schoolCalendar');
+const pdfPayloadRouter = require('./routes/pdfPayload');
+const sharesRouter = require('./routes/shares');
 
 const app = express();
 
@@ -100,6 +102,8 @@ app.use(profilesRouter);
 app.use(schedulesRouter);
 app.use(generateRouter);
 app.use(schoolCalendarRouter);
+app.use(pdfPayloadRouter);
+app.use(sharesRouter);
 
 // robots.txt（爬蟲不索引 API 路徑）
 app.get('/robots.txt', (req, res) => {
