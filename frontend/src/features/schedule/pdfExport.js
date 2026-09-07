@@ -208,10 +208,14 @@ export async function exportToPdf() {
       activeStyle = null;
     }
 
-    // 若後端有設定 PDF_PAYLOAD_SECRET，把這份班表資料加密後嵌入 PDF 的 keywords 欄位——
-    // 一般開啟 PDF 完全看不到，只有本系統的「從 PDF 匯入班表」能解密還原。後端未設定
+    // 若後端有設定 PDF_PAYLOAD_SECRET，把這份班表資料連同目前設定檔的人員/勤務設定
+    // 一起加密後嵌入 PDF 的 keywords 欄位——一般開啟 PDF 完全看不到，只有本系統的
+    // 「從 PDF 匯入班表」能解密還原（連設定檔一起還原，不是只有班表本身）。後端未設定
     // 該金鑰、或加密請求失敗，都靜默略過，不影響 PDF 本身正常匯出。
-    const keywords = await buildKeywordsWithPayload(exportData);
+    const keywords = await buildKeywordsWithPayload({
+      schedule: exportData,
+      settings: getActiveProfile()?.settings || null,
+    });
     if (keywords) pdf.setProperties({ keywords });
 
     pdf.save(buildExportFilename(exportData, 'pdf'));
