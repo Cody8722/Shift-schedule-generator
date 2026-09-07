@@ -4,13 +4,19 @@ process.env.NODE_ENV = 'test';
 
 jest.mock('../../src/services/pdfPayloadCrypto', () => ({
   isConfigured: jest.fn(),
+  isDecryptionPossible: jest.fn(),
   encryptPayload: jest.fn(),
   decryptPayload: jest.fn(),
 }));
 
 const request = require('supertest');
 const app = require('../../server');
-const { isConfigured, encryptPayload, decryptPayload } = require('../../src/services/pdfPayloadCrypto');
+const {
+  isConfigured,
+  isDecryptionPossible,
+  encryptPayload,
+  decryptPayload,
+} = require('../../src/services/pdfPayloadCrypto');
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -48,35 +54,43 @@ describe('POST /api/pdf-payload/encrypt', () => {
 });
 
 describe('POST /api/pdf-payload/decrypt', () => {
-  it('未設定金鑰時回傳 503', async () => {
-    isConfigured.mockReturnValue(false);
+  it('完全沒有可能解密（isDecryptionPossible 為 false）時回傳 503', async () => {
+    isDecryptionPossible.mockReturnValue(false);
     const res = await request(app).post('/api/pdf-payload/decrypt').send({ payload: 'xxx' });
     expect(res.status).toBe(503);
     expect(decryptPayload).not.toHaveBeenCalled();
   });
 
+  it('只設定舊制金鑰、isConfigured 為 false 時，decrypt 仍可用（走 isDecryptionPossible）', async () => {
+    isConfigured.mockReturnValue(false);
+    isDecryptionPossible.mockReturnValue(true);
+    decryptPayload.mockReturnValue({ a: 1 });
+    const res = await request(app).post('/api/pdf-payload/decrypt').send({ payload: 'xxx' });
+    expect(res.status).toBe(200);
+  });
+
   it('缺少 payload 欄位時回傳 400', async () => {
-    isConfigured.mockReturnValue(true);
+    isDecryptionPossible.mockReturnValue(true);
     const res = await request(app).post('/api/pdf-payload/decrypt').send({});
     expect(res.status).toBe(400);
   });
 
   it('payload 不是字串時回傳 400', async () => {
-    isConfigured.mockReturnValue(true);
+    isDecryptionPossible.mockReturnValue(true);
     const res = await request(app).post('/api/pdf-payload/decrypt').send({ payload: 123 });
     expect(res.status).toBe(400);
   });
 
   it('成功解密時回傳 data', async () => {
-    isConfigured.mockReturnValue(true);
+    isDecryptionPossible.mockReturnValue(true);
     decryptPayload.mockReturnValue({ a: 1 });
     const res = await request(app).post('/api/pdf-payload/decrypt').send({ payload: 'xxx' });
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ a: 1 });
   });
 
-  it('解密失敗（竄改或非本系統匯出的 PDF）時回傳 400', async () => {
-    isConfigured.mockReturnValue(true);
+  it('解密失敗（竄改、金鑰對不上或非本系統匯出的 PDF）時回傳 400', async () => {
+    isDecryptionPossible.mockReturnValue(true);
     decryptPayload.mockImplementation(() => { throw new Error('bad auth tag'); });
     const res = await request(app).post('/api/pdf-payload/decrypt').send({ payload: 'xxx' });
     expect(res.status).toBe(400);

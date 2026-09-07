@@ -1,7 +1,7 @@
 const express = require('express');
 const debug = require('debug');
 const { getIsDbConnected } = require('../db/connect');
-const { validateScheduleName, validateProfileName } = require('../validators');
+const { validateScheduleName, validateProfileName, validateScheduleData } = require('../validators');
 const repo = require('../repositories/profileRepository');
 
 const debugDb = debug('app:db');
@@ -18,8 +18,9 @@ router.post('/api/schedules', async (req, res) => {
       return res.status(400).json({ message: validation.error });
     }
 
-    if (!Array.isArray(data) || data.length === 0) {
-      return res.status(400).json({ message: '班表數據必須是非空數組' });
+    const dataValidation = validateScheduleData(data);
+    if (!dataValidation.valid) {
+      return res.status(400).json({ message: dataValidation.error });
     }
 
     // 優先使用請求帶來的 profile，向下兼容未帶 profile 的舊呼叫

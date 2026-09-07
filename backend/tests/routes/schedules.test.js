@@ -32,7 +32,17 @@ const app = require('../../server');
 const { getIsDbConnected } = require('../../src/db/connect');
 const repo = require('../../src/repositories/profileRepository');
 
-const sampleData = [{ week: 1, schedule: [], tasks: [], fillStats: [], dateRange: '2025-01-06~10' }];
+const sampleData = [
+  {
+    week: 1,
+    schedule: [],
+    tasks: [],
+    fillStats: [],
+    dateRange: '2025-01-06~10',
+    weekDayDates: ['01/06', '01/07', '01/08', '01/09', '01/10'],
+    scheduleDays: [],
+  },
+];
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -69,6 +79,46 @@ describe('POST /api/schedules', () => {
     const res = await request(app)
       .post('/api/schedules')
       .send({ name: '2025-W01', data: [], profile: 'default' });
+    expect(res.status).toBe(400);
+  });
+
+  it('週資料缺少 scheduleDays 時回傳 400', async () => {
+    const badData = [{ dateRange: 'x', weekDayDates: [], schedule: [], tasks: [] }];
+    const res = await request(app)
+      .post('/api/schedules')
+      .send({ name: '2025-W01', data: badData, profile: 'default' });
+    expect(res.status).toBe(400);
+  });
+
+  it('task.priority 為非法字串（XSS payload）時回傳 400', async () => {
+    const badData = [
+      {
+        dateRange: 'x',
+        weekDayDates: [],
+        scheduleDays: [],
+        schedule: [],
+        tasks: [{ name: '素描教室', count: 1, priority: '"><img src=x onerror=alert(1)>' }],
+      },
+    ];
+    const res = await request(app)
+      .post('/api/schedules')
+      .send({ name: '2025-W01', data: badData, profile: 'default' });
+    expect(res.status).toBe(400);
+  });
+
+  it('task.count 為非數字時回傳 400', async () => {
+    const badData = [
+      {
+        dateRange: 'x',
+        weekDayDates: [],
+        scheduleDays: [],
+        schedule: [],
+        tasks: [{ name: '素描教室', count: '<script>alert(1)</script>' }],
+      },
+    ];
+    const res = await request(app)
+      .post('/api/schedules')
+      .send({ name: '2025-W01', data: badData, profile: 'default' });
     expect(res.status).toBe(400);
   });
 

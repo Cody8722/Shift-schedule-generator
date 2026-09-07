@@ -1,8 +1,11 @@
 const { SAFE_PROFILE_NAME_REGEX, SAFE_SCHEDULE_NAME_REGEX } = require('./config');
 
+// 一律先用 String() 轉成字串再轉義，不能只在 typeof === 'string' 時才處理——
+// 否則陣列／物件會原樣通過這個函式，後面樣板字串插值時呼叫它們自己的
+// toString()（例如陣列會 join 內容），繞過所有跳脫直接把原始 HTML 注入。
 const escapeHtml = (unsafe) => {
-  if (typeof unsafe !== 'string') return unsafe;
-  return unsafe
+  if (unsafe === null || unsafe === undefined) return unsafe;
+  return String(unsafe)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -99,9 +102,58 @@ const validateSettings = (settings) => {
   return { valid: true };
 };
 
+const validateScheduleData = (data) => {
+  if (!Array.isArray(data) || data.length === 0) {
+    return { valid: false, error: '班表數據必須是非空數組' };
+  }
+
+  for (let w = 0; w < data.length; w++) {
+    const week = data[w];
+    if (!week || typeof week !== 'object') {
+      return { valid: false, error: `第 ${w} 週資料格式錯誤` };
+    }
+    if (typeof week.dateRange !== 'string') {
+      return { valid: false, error: `第 ${w} 週 dateRange 必須是字串` };
+    }
+    if (!Array.isArray(week.weekDayDates)) {
+      return { valid: false, error: `第 ${w} 週 weekDayDates 必須是數組` };
+    }
+    if (!Array.isArray(week.scheduleDays)) {
+      return { valid: false, error: `第 ${w} 週 scheduleDays 必須是數組` };
+    }
+    if (!Array.isArray(week.schedule)) {
+      return { valid: false, error: `第 ${w} 週 schedule 必須是數組` };
+    }
+    if (!Array.isArray(week.tasks)) {
+      return { valid: false, error: `第 ${w} 週 tasks 必須是數組` };
+    }
+    for (let i = 0; i < week.tasks.length; i++) {
+      const task = week.tasks[i];
+      if (!task || typeof task.name !== 'string' || task.name.length > 100) {
+        return { valid: false, error: `第 ${w} 週 Task ${i} 名稱無效` };
+      }
+      if (typeof task.count !== 'number' || !Number.isFinite(task.count)) {
+        return { valid: false, error: `第 ${w} 週 Task ${i} 人數必須是數字` };
+      }
+      if (
+        task.priority !== undefined &&
+        (typeof task.priority !== 'number' ||
+          !Number.isInteger(task.priority) ||
+          task.priority < 1 ||
+          task.priority > 9)
+      ) {
+        return { valid: false, error: `第 ${w} 週 Task ${i} 優先級必須是 1-9 的整數` };
+      }
+    }
+  }
+
+  return { valid: true };
+};
+
 module.exports = {
   escapeHtml,
   validateProfileName,
   validateScheduleName,
   validateSettings,
+  validateScheduleData,
 };

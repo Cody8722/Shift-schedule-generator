@@ -1,7 +1,10 @@
 // 本地 escapeHtml（內部使用）
+// 一律先用 String() 轉成字串再轉義，不能只在 typeof === 'string' 時才處理——
+// 否則陣列／物件會原樣通過這個函式，後面樣板字串插值時呼叫它們自己的
+// toString()（例如陣列會 join 內容），繞過所有跳脫直接把原始 HTML 注入。
 const escapeHtml = (unsafe) => {
-  if (typeof unsafe !== 'string') return unsafe;
-  return unsafe
+  if (unsafe === null || unsafe === undefined) return unsafe;
+  return String(unsafe)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -46,14 +49,15 @@ const generateScheduleHtml = (fullScheduleData) => {
         ),
         1
       );
-      const priorityCls = `p${task.priority || 9}`;
+      const priorityDisplay = escapeHtml(task.priority) || 9;
+      const priorityCls = `p${priorityDisplay}`;
       let rows = '';
       for (let pi = 0; pi < maxPersonnel; pi++) {
         rows += '<tr>';
         if (pi === 0) {
           rows += `<td class="task-cell" rowspan="${maxPersonnel}">
             <span class="priority-dot ${priorityCls}"></span>${escapeHtml(task.name)}
-            <span class="task-meta">需 ${task.count} · P${task.priority || 9}</span>
+            <span class="task-meta">需 ${escapeHtml(task.count)} · P${priorityDisplay}</span>
           </td>`;
         }
         weekDayDates.forEach((_, dayIndex) => {
