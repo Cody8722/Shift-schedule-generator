@@ -46,14 +46,15 @@ const generateScheduleHtml = (fullScheduleData) => {
         ),
         1
       );
-      const priorityCls = `p${task.priority || 9}`;
+      const priorityDisplay = escapeHtml(task.priority) || 9;
+      const priorityCls = `p${priorityDisplay}`;
       let rows = '';
       for (let pi = 0; pi < maxPersonnel; pi++) {
         rows += '<tr>';
         if (pi === 0) {
           rows += `<td class="task-cell" rowspan="${maxPersonnel}">
             <span class="priority-dot ${priorityCls}"></span>${escapeHtml(task.name)}
-            <span class="task-meta">需 ${task.count} · P${task.priority || 9}</span>
+            <span class="task-meta">需 ${escapeHtml(task.count)} · P${priorityDisplay}</span>
           </td>`;
         }
         weekDayDates.forEach((_, dayIndex) => {

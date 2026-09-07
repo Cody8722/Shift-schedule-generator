@@ -56,4 +56,28 @@ describe('generateScheduleHtml', () => {
     const html = generateScheduleHtml([week]);
     expect(html).toContain('100%');
   });
+
+  it('task.priority 帶惡意字串時會被轉義，不會產生可執行的標籤', () => {
+    const payload = '"><img src=x onerror=alert(1)>';
+    const week = makeWeek({ tasks: [{ name: '早班', count: 1, priority: payload }] });
+    const html = generateScheduleHtml([week]);
+    expect(html).not.toContain(payload);
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(html).toContain('&lt;img');
+  });
+
+  it('task.count 帶惡意字串時會被轉義，不會產生可執行的標籤', () => {
+    const payload = '<script>alert(1)</script>';
+    const week = makeWeek({ tasks: [{ name: '早班', count: payload, priority: 1 }] });
+    const html = generateScheduleHtml([week]);
+    expect(html).not.toContain(payload);
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('task.priority 為合法數字時不受轉義影響，正常顯示', () => {
+    const week = makeWeek({ tasks: [{ name: '早班', count: 1, priority: 3 }] });
+    const html = generateScheduleHtml([week]);
+    expect(html).toContain('p3');
+    expect(html).toContain('P3');
+  });
 });
