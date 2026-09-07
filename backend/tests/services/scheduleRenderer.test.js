@@ -80,4 +80,26 @@ describe('generateScheduleHtml', () => {
     expect(html).toContain('p3');
     expect(html).toContain('P3');
   });
+
+  it('假日 description 為陣列時不能繞過轉義（曾經是真實可利用的漏洞：陣列 toString 會跳過 escapeHtml）', () => {
+    const week = makeWeek({
+      schedule: [[[]]],
+      scheduleDays: [{ shouldSchedule: false, description: ['<img src=x onerror=alert(1)>'] }],
+    });
+    const html = generateScheduleHtml([week]);
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(html).toContain('&lt;img');
+  });
+
+  it('人員姓名（schedule 內容）為陣列時不能繞過轉義', () => {
+    // schedule[day][task][pi] 本身是陣列（不是字串）——正是實際攻擊測試中
+    // 繞過驗證＋轉義的手法：personName = ['<img...>']，樣板字串插值時
+    // 陣列的 toString() 會把內容原樣接進 HTML。
+    const week = makeWeek({
+      schedule: [[[['<img src=x onerror=alert(1)>']]]],
+    });
+    const html = generateScheduleHtml([week]);
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+    expect(html).toContain('&lt;img');
+  });
 });
