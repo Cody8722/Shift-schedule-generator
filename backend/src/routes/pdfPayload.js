@@ -2,7 +2,7 @@
 
 const express = require('express');
 const debug = require('debug')('app:pdfPayload');
-const { encryptPayload, decryptPayload, isConfigured } = require('../services/pdfPayloadCrypto');
+const { encryptPayload, decryptPayload, isConfigured, isDecryptionPossible } = require('../services/pdfPayloadCrypto');
 
 const router = express.Router();
 
@@ -20,9 +20,11 @@ router.post('/api/pdf-payload/encrypt', (req, res) => {
   }
 });
 
-// 把從 PDF metadata 讀出的 base64 字串解密還原成班表資料。
+// 把從 PDF metadata 讀出的字串解密還原成班表資料。
+// 這裡刻意用 isDecryptionPossible() 而非 isConfigured()：只設定了舊制
+// PDF_PAYLOAD_SECRET、還沒設定 Root 的部署，仍然要能解開改版前匯出的舊格式 PDF。
 router.post('/api/pdf-payload/decrypt', (req, res) => {
-  if (!isConfigured()) return res.status(503).json({ message: 'PDF 加密功能未設定' });
+  if (!isDecryptionPossible()) return res.status(503).json({ message: 'PDF 加密功能未設定' });
   try {
     const { payload } = req.body;
     if (typeof payload !== 'string' || !payload) {
