@@ -68,6 +68,7 @@ MongoDB 集合清單（`scheduleApp` 資料庫）：
 - `holidays`：台灣國定假日（`_id` 為日期字串如 `2025-01-01`）
 - `schoolEvents`：學校行事曆快取（`_id` 為學期代碼如 `1142`，7 天 TTL）
 - `scheduleShares`：班表分享連結（`_id` 為隨機 token，記錄對應的 profile/scheduleName/personFilter，無過期機制）
+- `pdfPayloadKeyState`：PDF 隱藏資料加密目前的金鑰版本（單一文件，`_id` 固定為 `pdf_payload_key_state`），記錄 `currentVersion`、`rotatedAt`，每 30 天自動輪替
 
 ---
 
@@ -92,7 +93,7 @@ backend/
     app.js                       # Express 設定、middleware、路由掛載
     config.js                    # 環境變數
     validators.js                # 輸入驗證（profile/schedule 名稱、settings）
-    db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents、scheduleShares 四個 collection）
+    db/connect.js                # MongoDB 連線管理（profiles、holidays、schoolEvents、scheduleShares、pdfPayloadKeyState 五個 collection）
     routes/                      # status, holidays, profiles, schedules, generate, schoolCalendar, pdfPayload, shares
     services/
       scheduleAlgorithm.js       # 排班核心演算法（純函數）
@@ -100,9 +101,11 @@ backend/
       holidayService.js          # 假日快取、CDN 更新
       schoolCalendar.js          # 學校行事曆（記憶體 6h + MongoDB 7 天持久快取）
       pdfPayloadCrypto.js        # PDF 匯入/匯出隱藏資料的 AES-256-GCM 加解密（Root Key + HKDF 版本衍生，見下方環境變數說明）
+      pdfPayloadKeyRotation.js   # PDF 加密金鑰版本的記憶體快取 + 每 30 天自動輪替（DB 為真相來源，跟 holidayService 同一種快取模式）
     repositories/
       profileRepository.js       # MongoDB CRUD（profiles、schedules）
       shareRepository.js         # 班表分享連結的 token 產生/查詢（scheduleShares collection）
+      pdfPayloadKeyStateRepository.js  # PDF 加密目前金鑰版本狀態的讀寫（pdfPayloadKeyState collection）
   tests/
 
 frontend/
@@ -200,17 +203,19 @@ PORT=3000                # 預設值
 CORS_ORIGIN=*            # 預設值；未設定時 config.js 也會 fallback 成 *，僅適合開發環境
 PDF_PAYLOAD_SECRET=          # 選填，改版前的舊制單一金鑰，現在只用來解密沒有版號的舊格式 PDF
 PDF_PAYLOAD_ROOT_SECRET=     # 選填，64 字元 hex（32 bytes），唯一需要手動備份的值，見下方說明
-PDF_PAYLOAD_KEK_CURRENT=v1   # 選填，目前加密要用哪一版
+PDF_PAYLOAD_KEK_CURRENT=v1   # 選填，只在 MongoDB 完全沒有版本狀態時當「初始種子值」用一次，之後由 DB 自動輪替接管
 ```
 
 若未提供 `MONGODB_URI`，伺服器仍會啟動，但所有資料庫功能停用（會顯示警告）。
 
-**PDF 隱藏資料加密機制（Root Key + HKDF 版本衍生）**：三個環境變數都選填，完全不設定就整個功能停用（`/api/pdf-payload/encrypt`、`/api/pdf-payload/decrypt` 回 503），前端的 PDF 匯入按鈕與匯出時的隱藏資料嵌入都會靜默跳過，不影響一般匯出/檢視。
+**PDF 隱藏資料加密機制（Root Key + HKDF 版本衍生，含每 30 天自動輪替）**：三個環境變數都選填，完全不設定就整個功能停用（`/api/pdf-payload/encrypt`、`/api/pdf-payload/decrypt` 回 503），前端的 PDF 匯入按鈕與匯出時的隱藏資料嵌入都會靜默跳過，不影響一般匯出/檢視。
 
-- 加密**新資料**只用 `PDF_PAYLOAD_ROOT_SECRET` + `PDF_PAYLOAD_KEK_CURRENT`：實際 KEK＝`HKDF(Root, info=版本號)` 現場算出來，不另外存成環境變數。換版本只要把 `PDF_PAYLOAD_KEK_CURRENT` 的數字改掉（例如 v1→v2），不用做任何備份動作；只要 `PDF_PAYLOAD_ROOT_SECRET` 沒變，舊版本號加密過的 PDF 一樣算得出對應 KEK、正常解密。
+- 加密**新資料**只用 `PDF_PAYLOAD_ROOT_SECRET` + 「目前版本號」：實際 KEK＝`HKDF(Root, info=版本號)` 現場算出來，不另外存成環境變數。
+- **目前版本號存在 MongoDB（`pdfPayloadKeyState` collection），不是環境變數**：`pdfPayloadKeyRotation.js` 在伺服器啟動時初始化記憶體快取（DB 已有狀態就直接載入；DB 是空的才會讀一次 `PDF_PAYLOAD_KEK_CURRENT` 當初始種子值，之後這個環境變數就不會再被讀取），並且每 30 天自動把版本號往上遞增（例如 v1→v2）、寫回 DB——不需要手動改任何環境變數或重啟伺服器。啟動時與每 24 小時都會檢查一次是否已到 30 天（若伺服器曾經關機超過 30 天，啟動時會立刻補做一次輪替）。目前版本、上次輪替時間、下次預計輪替時間可從 `GET /api/status` 的 `pdfPayloadKeyRotation` 欄位查看。只要 `PDF_PAYLOAD_ROOT_SECRET` 沒變，舊版本號加密過的 PDF 換了幾輪版本都一樣算得出對應 KEK、正常解密。
+- MongoDB 未連線時，「目前版本號」無法初始化／輪替，等同 `isConfigured()` 為 false（無法加密新資料），但解密已存在的 PDF 不受影響（解密走的是 payload 自帶的版號 + Root 現算 KEK，不依賴 DB；v0 舊格式更是完全不需要 DB 或 Root，只需要 `PDF_PAYLOAD_SECRET`）。
 - `PDF_PAYLOAD_SECRET`（改版前的舊制單一金鑰）現在**只**用來解密「沒有版號欄位」的舊格式 PDF（視為隱含 v0，金鑰直接當 KEK 用、不經 HKDF），不會再用來加密任何新資料。這是唯一的重點：只要這批舊 PDF 還有人在用，這個環境變數就不能拿掉。
 - **唯一需要手動備份的值是 `PDF_PAYLOAD_ROOT_SECRET`**（存進密碼管理器/雲端筆記，跟主機分開放）。它一旦產生就永遠不能變、不能重新產生——重新產生等於所有版本的 KEK 一起失效，所有 Root 機制下匯出的 PDF 全部解不開。
-- 詳細機制見 `backend/src/services/pdfPayloadCrypto.js` 開頭的註解與 `backend/.env.example`。
+- 詳細機制見 `backend/src/services/pdfPayloadCrypto.js`、`backend/src/services/pdfPayloadKeyRotation.js` 開頭的註解與 `backend/.env.example`。
 
 ---
 

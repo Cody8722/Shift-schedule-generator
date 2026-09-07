@@ -1,6 +1,7 @@
 const debug = require('debug');
 const { connect, disconnect, ensureConfigDocument } = require('./src/db/connect');
 const { seedHolidays, refreshHolidaysFromCDN } = require('./src/services/holidayService');
+const { initKeyState, rotateIfDue } = require('./src/services/pdfPayloadKeyRotation');
 const app = require('./src/app');
 const { PORT, MONGODB_URI } = require('./src/config');
 
@@ -21,6 +22,13 @@ const startServer = async () => {
     await seedHolidays();
     await refreshHolidaysFromCDN();
     setInterval(refreshHolidaysFromCDN, 24 * 60 * 60 * 1000);
+
+    // PDF 隱藏資料加密金鑰版本：啟動時載入/初始化狀態，之後每天檢查一次是否
+    // 已達 30 天輪替間隔（真正的輪替判斷在 rotateIfDue() 內部，這裡只是固定
+    // 頻率去問一次，不代表每天都會真的輪替）。
+    await initKeyState();
+    await rotateIfDue();
+    setInterval(rotateIfDue, 24 * 60 * 60 * 1000);
 
     app.listen(PORT, () => {
       debugServer(`伺服器正在 http://localhost:${PORT} 上運行`);

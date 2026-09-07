@@ -42,6 +42,13 @@ jest.mock('../../src/services/schoolCalendar', () => ({
   getLastFetchStatus: jest.fn().mockReturnValue({ at: null, success: null, eventCount: null, warning: null }),
 }));
 
+jest.mock('../../src/services/pdfPayloadKeyRotation', () => ({
+  initKeyState: jest.fn(),
+  rotateIfDue: jest.fn(),
+  getCurrentVersion: jest.fn(),
+  getRotationStatus: jest.fn().mockReturnValue({ currentVersion: null, rotatedAt: null, nextRotationDue: null }),
+}));
+
 // ── 測試主體 ──────────────────────────────────────────────────────────────────
 
 const request = require('supertest');
@@ -49,6 +56,7 @@ const app = require('../../server');
 const { getIsDbConnected, getHolidaysCollection, getConfigCollection } = require('../../src/db/connect');
 const { holidaysCache, lastRefreshStatus } = require('../../src/services/holidayService');
 const { getLastFetchStatus } = require('../../src/services/schoolCalendar');
+const { getRotationStatus } = require('../../src/services/pdfPayloadKeyRotation');
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -125,5 +133,22 @@ describe('GET /api/status', () => {
 
     expect(res.body.schoolCalendarLastFetch.success).toBe(false);
     expect(res.body.schoolCalendarLastFetch.warning).toContain('格式已變更');
+  });
+
+  it('回傳 PDF 加密金鑰目前的輪替狀態', async () => {
+    getIsDbConnected.mockReturnValue(false);
+    getRotationStatus.mockReturnValue({
+      currentVersion: 'v2',
+      rotatedAt: '2026-01-01T00:00:00.000Z',
+      nextRotationDue: '2026-01-31T00:00:00.000Z',
+    });
+
+    const res = await request(app).get('/api/status');
+
+    expect(res.body.pdfPayloadKeyRotation).toEqual({
+      currentVersion: 'v2',
+      rotatedAt: '2026-01-01T00:00:00.000Z',
+      nextRotationDue: '2026-01-31T00:00:00.000Z',
+    });
   });
 });

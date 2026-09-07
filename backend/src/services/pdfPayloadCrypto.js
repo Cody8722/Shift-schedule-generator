@@ -1,7 +1,8 @@
 'use strict';
 
 const crypto = require('crypto');
-const { PDF_PAYLOAD_SECRET, PDF_PAYLOAD_ROOT_SECRET, PDF_PAYLOAD_KEK_CURRENT } = require('../config');
+const { PDF_PAYLOAD_SECRET, PDF_PAYLOAD_ROOT_SECRET } = require('../config');
+const { getCurrentVersion } = require('./pdfPayloadKeyRotation');
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -34,7 +35,10 @@ const deriveKekForVersion = (version) => {
   return Buffer.from(crypto.hkdfSync('sha256', root, HKDF_SALT, info, KEY_LENGTH));
 };
 
-const getCurrentVersion = () => (isVersionFormatValid(PDF_PAYLOAD_KEK_CURRENT) ? PDF_PAYLOAD_KEK_CURRENT : null);
+// 目前版本號現在改由 pdfPayloadKeyRotation.js 的記憶體快取提供（DB 為真相來源、
+// 每 30 天自動輪替），這裡不再直接讀 PDF_PAYLOAD_KEK_CURRENT 環境變數——那個值
+// 只在系統第一次啟動、DB 裡還沒有狀態文件時，被 pdfPayloadKeyRotation.js 拿去當
+// 種子值用一次。
 
 // 加密（產生新資料）是否可用：取決於 Root + 目前版本號是否都正確設定。
 // 舊制的 PDF_PAYLOAD_SECRET 只影響「能不能解開 v0 舊格式」，不影響這裡。
@@ -53,7 +57,7 @@ const encryptPayload = (plainObj) => {
   const version = getCurrentVersion();
   const key = deriveKekForVersion(version);
   if (!version || !key) {
-    throw new Error('PDF_PAYLOAD_ROOT_SECRET / PDF_PAYLOAD_KEK_CURRENT 未設定或格式錯誤');
+    throw new Error('PDF_PAYLOAD_ROOT_SECRET 未設定或格式錯誤，或金鑰版本狀態尚未初始化');
   }
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
@@ -76,8 +80,8 @@ const decryptWithKey = (key, iv, authTag, encrypted) => {
 //
 // 沒有版號欄位（不含冒號）的舊格式，視同隱含 v0，直接用 PDF_PAYLOAD_SECRET 當 KEK
 // 解密（不經 HKDF）——確保改版前就已經匯出、流通在外的 PDF 不用重新匯出照樣能匯入。
-// 有版號欄位的，用 HKDF(Root, info=該版本號) 現場算出對應 KEK 解密，不管目前
-// PDF_PAYLOAD_KEK_CURRENT 是哪一版，只要 Root 沒換過，任何版本都算得出來。
+// 有版號欄位的，用 HKDF(Root, info=該版本號) 現場算出對應 KEK 解密，不管系統
+// 目前實際輪替到哪一版，只要 Root 沒換過，任何版本都算得出來。
 const decryptPayload = (payload) => {
   if (typeof payload !== 'string' || !payload) throw new Error('payload 格式錯誤');
 

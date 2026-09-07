@@ -2,6 +2,7 @@ const express = require('express');
 const { getIsDbConnected, getHolidaysCollection, getConfigCollection } = require('../db/connect');
 const { holidaysCache, lastRefreshStatus } = require('../services/holidayService');
 const { getLastFetchStatus } = require('../services/schoolCalendar');
+const { getRotationStatus } = require('../services/pdfPayloadKeyRotation');
 
 const router = express.Router();
 
@@ -15,6 +16,9 @@ router.get('/api/status', async (req, res) => {
     // 讓人可以直接從 /api/status 看出這兩個機制是不是還正常。
     holidaysLastRefresh: lastRefreshStatus,
     schoolCalendarLastFetch: getLastFetchStatus(),
+    // PDF 隱藏資料加密金鑰版本目前輪替到哪一版、上次/下次輪替時間；DB 未連線
+    // 或狀態尚未初始化時全部欄位為 null，不代表輪替失敗，只是還沒開始追蹤。
+    pdfPayloadKeyRotation: getRotationStatus(),
   };
 
   if (isDbConnected) {
