@@ -137,8 +137,8 @@ frontend/
       scheduleCompare.js         # 比較已儲存班表 Modal（人員異動/填補率/勤務設定差異）
       exportWeekFilter.js        # 匯出週次篩選（getExportData，供複製/Excel/PDF/人員Excel 共用）
       personTaskStats.js         # 值勤統計 Modal（人員 × 勤務次數，加總 + 每週明細，Excel/PDF 匯出共用同一份計算）
-      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計；若後端有設定 PDF_PAYLOAD_ROOT_SECRET 會額外把班表資料加密嵌入 PDF metadata）
-      pdfImport.js               # 從匯出的 PDF 檔案讀出隱藏資料還原班表（需搭配 pdf-lib 解析 metadata + 後端解密）
+      pdfExport.js               # PDF 匯出（html2canvas + jsPDF，支援每頁 N 週自動分頁，末頁附值勤統計；若後端有設定 PDF_PAYLOAD_ROOT_SECRET 會額外把 { schedule, settings }（班表＋目前設定檔的人員/勤務設定）加密嵌入 PDF metadata）
+      pdfImport.js               # 從匯出的 PDF 檔案讀出隱藏資料還原班表（需搭配 pdf-lib 解析 metadata + 後端解密）；若內含 settings 會詢問要套用到目前設定檔還是建立新設定檔（splitPayload() 相容改版前只有班表陣列的舊格式 PDF）
       scheduleShare.js           # 分享班表 Modal：產生免登入連結（可選只分享單一人員、可設有效期限），並列出/撤銷已產生的連結
       sharedView.js              # 免登入分享連結的頁面（接管整個 document.body，不含後台功能）
       scheduleGenerator.js       # 前端排班產生流程
